@@ -27,6 +27,47 @@ services:
     # Même remarque que ci-dessus : port hôte configurable via .env (REDIS_PORT).
     ports:
       - "${REDIS_PORT:-61780}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payfund-app
+    environment:
+      # Communication interne au réseau Compose : noms de service + ports internes fixes — pas
+      # `localhost`, pas les ports hôte configurables. POSTGRES_PORT/REDIS_PORT ne concernent
+      # que l'accès *depuis l'hôte* (utile en dev local, quand l'app tourne hors Docker) ; entre
+      # conteneurs du même réseau Compose, le nom du service fait office de DNS et le port
+      # interne (5432/6379) ne bouge jamais.
+      DATABASE_URL: postgresql+psycopg://payfund:payfund@db:5432/payfund
+      REDIS_URL: redis://redis:6379/0
+      DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://api-dev.diddifree.app/identity/v1/.well-known/jwks.json}
+      EVENT_BUS_CHANNEL: ${EVENT_BUS_CHANNEL:-diddifree.events}
+      PAYMENT_GATEWAY_MODE: ${PAYMENT_GATEWAY_MODE:-stub}
+      # Pas de valeur par défaut ici : signer les QR de paiement marchand avec le secret par
+      # défaut du code ("change-me-in-production") serait une faille en production. Ce garde-fou
+      # est superficiel — il bloque seulement si la variable est absente de .env, pas si elle
+      # vaut encore "change-me-in-production" ; la vraie discipline reste de la changer soi-même.
+      QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:?QR_SIGNING_SECRET doit être défini dans .env avant déploiement}
+    ports:
+      # Port hôte configurable — même remarque que pour db/redis ci-dessus.
+      - "${APP_PORT:-48213}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/payfund/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   payfund_pgdata:

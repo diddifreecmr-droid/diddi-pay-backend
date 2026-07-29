@@ -1,0 +1,4 @@
+# docker-entrypoint.sh (et tout script shell) doit rester en LF quoi qu'il arrive : ce dev se
+# fait sous Windows (core.autocrlf), mais un shebang `#!/bin/sh` en CRLF casse silencieusement
+# au démarrage du conteneur Linux ("no such file or directory").
+*.sh text eol=lf

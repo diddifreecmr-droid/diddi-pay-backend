@@ -28,15 +28,32 @@ docker ps --format "{{.Names}}: {{.Ports}}"
 
 Ajuster `POSTGRES_PORT` / `REDIS_PORT` / `APP_PORT` dans `.env` en conséquence — et reporter la
 même valeur de port dans `DATABASE_URL` / `REDIS_URL` / `TEST_DATABASE_URL`, qui ne font pas de
-substitution automatique (voir les commentaires de `.env.example`).
+substitution automatique (voir les commentaires de `.env.example`). `QR_SIGNING_SECRET` doit
+aussi être changé avant tout déploiement réel.
+
+### Option A — tout conteneurisé (déploiement VPS)
 
 ```bash
-docker compose up -d
+docker compose up -d --build
+```
+
+Démarre Postgres, Redis et l'API dans le même réseau Docker. Le conteneur `app`
+(`docker-entrypoint.sh`) rejoue les migrations Alembic automatiquement à chaque démarrage puis
+lance `uvicorn` — pas d'étape manuelle séparée. Il se connecte à `db`/`redis` par leur nom de
+service Docker, pas par les ports hôte configurables (qui ne servent qu'à l'accès *depuis
+l'hôte*). `docker compose logs -f app` pour suivre le démarrage.
+
+Documentation interactive : `http://localhost:${APP_PORT}/payfund/v1/docs`
+
+### Option B — API en local, seules les dépendances en Docker (dev rapide)
+
+```bash
+docker compose up -d db redis
 alembic upgrade head
 uvicorn payfund_app.main:app --reload --host 0.0.0.0 --port "${APP_PORT:-48213}"
 ```
 
-Documentation interactive : `http://localhost:${APP_PORT}/payfund/v1/docs`
+Plus pratique pour itérer (`--reload`), au prix d'un redémarrage manuel après chaque migration.
 
 ## Tests
 
@@ -65,6 +82,11 @@ payfund_app/
 `fund` n'importe jamais `payfund_app.modules.wallet` : le seul point de contact est
 `fund/infra/wallet_client.py`, qui résout le `WalletServicePort`. C'est le seul fichier à changer
 le jour où `fund` devient un service séparé.
+
+À la racine : `Dockerfile` (image de l'API, `python:3.11-slim`, aucune dépendance système —
+`psycopg[binary]` et `pyjwt[crypto]` embarquent leurs wheels) et `docker-entrypoint.sh` (rejoue
+les migrations puis lance `uvicorn`). `docker-compose.yml` orchestre `db`, `redis` et `app` avec
+des ports hôte configurables via `.env` (voir « Démarrage »).
 
 ## Ce qui est implémenté
 
