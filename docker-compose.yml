@@ -46,7 +46,7 @@ services:
       # interne (5432/6379) ne bouge jamais.
       DATABASE_URL: postgresql+psycopg://payfund:payfund@db:5432/payfund
       REDIS_URL: redis://redis:6379/0
-      DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://api-dev.diddifree.app/identity/v1/.well-known/jwks.json}
+      DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json}
       EVENT_BUS_CHANNEL: ${EVENT_BUS_CHANNEL:-diddifree.events}
       PAYMENT_GATEWAY_MODE: ${PAYMENT_GATEWAY_MODE:-stub}
       # Le déploiement ne se fait pas forcément via `docker compose` en CLI avec un `.env` à

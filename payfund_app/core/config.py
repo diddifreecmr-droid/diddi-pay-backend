@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # (DiddiFreeID_Contrat_API.md §0 : « Ne jamais appeler DiddiFreeID en HTTP pour
     # simplement vérifier qu'un token est valide »).
     diddifreeid_jwks_url: str = (
-        "https://api-dev.diddifree.app/identity/v1/.well-known/jwks.json"
+        "https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json"
     )
 
     redis_url: str = "redis://localhost:6379/0"
