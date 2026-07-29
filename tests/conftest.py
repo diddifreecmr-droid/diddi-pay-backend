@@ -9,13 +9,22 @@ from collections.abc import Iterator
 import pytest
 from alembic import command
 from alembic.config import Config
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+# Charge `.env` explicitement : `pytest` ne le fait pas tout seul, contrairement à l'app
+# (pydantic-settings). Sans ça, `TEST_DATABASE_URL` retomberait sur le port codé en dur ci-dessous
+# dès que le shell n'a pas lui-même sourcé `.env` — exactement le genre de port oublié à éviter
+# sur un serveur qui héberge plusieurs piles (voir `.env.example`).
+load_dotenv()
+
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+psycopg://payfund:payfund@localhost:5434/payfund_test",
+    # Dernier recours si ni `.env` ni l'environnement ne définissent la variable — doit rester
+    # synchronisé avec le POSTGRES_PORT par défaut de `docker-compose.yml`.
+    "postgresql+psycopg://payfund:payfund@localhost:54329/payfund_test",
 )
 # Doit être posé avant tout import de `payfund_app.core.database` (engine créé à l'import).
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL

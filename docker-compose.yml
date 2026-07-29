@@ -6,9 +6,13 @@ services:
       POSTGRES_USER: payfund
       POSTGRES_PASSWORD: payfund
       POSTGRES_DB: payfund
-    # Ports décalés : 5432 et 5433 sont déjà pris par abidjan-map et diddi-go.
+    # Port hôte configurable via .env (POSTGRES_PORT). Ce projet est hébergé aux côtés d'autres
+    # piles complètes (Postgres/Redis/Flask/...) sur le même serveur — ne jamais supposer qu'un
+    # port "par défaut" (ni même le suivant en séquence) est libre. Vérifier avant déploiement
+    # (`ss -tulpn`, `docker ps --format "{{.Names}}: {{.Ports}}"`) puis fixer la valeur dans .env,
+    # jamais ici.
     ports:
-      - "5434:5432"
+      - "${POSTGRES_PORT:-54329}:5432"
     volumes:
       - payfund_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,8 +24,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: payfund-redis
+    # Même remarque que ci-dessus : port hôte configurable via .env (REDIS_PORT).
     ports:
-      - "6380:6379"
+      - "${REDIS_PORT:-61780}:6379"
 
 volumes:
   payfund_pgdata:

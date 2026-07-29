@@ -13,12 +13,30 @@ Monolithe modulaire Python/FastAPI + PostgreSQL implémentant les modules `walle
 workon diddipay                        # CPython 3.11.9
 pip install -e ".[dev]"
 cp .env.example .env
-docker compose up -d                   # PostgreSQL :5434, Redis :6380
-alembic upgrade head
-uvicorn payfund_app.main:app --reload
 ```
 
-Documentation interactive : <http://localhost:8000/payfund/v1/docs>
+**Avant de lancer `docker compose up`**, vérifier que les ports choisis dans `.env`
+(`POSTGRES_PORT`, `REDIS_PORT`, `APP_PORT`) sont bien libres sur la machine cible — ce projet est
+hébergé aux côtés d'autres piles complètes (Postgres/Redis/Flask/...) sur le même serveur, les
+valeurs par défaut de `.env.example` ne sont que des suggestions :
+
+```bash
+ss -tulpn | grep -E ":(54329|61780|48213)\b"    # rien ne doit s'afficher
+# ou, si d'autres projets tournent déjà en Docker :
+docker ps --format "{{.Names}}: {{.Ports}}"
+```
+
+Ajuster `POSTGRES_PORT` / `REDIS_PORT` / `APP_PORT` dans `.env` en conséquence — et reporter la
+même valeur de port dans `DATABASE_URL` / `REDIS_URL` / `TEST_DATABASE_URL`, qui ne font pas de
+substitution automatique (voir les commentaires de `.env.example`).
+
+```bash
+docker compose up -d
+alembic upgrade head
+uvicorn payfund_app.main:app --reload --host 0.0.0.0 --port "${APP_PORT:-48213}"
+```
+
+Documentation interactive : `http://localhost:${APP_PORT}/payfund/v1/docs`
 
 ## Tests
 
@@ -27,7 +45,9 @@ docker exec payfund-db psql -U payfund -d payfund -c "CREATE DATABASE payfund_te
 pytest
 ```
 
-La suite crée son schéma en rejouant les migrations Alembic sur `payfund_test`.
+La suite crée son schéma en rejouant les migrations Alembic sur `payfund_test`. Elle charge
+`.env` elle-même (`conftest.py`) : `TEST_DATABASE_URL` n'a pas besoin d'être exporté dans le
+shell au préalable.
 
 ## Organisation
 
