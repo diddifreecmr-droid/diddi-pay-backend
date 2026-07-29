@@ -49,11 +49,14 @@ services:
       DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://api-dev.diddifree.app/identity/v1/.well-known/jwks.json}
       EVENT_BUS_CHANNEL: ${EVENT_BUS_CHANNEL:-diddifree.events}
       PAYMENT_GATEWAY_MODE: ${PAYMENT_GATEWAY_MODE:-stub}
-      # Pas de valeur par défaut ici : signer les QR de paiement marchand avec le secret par
-      # défaut du code ("change-me-in-production") serait une faille en production. Ce garde-fou
-      # est superficiel — il bloque seulement si la variable est absente de .env, pas si elle
-      # vaut encore "change-me-in-production" ; la vraie discipline reste de la changer soi-même.
-      QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:?QR_SIGNING_SECRET doit être défini dans .env avant déploiement}
+      # Le déploiement ne se fait pas forcément via `docker compose` en CLI avec un `.env` à
+      # côté du fichier (ex. Portainer, qui clone le dépôt et n'a donc jamais accès à un `.env`
+      # non versionné) : une variable obligatoire ici (`${VAR:?...}`) ferait échouer le simple
+      # pull de l'image, avant même que l'outil de déploiement ait pu injecter quoi que ce soit.
+      # Valeur par défaut = celle du code (voir `core/config.py`), donc pas plus sûre que lui —
+      # à écraser explicitement en production, via l'UI de variables d'environnement de l'outil
+      # de déploiement (README section « Déploiement via Portainer »), jamais dans ce fichier.
+      QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:-change-me-in-production}
     ports:
       # Port hôte configurable — même remarque que pour db/redis ci-dessus.
       - "${APP_PORT:-48213}:8000"

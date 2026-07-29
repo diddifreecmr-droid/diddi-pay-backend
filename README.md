@@ -55,6 +55,22 @@ uvicorn payfund_app.main:app --reload --host 0.0.0.0 --port "${APP_PORT:-48213}"
 
 Plus pratique pour itérer (`--reload`), au prix d'un redémarrage manuel après chaque migration.
 
+### Déploiement via Portainer (stack Git)
+
+Portainer clone le dépôt et lit `docker-compose.yml`, mais **n'a jamais accès à un `.env`** —
+celui-ci n'est pas versionné (`.gitignore`) et n'existe que sur les postes qui l'ont créé. Toute
+variable rendue obligatoire dans `docker-compose.yml` (`${VAR:?...}`) ferait donc échouer le
+simple *pull* du stack, avant même que Portainer ait pu injecter quoi que ce soit — c'est
+pourquoi aucune variable de ce fichier n'est requise, seulement munie de valeurs par défaut.
+
+Pour fixer les vraies valeurs (ports libres sur ce serveur, `QR_SIGNING_SECRET` de production,
+etc.), les définir dans Portainer lui-même plutôt que dans un fichier :
+**Stacks → (ce stack) → Editor → Environment variables** — chaque variable ajoutée là écrase la
+valeur par défaut du compose, exactement comme le ferait un `.env` en CLI. Sans ça, le stack
+démarre quand même, mais avec les valeurs par défaut de `.env.example` (ports `54329` / `61780` /
+`48213`, `QR_SIGNING_SECRET=change-me-in-production`) — à vérifier avant toute mise en
+production réelle.
+
 ## Tests
 
 ```bash
