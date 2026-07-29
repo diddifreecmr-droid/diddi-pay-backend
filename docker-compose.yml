@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: payfund-db
+    environment:
+      POSTGRES_USER: payfund
+      POSTGRES_PASSWORD: payfund
+      POSTGRES_DB: payfund
+    # Ports décalés : 5432 et 5433 sont déjà pris par abidjan-map et diddi-go.
+    ports:
+      - "5434:5432"
+    volumes:
+      - payfund_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payfund"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: payfund-redis
+    ports:
+      - "6380:6379"
+
+volumes:
+  payfund_pgdata:
