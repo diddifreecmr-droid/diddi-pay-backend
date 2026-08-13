@@ -10,6 +10,7 @@ from payfund_app.core.database import SessionLocal
 from payfund_app.core.security import CurrentUser
 from payfund_app.ops.maintenance import (
     backfill_wallet,
+    reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
     require_admin,
 )
@@ -34,6 +35,12 @@ def main(argv: list[str] | None = None) -> int:
     reconcile.add_argument("transaction_id", type=_parse_uuid)
     reconcile.add_argument("--admin-role", default="admin")
 
+    sweep = sub.add_parser(
+        "reconcile-paystack-pending",
+        help="Sweep all pending Paystack deposits and reconcile them",
+    )
+    sweep.add_argument("--admin-role", default="admin")
+
     args = parser.parse_args(argv)
     admin_user = CurrentUser(uuid.uuid4(), args.admin_role, "active")
     require_admin(admin_user)
@@ -49,6 +56,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "reconcile-paystack":
             result = reconcile_paystack_deposit(session, transaction_id=args.transaction_id)
             print(f"transaction_id={result.transaction_id} status={result.status}")
+            return 0
+        if args.command == "reconcile-paystack-pending":
+            result = reconcile_pending_paystack_deposits(session)
+            print(
+                f"scanned={result.scanned} completed={result.completed} "
+                f"failed={result.failed} pending={result.pending}"
+            )
             return 0
 
     return 1
