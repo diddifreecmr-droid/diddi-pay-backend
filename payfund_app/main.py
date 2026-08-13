@@ -12,9 +12,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from payfund_app.core.config import get_settings
+from payfund_app.core.database import SessionLocal
 from payfund_app.core.errors import register_exception_handlers
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
+from payfund_app.ops.maintenance import relay_outbox_events
 from payfund_app.modules.wallet.presentation.routers import router as wallet_router
 from payfund_app.shared_kernel.events.bus import RedisEventBus, get_bus
 
@@ -29,6 +31,8 @@ async def lifespan(_: FastAPI):
     wallet_subscribers.register(bus)
     if isinstance(bus, RedisEventBus):
         bus.start()
+    with SessionLocal() as session:
+        relay_outbox_events(session, bus)
     yield
     if isinstance(bus, RedisEventBus):
         bus.stop()
