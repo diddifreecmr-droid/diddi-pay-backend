@@ -429,32 +429,40 @@ async def paystack_webhook(
     raw_body = await request.body()
     secret = get_settings().paystack_webhook_secret or get_settings().paystack_secret_key
     if not secret:
-        return {"status": "ignored"}
+        return {"status": "ignored", "reason": "missing_secret"}
 
     expected = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
     if not x_paystack_signature or not hmac.compare_digest(expected, x_paystack_signature):
-        return {"status": "invalid_signature"}
+        return {"status": "invalid_signature", "reason": "signature_mismatch"}
 
     payload = await request.json()
     event = payload.get("event")
     data = payload.get("data") or {}
     reference = data.get("reference")
     if not reference:
-        return {"status": "ignored"}
+        return {"status": "ignored", "reason": "missing_reference"}
 
     transaction = WalletUseCases(session, bus=get_bus()).transactions.get_by_provider_reference(
         reference
     )
     if transaction is None:
-        return {"status": "unknown_reference"}
+        return {"status": "unknown_reference", "reason": "no_local_transaction"}
 
     use_cases = WalletUseCases(session, bus=get_bus())
     if event == "charge.success" or data.get("status") == "success":
         use_cases.confirmer_operation(transaction.id, provider="paystack")
-        return {"status": "processed", "transaction_status": "completed"}
+        return {
+            "status": "processed",
+            "transaction_status": "completed",
+            "reason": "charge_success",
+        }
 
     if data.get("status") in {"failed", "abandoned", "reversed"}:
         use_cases.echouer_operation(transaction.id, provider="paystack")
-        return {"status": "processed", "transaction_status": "failed"}
+        return {
+            "status": "processed",
+            "transaction_status": "failed",
+            "reason": str(data.get("status")),
+        }
 
-    return {"status": "ignored"}
+    return {"status": "ignored", "reason": "unhandled_event"}

@@ -107,3 +107,48 @@ def test_paystack_webhook_confirms_deposit(client, auth, session, make_user, mon
     transaction = session.get(Transaction, transaction.id)
     assert transaction.status == "completed"
     assert AccountRepository(session).balance(account_id).amount == 5000
+
+
+def test_paystack_webhook_reports_invalid_signature(client, monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    payload = {
+        "event": "charge.success",
+        "data": {"reference": "paystack-ref-1", "status": "success"},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+
+    response = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": "bad-signature"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "invalid_signature"
+    assert response.json()["reason"] == "signature_mismatch"
+
+
+def test_paystack_webhook_reports_unknown_reference(client, monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    payload = {
+        "event": "charge.success",
+        "data": {"reference": "missing-ref", "status": "success"},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
+
+    response = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": signature},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unknown_reference"
+    assert response.json()["reason"] == "no_local_transaction"
