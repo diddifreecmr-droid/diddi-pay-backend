@@ -63,6 +63,30 @@ def test_ops_reconcile_paystack_finalise_un_webhook_manque(
     assert AccountRepository(session).balance(account_id).amount == 5000
 
 
+def test_ops_inspect_paystack_transaction(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    _, account_id = make_user()
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=Money(5000, "XOF"),
+        provider_reference="ps-audit-1",
+    )
+    session.commit()
+
+    response = client.get(f"{BASE}/ops/paystack/{transaction.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transaction_id"] == str(transaction.id)
+    assert body["provider_reference"] == "ps-audit-1"
+    assert body["status"] == "pending"
+    assert body["amount"] == 5000
+
+
 def test_ops_outbox_listing_and_relay(client, auth, session, make_user):
     auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
     _, account_id = make_user()

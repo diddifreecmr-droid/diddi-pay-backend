@@ -343,6 +343,28 @@ def reconcile_paystack_deposit(
     return {"status": "pending", "transaction_id": str(transaction.id)}
 
 
+@router.get("/ops/paystack/{transaction_id}")
+def inspect_paystack_transaction(
+    transaction_id: uuid.UUID,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    """Vue interne d'audit pour un dépôt Paystack."""
+    _require_admin(user)
+    transaction = WalletUseCases(session).transactions.get(transaction_id)
+    if transaction is None:
+        return {"status": "not_found"}
+    return {
+        "transaction_id": str(transaction.id),
+        "provider_reference": transaction.provider_reference,
+        "status": transaction.status,
+        "amount": int(transaction.amount) if transaction.amount is not None else None,
+        "currency": transaction.currency,
+        "completed_at": transaction.completed_at,
+        "origin_module": transaction.origin_module,
+    }
+
+
 @router.post("/webhooks/paystack")
 async def paystack_webhook(
     request: Request,
