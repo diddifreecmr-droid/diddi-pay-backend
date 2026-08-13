@@ -54,11 +54,7 @@ class AccountRepository:
         )
 
     def get_for_update(self, account_id: uuid.UUID) -> Account | None:
-        """Verrou de ligne — sérialise les débits concurrents sur un même compte.
-
-        Le solde n'étant pas stocké (Architecture §3.1), rien n'empêcherait sans ce verrou deux
-        retraits simultanés de passer chacun le contrôle de solde avant que l'autre n'écrive.
-        """
+        """Verrou de ligne — sérialise les débits concurrents sur un même compte."""
         return self.session.scalar(
             select(Account).where(Account.id == account_id).with_for_update()
         )
@@ -92,12 +88,6 @@ class AccountRepository:
         self.session.flush()
 
     def balance(self, account_id: uuid.UUID) -> Balance:
-        """Solde = somme des crédits − somme des débits sur toutes les écritures du compte.
-
-        Aucune colonne de solde n'est maintenue (§3.1 : « Le solde n'est PAS stocké
-        directement »). La colonne de cache décrite comme optionnelle n'est pas activée : elle
-        est conditionnée dans le document à un besoin « mesuré », qui ne l'est pas encore.
-        """
         signed = case(
             (LedgerEntry.direction == str(Direction.CREDIT), LedgerEntry.amount),
             else_=-LedgerEntry.amount,
@@ -171,31 +161,7 @@ class TransactionRepository:
             select(Transaction).where(Transaction.provider_reference == reference)
         )
 
-
-class OutboxRepository:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def enqueue(self, *, event_name: str, payload: dict) -> OutboxEvent:
-        event = OutboxEvent(event_name=event_name, payload=payload, status="pending")
-        self.session.add(event)
-        self.session.flush()
-        return event
-
-    def pending(self, limit: int = 100) -> list[OutboxEvent]:
-        return list(
-            self.session.scalars(
-                select(OutboxEvent).where(OutboxEvent.status == "pending").limit(limit)
-            )
-        )
-
-    def mark_published(self, event: OutboxEvent) -> None:
-        event.status = "published"
-        event.published_at = datetime.now(timezone.utc)
-        self.session.flush()
-
     def marquer(self, transaction: Transaction, status: str) -> Transaction:
-        """Change le statut de l'en-tête. Ne touche jamais aux écritures, qui sont immuables."""
         transaction.status = str(status)
         if str(status) == "completed":
             transaction.completed_at = datetime.now(timezone.utc)
@@ -242,12 +208,7 @@ class OutboxRepository:
         from_date: date | None,
         to_date: date | None,
     ) -> Select:
-        # Jointure externe : une transaction apparaît soit parce qu'elle porte une écriture sur
-        # ce compte, soit — dépôt encore en attente de l'opérateur — parce qu'elle en est à
-        # l'origine sans avoir encore produit d'écriture.
-        conditions = [
-            or_(LedgerEntry.id.is_not(None), Transaction.account_id == account_id)
-        ]
+        conditions = [or_(LedgerEntry.id.is_not(None), Transaction.account_id == account_id)]
         if origin_module:
             conditions.append(Transaction.origin_module == origin_module)
         if type_:
@@ -279,12 +240,6 @@ class OutboxRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[tuple[Transaction, LedgerEntry | None]], int]:
-        """Historique du compte.
-
-        L'écriture renvoyée avec la transaction donne le montant *vu par ce compte* — c'est là
-        que vit le montant réel (§3.1). Elle est `None` pour une opération encore en attente de
-        l'opérateur, où seul l'en-tête de transaction existe.
-        """
         query = self._history_query(
             account_id,
             origin_module=origin_module,
@@ -292,15 +247,36 @@ class OutboxRepository:
             from_date=from_date,
             to_date=to_date,
         )
-        total = self.session.scalar(
-            select(func.count()).select_from(query.subquery())
-        ) or 0
+        total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
         rows = self.session.execute(
             query.order_by(Transaction.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()
         return [(row[0], row[1]) for row in rows], total
+
+
+class OutboxRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def enqueue(self, *, event_name: str, payload: dict) -> OutboxEvent:
+        event = OutboxEvent(event_name=event_name, payload=payload, status="pending")
+        self.session.add(event)
+        self.session.flush()
+        return event
+
+    def pending(self, limit: int = 100) -> list[OutboxEvent]:
+        return list(
+            self.session.scalars(
+                select(OutboxEvent).where(OutboxEvent.status == "pending").limit(limit)
+            )
+        )
+
+    def mark_published(self, event: OutboxEvent) -> None:
+        event.status = "published"
+        event.published_at = datetime.now(timezone.utc)
+        self.session.flush()
 
 
 class GatewayAccountRepository:

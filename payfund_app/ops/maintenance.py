@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from payfund_app.core.security import CurrentUser
@@ -122,7 +123,11 @@ def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult
 def relay_outbox_events(session: Session, bus) -> RelayResult:
     """Publie les événements durables non encore relayés vers le bus temps réel."""
     repo = OutboxRepository(session)
-    pending_events = repo.pending()
+    try:
+        pending_events = repo.pending()
+    except ProgrammingError:
+        session.rollback()
+        return RelayResult(scanned=0, published=0)
     published = 0
     for row in pending_events:
         bus.publish(Event(row.event_name, row.payload))
