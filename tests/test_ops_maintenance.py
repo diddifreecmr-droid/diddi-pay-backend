@@ -5,10 +5,12 @@ import uuid
 from payfund_app.core.security import CurrentUser
 from payfund_app.modules.wallet.infra.gateways import GatewayOperation, GatewayStatus
 from payfund_app.modules.wallet.infra.models import Transaction
+from payfund_app.shared_kernel.events.bus import InMemoryEventBus
 from payfund_app.ops.maintenance import (
     backfill_wallet,
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
+    relay_outbox_events,
     require_admin,
 )
 
@@ -108,3 +110,30 @@ def test_reconcile_pending_paystack_deposits_sweep(monkeypatch, session, make_us
     session.expire_all()
     updated = session.get(Transaction, t1.id)
     assert updated.status == "completed"
+
+
+def test_relay_outbox_events_publishes_and_marks_done(session, make_user):
+    user_id, compte = make_user()
+    from payfund_app.modules.wallet.application.use_cases import WalletUseCases
+    from payfund_app.modules.wallet.domain.money import Money
+    from payfund_app.modules.wallet.infra.repositories import OutboxRepository
+
+    use_cases = WalletUseCases(session)
+    transaction = use_cases.transactions.create(
+        type_="deposit",
+        status="completed",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=compte,
+        money=Money(1000, "XOF"),
+    )
+    use_cases._publish_completed(transaction, Money(1000, "XOF"))
+    session.commit()
+
+    bus = InMemoryEventBus()
+    result = relay_outbox_events(session, bus)
+
+    assert result.scanned == 1
+    assert result.published == 1
+    assert bus.published[0].event == "payment.completed"
+    assert OutboxRepository(session).pending() == []

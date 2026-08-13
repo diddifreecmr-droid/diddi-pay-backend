@@ -13,7 +13,8 @@ from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import TransactionStatus, TransactionType
 from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
-from payfund_app.modules.wallet.infra.repositories import UserPhoneRepository
+from payfund_app.modules.wallet.infra.repositories import OutboxRepository, UserPhoneRepository
+from payfund_app.shared_kernel.events.types import Event
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,12 @@ class BulkReconcileResult:
     pending: int
 
 
+@dataclass(frozen=True)
+class RelayResult:
+    scanned: int
+    published: int
+
+
 def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult:
     """Sweep all pending Paystack deposits that still need a final provider verdict."""
     pending_deposits = list(
@@ -110,6 +117,19 @@ def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult
         failed=failed,
         pending=pending,
     )
+
+
+def relay_outbox_events(session: Session, bus) -> RelayResult:
+    """Publie les événements durables non encore relayés vers le bus temps réel."""
+    repo = OutboxRepository(session)
+    pending_events = repo.pending()
+    published = 0
+    for row in pending_events:
+        bus.publish(Event(row.event_name, row.payload))
+        repo.mark_published(row)
+        published += 1
+    session.commit()
+    return RelayResult(scanned=len(pending_events), published=published)
 
 
 def require_admin(user: CurrentUser) -> None:

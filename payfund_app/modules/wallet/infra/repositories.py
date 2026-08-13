@@ -19,6 +19,7 @@ from payfund_app.modules.wallet.infra.models import (
     Account,
     GatewayAccount,
     LedgerEntry,
+    OutboxEvent,
     Transaction,
     UserPhone,
 )
@@ -169,6 +170,29 @@ class TransactionRepository:
         return self.session.scalar(
             select(Transaction).where(Transaction.provider_reference == reference)
         )
+
+
+class OutboxRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def enqueue(self, *, event_name: str, payload: dict) -> OutboxEvent:
+        event = OutboxEvent(event_name=event_name, payload=payload, status="pending")
+        self.session.add(event)
+        self.session.flush()
+        return event
+
+    def pending(self, limit: int = 100) -> list[OutboxEvent]:
+        return list(
+            self.session.scalars(
+                select(OutboxEvent).where(OutboxEvent.status == "pending").limit(limit)
+            )
+        )
+
+    def mark_published(self, event: OutboxEvent) -> None:
+        event.status = "published"
+        event.published_at = datetime.now(timezone.utc)
+        self.session.flush()
 
     def marquer(self, transaction: Transaction, status: str) -> Transaction:
         """Change le statut de l'en-tête. Ne touche jamais aux écritures, qui sont immuables."""

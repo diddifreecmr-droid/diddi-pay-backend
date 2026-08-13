@@ -50,6 +50,7 @@ from payfund_app.modules.wallet.infra.repositories import (
     AccountRepository,
     GatewayAccountRepository,
     LedgerRepository,
+    OutboxRepository,
     TransactionRepository,
     UserPhoneRepository,
 )
@@ -92,6 +93,7 @@ class WalletUseCases:
         self.ledger_repo = LedgerRepository(session)
         self.phones = UserPhoneRepository(session)
         self.gateways = GatewayAccountRepository(session)
+        self.outbox = OutboxRepository(session)
         self.ledger = LedgerService(session)
         self.bus = bus
         self._gateway = gateway
@@ -256,11 +258,9 @@ class WalletUseCases:
 
     def _publish_completed(self, transaction: Transaction, montant: Money) -> None:
         if self.bus is None:
-            return
-        self.bus.publish(
-            Event(
-                PAYMENT_COMPLETED,
-                {
+            self.outbox.enqueue(
+                event_name=PAYMENT_COMPLETED,
+                payload={
                     "transaction_id": str(transaction.id),
                     "type": transaction.type,
                     "amount": montant.amount,
@@ -268,7 +268,19 @@ class WalletUseCases:
                     "origin_module": transaction.origin_module,
                 },
             )
+            return
+        event = Event(
+            PAYMENT_COMPLETED,
+            {
+                "transaction_id": str(transaction.id),
+                "type": transaction.type,
+                "amount": montant.amount,
+                "currency": montant.currency,
+                "origin_module": transaction.origin_module,
+            },
         )
+        self.outbox.enqueue(event_name=event.event, payload=event.payload)
+        self.bus.publish(event)
 
     def montant_vu_par(self, entry: LedgerEntry) -> tuple[Money, str]:
         """Montant et sens d'une transaction du point de vue du compte de l'appelant."""

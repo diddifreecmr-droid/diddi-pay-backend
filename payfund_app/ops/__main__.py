@@ -12,8 +12,10 @@ from payfund_app.ops.maintenance import (
     backfill_wallet,
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
+    relay_outbox_events,
     require_admin,
 )
+from payfund_app.shared_kernel.events.bus import get_bus
 
 
 def _parse_uuid(value: str) -> uuid.UUID:
@@ -42,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     sweep.add_argument("--admin-role", default="admin")
 
+    relay = sub.add_parser(
+        "relay-outbox", help="Publish durable outbox events to the runtime bus"
+    )
+    relay.add_argument("--admin-role", default="admin")
+
     args = parser.parse_args(argv)
     admin_user = CurrentUser(uuid.uuid4(), args.admin_role, "active")
     require_admin(admin_user)
@@ -69,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"scanned={result.scanned} completed={result.completed} "
                 f"failed={result.failed} pending={result.pending}"
             )
+            return 0
+        if args.command == "relay-outbox":
+            result = relay_outbox_events(session, get_bus())
+            print(f"scanned={result.scanned} published={result.published}")
             return 0
 
     return 1

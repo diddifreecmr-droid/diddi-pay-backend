@@ -33,6 +33,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -243,5 +244,28 @@ class UserPhone(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
     phone: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OutboxEvent(Base):
+    """Événement durable à relayer vers le bus interne.
+
+    Le bus Redis reste le transport d'exécution, mais cette table permet de rejouer un publish
+    raté après crash du process ou indisponibilité temporaire du consumer.
+    """
+
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        Index("idx_outbox_status_created_at", "status", "created_at"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    event_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
