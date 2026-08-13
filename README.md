@@ -155,6 +155,31 @@ Pour le premier provider réel, Paystack :
 - `PAYSTACK_WEBHOOK_SECRET=<secret key ou secret dédié au webhook>`
 - le webhook `POST /payfund/v1/wallet/webhooks/paystack` finalise les dépôts
 
+### Côté frontend: accès au wallet
+
+- Le frontend n'a pas à créer le wallet explicitement.
+- Le premier `GET /wallet/balance` authentifié crée automatiquement le compte personnel s'il
+  manque encore côté `payfund`.
+- Le flux normal côté UI est donc:
+  1. login via DiddiFreeID,
+  2. appel de `GET /wallet/balance`,
+  3. affichage du solde, puis des autres écrans.
+- Si `GET /wallet/balance` renvoie encore une erreur métier de type "wallet absent", le backend
+  doit en pratique être traité comme non provisionné temporairement, pas comme un état normal de
+  l'utilisateur.
+- Les comptes marchands, eux, restent des comptes séparés et sont utilisés par les modules qui
+  encaissent des paiements (`DiddiGo`, futurs modules marchands, etc.).
+
+### Règle de base pour DiddiPay
+
+`DiddiPay` est le wallet de l'utilisateur.
+
+- Les dépôts créditent le wallet.
+- Les paiements marchands débitent le wallet et créditent le compte marchand du module.
+- Les moyens de paiement externes (`Paystack` aujourd'hui, `Wave`/`Orange Money`/autres ensuite)
+  servent à alimenter ou débiter ce wallet, mais ne deviennent pas eux-mêmes le compte source de
+  vérité.
+
 ### Prêts — crowdlending
 
 Le pool d'une campagne finance le prêt de son porteur ; ses remboursements y retournent, intérêts
