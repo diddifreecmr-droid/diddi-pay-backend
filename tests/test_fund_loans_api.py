@@ -7,10 +7,11 @@ from datetime import date
 
 from payfund_app.modules.fund.application.use_cases import LoanUseCases
 from payfund_app.modules.fund.domain.entities import CampaignStatus, LoanStatus
-from payfund_app.modules.fund.infra.models import Campaign, LoanStatusHistory
+from payfund_app.modules.fund.infra.models import Campaign, Loan, LoanStatusHistory
 from payfund_app.modules.fund.infra.scoring import get_scoring
 from payfund_app.modules.fund.infra.wallet_client import get_wallet_service
 from payfund_app.modules.wallet.infra.repositories import AccountRepository
+from payfund_app.modules.wallet.infra.models import Transaction
 from sqlalchemy import select
 
 BASE = "/payfund/v1/fund"
@@ -321,6 +322,32 @@ def test_remboursement_solde_l_echeance_et_recredite_le_pool(
     assert client.get(f"{WALLET}/balance").json()["balance"] == 164_500
     campaign = session.get(Campaign, campaign_id)
     assert AccountRepository(session).balance(campaign.wallet_account_id).amount == 85_500
+
+
+def test_remboursement_trace_le_mouvement_wallet(
+    client, auth, session, make_user, fund_account
+):
+    owner, campaign_id, loan_id = _pret_decaisse(
+        client, auth, session, make_user, fund_account
+    )
+
+    auth.as_user(owner)
+    response = client.post(
+        f"{BASE}/loans/{loan_id}/repay", json={"amount": 35_500}, headers=_key()
+    )
+
+    assert response.status_code == 200
+    installment = response.json()["installment"]
+    assert installment["status"] == "paid"
+
+    # Le wallet expose la trace du mouvement, comme pour le décaissement.
+    loan = session.get(Loan, loan_id)
+    assert loan is not None and loan.wallet_transaction_id is not None
+    transaction = session.get(Transaction, loan.wallet_transaction_id)
+    assert transaction is not None
+    assert transaction.type == "fund_repayment"
+    assert transaction.status == "completed"
+    assert int(transaction.amount) == 35_500
 
 
 def test_remboursement_partiel_laisse_l_echeance_ouverte(
