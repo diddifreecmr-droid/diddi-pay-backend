@@ -3,8 +3,11 @@ from __future__ import annotations
 import uuid
 
 from payfund_app.core.security import CurrentUser
+from payfund_app.modules.wallet.application.use_cases import WalletUseCases
+from payfund_app.modules.wallet.domain.money import Money
 from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.modules.wallet.infra.repositories import AccountRepository, TransactionRepository
+from payfund_app.shared_kernel.events.bus import InMemoryEventBus, set_bus
 
 BASE = "/payfund/v1/wallet"
 
@@ -58,3 +61,33 @@ def test_ops_reconcile_paystack_finalise_un_webhook_manque(
     updated = session.get(Transaction, transaction.id)
     assert updated.status == "completed"
     assert AccountRepository(session).balance(account_id).amount == 5000
+
+
+def test_ops_outbox_listing_and_relay(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    _, account_id = make_user()
+    use_cases = WalletUseCases(session)
+    transaction = use_cases.transactions.create(
+        type_="deposit",
+        status="completed",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=Money(1000, "XOF"),
+    )
+    use_cases._publish_completed(transaction, Money(1000, "XOF"))
+    session.commit()
+
+    bus = InMemoryEventBus()
+    set_bus(bus)
+    try:
+        response = client.get(f"{BASE}/ops/outbox")
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+
+        relay = client.post(f"{BASE}/ops/outbox/relay")
+        assert relay.status_code == 200
+        assert relay.json()["published"] == 1
+        assert len(bus.published) == 1
+    finally:
+        set_bus(InMemoryEventBus())
