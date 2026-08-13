@@ -19,6 +19,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        schema=None,
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=64),
+        existing_nullable=False,
+    )
     op.add_column(
         "transactions",
         sa.Column("business_reference", sa.String(100), nullable=True),
@@ -28,3 +36,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("transactions", "business_reference", schema="wallet")
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        schema=None,
+        existing_type=sa.String(length=64),
+        type_=sa.String(length=32),
+        existing_nullable=False,
+    )
