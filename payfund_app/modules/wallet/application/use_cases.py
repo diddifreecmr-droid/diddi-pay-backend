@@ -72,6 +72,13 @@ class TransferResult:
     replayed: bool
 
 
+@dataclass
+class DepositResult:
+    transaction: Transaction
+    authorization_url: str | None
+    access_code: str | None
+
+
 class WalletUseCases:
     def __init__(
         self,
@@ -283,12 +290,13 @@ class WalletUseCases:
         provider: str,
         amount: int,
         phone: str,
+        email: str | None,
         idempotency_key: str,
-    ) -> Transaction:
+    ) -> DepositResult:
         """Initie un dépôt. **Aucune écriture** tant que l'opérateur n'a pas confirmé."""
         rejeu = self.transactions.get_by_idempotency_key(idempotency_key)
         if rejeu is not None:
-            return rejeu
+            return DepositResult(rejeu, None, None)
 
         compte = self.compte_de(user_id)
         # Le montant reçu est exprimé dans l'unité mineure de la devise du compte.
@@ -296,6 +304,8 @@ class WalletUseCases:
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
         self._compte_suspense(provider, compte.currency)
+        if provider == "paystack" and not email:
+            raise InvalidAmountError("L'adresse e-mail est requise pour Paystack.")
 
         transaction = self.transactions.create(
             type_=str(TransactionType.DEPOSIT),
@@ -310,6 +320,7 @@ class WalletUseCases:
             operation = self.gateway.initier_depot(
                 provider=provider,
                 phone=phone,
+                email=email,
                 montant=montant.amount,
                 reference=str(transaction.id),
             )
@@ -324,7 +335,7 @@ class WalletUseCases:
         elif operation.status is GatewayStatus.FAILED:
             self.echouer_operation(transaction.id, provider=provider)
 
-        return transaction
+        return DepositResult(transaction, operation.authorization_url, operation.access_code)
 
     def retirer(
         self,

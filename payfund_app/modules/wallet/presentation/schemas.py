@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 T = TypeVar("T")
 
 # Liste des opérateurs du §3.1 (`wallet.gateway_accounts.provider`).
-Provider = Literal["orange_money", "mtn_momo", "wave", "moov", "card_gateway"]
+Provider = Literal["paystack", "orange_money", "mtn_momo", "wave", "moov", "card_gateway"]
 
 
 class Pagination(BaseModel):
@@ -39,6 +39,7 @@ class DepositRequest(BaseModel):
     provider: Provider
     amount: int = Field(gt=0)
     phone: str = Field(min_length=4, max_length=20)
+    email: str | None = Field(default=None, max_length=254)
 
 
 class WithdrawRequest(DepositRequest):
@@ -50,6 +51,12 @@ class PendingOperationResponse(BaseModel):
 
     transaction_id: uuid.UUID
     status: str
+
+
+class DepositResponse(PendingOperationResponse):
+    provider_reference: str | None = None
+    authorization_url: str | None = None
+    access_code: str | None = None
 
 
 class TransferRequest(BaseModel):

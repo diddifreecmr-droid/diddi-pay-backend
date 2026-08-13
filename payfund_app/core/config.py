@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Passer à `true` en développement pour que dépôts et retraits se confirment
     # immédiatement, sans attendre l'appel de confirmation.
     payment_gateway_autoconfirm: bool = False
+    paystack_secret_key: str = ""
+    paystack_base_url: str = "https://api.paystack.co"
+    paystack_webhook_secret: str = ""
 
     # Taux d'intérêt annuel appliqué tant que le module de scoring IA n'expose pas d'interface
     # (Architecture §6). Valeur par défaut = celle de l'exemple du contrat API §2.

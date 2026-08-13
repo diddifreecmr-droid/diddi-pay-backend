@@ -148,6 +148,13 @@ moment d'intégrer Orange Money et MTN pour de vrai.
 En attendant le vrai connecteur, `PAYMENT_GATEWAY_MODE=sandbox_orange_money` active une sandbox
 explicite pour Orange Money. Le mode `stub` reste le fallback générique.
 
+Pour le premier provider réel, Paystack :
+
+- `PAYMENT_GATEWAY_MODE=paystack`
+- `PAYSTACK_SECRET_KEY=<secret key>`
+- `PAYSTACK_WEBHOOK_SECRET=<secret key ou secret dédié au webhook>`
+- le webhook `POST /payfund/v1/wallet/webhooks/paystack` finalise les dépôts
+
 ### Prêts — crowdlending
 
 Le pool d'une campagne finance le prêt de son porteur ; ses remboursements y retournent, intérêts

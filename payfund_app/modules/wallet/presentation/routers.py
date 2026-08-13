@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
+import hmac
+import hashlib
 import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query, Request
 
 from payfund_app.modules.wallet.application.qr_service import QrService
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
@@ -18,6 +20,7 @@ from payfund_app.modules.wallet.presentation.deps import (
     SessionDep,
 )
 from payfund_app.modules.wallet.presentation.schemas import (
+    DepositResponse,
     BalanceResponse,
     DepositRequest,
     GenerateQrRequest,
@@ -34,6 +37,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
     VerifyQrResponse,
     WithdrawRequest,
 )
+from payfund_app.core.config import get_settings
 from payfund_app.shared_kernel.events.bus import get_bus
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -60,24 +64,29 @@ def get_balance(user: CurrentUserDep, session: SessionDep) -> BalanceResponse:
     )
 
 
-@router.post("/deposit", response_model=PendingOperationResponse, status_code=202)
+@router.post("/deposit", response_model=DepositResponse, status_code=202)
 def deposit(
     payload: DepositRequest,
     user: CurrentUserDep,
     session: SessionDep,
     idempotency_key: IdempotencyKeyDep,
-) -> PendingOperationResponse:
+) -> DepositResponse:
     """Traitement asynchrone côté opérateur : le front interroge ensuite
     `GET /wallet/transactions/{id}` pour connaître l'issue."""
-    transaction = WalletUseCases(session, bus=get_bus()).deposer(
+    result = WalletUseCases(session, bus=get_bus()).deposer(
         user_id=user.user_id,
         provider=payload.provider,
         amount=payload.amount,
         phone=payload.phone,
+        email=payload.email,
         idempotency_key=idempotency_key,
     )
-    return PendingOperationResponse(
-        transaction_id=transaction.id, status=transaction.status
+    return DepositResponse(
+        transaction_id=result.transaction.id,
+        status=result.transaction.status,
+        provider_reference=result.transaction.provider_reference,
+        authorization_url=result.authorization_url,
+        access_code=result.access_code,
     )
 
 
@@ -247,3 +256,43 @@ def get_transaction(
         completed_at=transaction.completed_at,
         direction=entry.direction if entry else None,
     )
+
+
+@router.post("/webhooks/paystack")
+async def paystack_webhook(
+    request: Request,
+    session: SessionDep,
+    x_paystack_signature: Annotated[str | None, Header(alias="x-paystack-signature")] = None,
+):
+    raw_body = await request.body()
+    secret = get_settings().paystack_webhook_secret or get_settings().paystack_secret_key
+    if not secret:
+        return {"status": "ignored"}
+
+    expected = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
+    if not x_paystack_signature or not hmac.compare_digest(expected, x_paystack_signature):
+        return {"status": "invalid_signature"}
+
+    payload = await request.json()
+    event = payload.get("event")
+    data = payload.get("data") or {}
+    reference = data.get("reference")
+    if not reference:
+        return {"status": "ignored"}
+
+    transaction = WalletUseCases(session, bus=get_bus()).transactions.get_by_provider_reference(
+        reference
+    )
+    if transaction is None:
+        return {"status": "unknown_reference"}
+
+    use_cases = WalletUseCases(session, bus=get_bus())
+    if event == "charge.success" or data.get("status") == "success":
+        use_cases.confirmer_operation(transaction.id, provider="paystack")
+        return {"status": "processed", "transaction_status": "completed"}
+
+    if data.get("status") in {"failed", "abandoned", "reversed"}:
+        use_cases.echouer_operation(transaction.id, provider="paystack")
+        return {"status": "processed", "transaction_status": "failed"}
+
+    return {"status": "ignored"}

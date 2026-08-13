@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import uuid
+
+from payfund_app.core.config import get_settings
+from payfund_app.modules.wallet.application.use_cases import WalletUseCases
+from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
+from payfund_app.modules.wallet.infra.models import Transaction
+from payfund_app.modules.wallet.infra.repositories import AccountRepository, TransactionRepository
+
+BASE = "/payfund/v1/wallet"
+
+
+def test_paystack_gateway_initialization_uses_backend_client(monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": True,
+                "data": {
+                    "authorization_url": "https://checkout.paystack.com/abc",
+                    "access_code": "abc",
+                    "reference": "ref-123",
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("payfund_app.modules.wallet.infra.gateways.httpx.Client", FakeClient)
+
+    gateway = PaystackGateway()
+    operation = gateway.initier_depot(
+        provider="paystack",
+        phone="+2250700000000",
+        email="[email protected]",
+        montant=5000,
+        reference="wallet-deposit-1",
+    )
+
+    assert operation.status == GatewayStatus.PENDING
+    assert operation.authorization_url == "https://checkout.paystack.com/abc"
+    assert operation.access_code == "abc"
+    assert captured["url"].endswith("/transaction/initialize")
+    assert captured["headers"]["Authorization"] == "Bearer sk_test_123"
+    assert captured["json"]["reference"] == "wallet-deposit-1"
+
+
+def test_paystack_webhook_confirms_deposit(client, auth, session, make_user, monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    user_id, account_id = make_user()
+    auth.as_user(user_id)
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=None,
+        provider_reference="paystack-ref-1",
+    )
+    transaction.amount = 5000
+    transaction.currency = "XOF"
+    session.commit()
+
+    payload = {
+        "event": "charge.success",
+        "data": {"reference": "paystack-ref-1", "status": "success"},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
+
+    response = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": signature},
+    )
+
+    assert response.status_code == 200
+    transaction = session.get(Transaction, transaction.id)
+    assert transaction.status == "completed"
+    assert AccountRepository(session).balance(account_id).amount == 5000

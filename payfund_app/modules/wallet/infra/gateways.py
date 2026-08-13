@@ -17,9 +17,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+import httpx
+
 from payfund_app.core.config import get_settings
 
-PROVIDERS = ("orange_money", "mtn_momo", "wave", "moov", "card_gateway")
+PROVIDERS = ("paystack", "orange_money", "mtn_momo", "wave", "moov", "card_gateway")
 MODES = ("stub", "sandbox_orange_money")
 
 
@@ -33,15 +35,17 @@ class GatewayStatus(StrEnum):
 class GatewayOperation:
     provider_reference: str
     status: GatewayStatus
+    authorization_url: str | None = None
+    access_code: str | None = None
 
 
 class PaymentGatewayPort(Protocol):
     def initier_depot(
-        self, *, provider: str, phone: str, montant: int, reference: str
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation: ...
 
     def initier_retrait(
-        self, *, provider: str, phone: str, montant: int, reference: str
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation: ...
 
 
@@ -65,12 +69,12 @@ class StubGateway:
         )
 
     def initier_depot(
-        self, *, provider: str, phone: str, montant: int, reference: str
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation:
         return self._operation()
 
     def initier_retrait(
-        self, *, provider: str, phone: str, montant: int, reference: str
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation:
         return self._operation()
 
@@ -91,7 +95,7 @@ class OrangeMoneySandboxGateway(StubGateway):
             )
 
     def initier_depot(
-        self, *, provider: str, phone: str, montant: int, reference: str
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation:
         self._ensure_provider(provider)
         return GatewayOperation(
@@ -109,11 +113,62 @@ class OrangeMoneySandboxGateway(StubGateway):
         )
 
 
+class PaystackGateway:
+    """Adapter Paystack pour les dépôts wallet.
+
+    Paystack initialise le paiement côté backend, puis la confirmation définitive revient par
+    webhook signé. On garde le provider agnostique dans le wallet : la transaction DiddiPay reste
+    la source de vérité.
+    """
+
+    def __init__(self) -> None:
+        settings = get_settings()
+        self.secret_key = settings.paystack_secret_key.strip()
+        self.base_url = settings.paystack_base_url.rstrip("/")
+        if not self.secret_key:
+            raise RuntimeError("PAYSTACK_SECRET_KEY manquant.")
+
+    def initier_depot(
+        self, *, provider: str, phone: str, montant: int, reference: str
+    ) -> GatewayOperation:
+        payload = {
+            "email": email or f"{reference}@diddipay.local",
+            "amount": str(montant),
+            "reference": reference,
+            "metadata": {"phone": phone, "provider": provider, "wallet_reference": reference},
+        }
+        with httpx.Client(timeout=20.0) as client:
+            response = client.post(
+                f"{self.base_url}/transaction/initialize",
+                headers={"Authorization": f"Bearer {self.secret_key}"},
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        if not data.get("status"):
+            raise RuntimeError(data.get("message") or "Paystack initialize failed.")
+        body = data["data"]
+        return GatewayOperation(
+            provider_reference=body["reference"],
+            status=GatewayStatus.PENDING,
+            authorization_url=body.get("authorization_url"),
+            access_code=body.get("access_code"),
+        )
+
+    def initier_retrait(
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
+    ) -> GatewayOperation:
+        raise NotImplementedError("Paystack withdraw not implemented yet.")
+
+
 def get_gateway() -> PaymentGatewayPort:
     mode = get_settings().payment_gateway_mode
     if mode == "stub":
         return StubGateway()
     if mode == "sandbox_orange_money":
         return OrangeMoneySandboxGateway()
+    if mode == "paystack":
+        return PaystackGateway()
     # Les adaptateurs réels (Orange Money, MTN, Wave, Moov, cartes) viendront ici.
     raise NotImplementedError(f"Passerelle non implémentée : {mode!r}")

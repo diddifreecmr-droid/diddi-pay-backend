@@ -165,6 +165,11 @@ class TransactionRepository:
             select(Transaction).where(Transaction.idempotency_key == key)
         )
 
+    def get_by_provider_reference(self, reference: str) -> Transaction | None:
+        return self.session.scalar(
+            select(Transaction).where(Transaction.provider_reference == reference)
+        )
+
     def marquer(self, transaction: Transaction, status: str) -> Transaction:
         """Change le statut de l'en-tête. Ne touche jamais aux écritures, qui sont immuables."""
         transaction.status = str(status)
