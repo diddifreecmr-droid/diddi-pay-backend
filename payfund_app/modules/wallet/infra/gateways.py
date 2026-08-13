@@ -48,6 +48,8 @@ class PaymentGatewayPort(Protocol):
         self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation: ...
 
+    def verifier_depot(self, reference: str) -> GatewayOperation: ...
+
 
 class StubGateway:
     """Passerelle simulée générique.
@@ -76,6 +78,9 @@ class StubGateway:
     def initier_retrait(
         self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation:
+        return self._operation()
+
+    def verifier_depot(self, reference: str) -> GatewayOperation:
         return self._operation()
 
 
@@ -112,6 +117,12 @@ class OrangeMoneySandboxGateway(StubGateway):
             status=GatewayStatus.COMPLETED if self.autoconfirm else GatewayStatus.PENDING,
         )
 
+    def verifier_depot(self, reference: str) -> GatewayOperation:
+        return GatewayOperation(
+            provider_reference=reference,
+            status=GatewayStatus.PENDING if not self.autoconfirm else GatewayStatus.COMPLETED,
+        )
+
 
 class PaystackGateway:
     """Adapter Paystack pour les dépôts wallet.
@@ -129,7 +140,13 @@ class PaystackGateway:
             raise RuntimeError("PAYSTACK_SECRET_KEY manquant.")
 
     def initier_depot(
-        self, *, provider: str, phone: str, montant: int, reference: str
+        self,
+        *,
+        provider: str,
+        phone: str,
+        email: str | None = None,
+        montant: int,
+        reference: str,
     ) -> GatewayOperation:
         payload = {
             "email": email or f"{reference}@diddipay.local",
@@ -160,6 +177,32 @@ class PaystackGateway:
         self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation:
         raise NotImplementedError("Paystack withdraw not implemented yet.")
+
+    def verifier_depot(self, reference: str) -> GatewayOperation:
+        with httpx.Client(timeout=20.0) as client:
+            response = client.get(
+                f"{self.base_url}/transaction/verify/{reference}",
+                headers={"Authorization": f"Bearer {self.secret_key}"},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        if not data.get("status"):
+            raise RuntimeError(data.get("message") or "Paystack verify failed.")
+        body = data["data"]
+        status = str(body.get("status") or "").lower()
+        if status == "success":
+            gw_status = GatewayStatus.COMPLETED
+        elif status in {"failed", "abandoned"}:
+            gw_status = GatewayStatus.FAILED
+        else:
+            gw_status = GatewayStatus.PENDING
+        return GatewayOperation(
+            provider_reference=body["reference"],
+            status=gw_status,
+            authorization_url=body.get("authorization_url"),
+            access_code=body.get("access_code"),
+        )
 
 
 def get_gateway() -> PaymentGatewayPort:

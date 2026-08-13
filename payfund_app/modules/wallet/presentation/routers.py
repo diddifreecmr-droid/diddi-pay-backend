@@ -11,6 +11,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Query, Request
 
+from payfund_app.core.errors import Forbidden
 from payfund_app.modules.wallet.application.qr_service import QrService
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.money import Money
@@ -26,6 +27,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
     GenerateQrRequest,
     GenerateQrResponse,
     MerchantPaymentRequest,
+    OpsBackfillRequest,
     Page,
     Pagination,
     PendingOperationResponse,
@@ -38,6 +40,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
     WithdrawRequest,
 )
 from payfund_app.core.config import get_settings
+from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.shared_kernel.events.bus import get_bus
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -256,6 +259,54 @@ def get_transaction(
         completed_at=transaction.completed_at,
         direction=entry.direction if entry else None,
     )
+
+
+def _require_admin(user: CurrentUserDep) -> None:
+    if user.role != "admin":
+        raise Forbidden("Accès administrateur requis.", code="ADMIN_REQUIRED")
+
+
+@router.post("/ops/backfill")
+def backfill_wallet(
+    payload: OpsBackfillRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    """Backfill interne: crée le wallet personnel si le provisioning événementiel a été manqué."""
+    _require_admin(user)
+    account = WalletUseCases(session).provisionner_compte(payload.user_id)
+    phone = payload.phone
+    if phone:
+        from payfund_app.modules.wallet.infra.repositories import UserPhoneRepository
+
+        UserPhoneRepository(session).upsert(payload.user_id, phone)
+    return {"status": "ok", "account_id": str(account.id), "user_id": str(payload.user_id)}
+
+
+@router.post("/ops/paystack/reconcile/{transaction_id}")
+def reconcile_paystack_deposit(
+    transaction_id: uuid.UUID,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    """Reconciliation interne pour dépôts Paystack restés en `pending` après une webhook manquée."""
+    _require_admin(user)
+    use_cases = WalletUseCases(session, bus=get_bus())
+    transaction = use_cases.transactions.get(transaction_id)
+    if transaction is None:
+        return {"status": "not_found"}
+    if transaction.provider_reference is None:
+        return {"status": "missing_provider_reference"}
+
+    gateway = PaystackGateway()
+    result = gateway.verifier_depot(transaction.provider_reference)
+    if result.status is GatewayStatus.COMPLETED:
+        use_cases.confirmer_operation(transaction.id, provider="paystack")
+        return {"status": "completed", "transaction_id": str(transaction.id)}
+    if result.status is GatewayStatus.FAILED:
+        use_cases.echouer_operation(transaction.id, provider="paystack")
+        return {"status": "failed", "transaction_id": str(transaction.id)}
+    return {"status": "pending", "transaction_id": str(transaction.id)}
 
 
 @router.post("/webhooks/paystack")

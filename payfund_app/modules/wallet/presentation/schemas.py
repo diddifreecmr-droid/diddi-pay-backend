@@ -129,3 +129,8 @@ class VerifyQrResponse(BaseModel):
     currency: str
     origin_module: str | None
     expires_at: datetime | None
+
+
+class OpsBackfillRequest(BaseModel):
+    user_id: uuid.UUID
+    phone: str | None = Field(default=None, max_length=20)
