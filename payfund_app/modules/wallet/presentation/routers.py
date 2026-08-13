@@ -41,6 +41,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
 )
 from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
+from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.shared_kernel.events.bus import get_bus
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -284,6 +285,36 @@ def backfill_wallet(
 
         UserPhoneRepository(session).upsert(payload.user_id, phone)
     return {"status": "ok", "account_id": str(account.id), "user_id": str(payload.user_id)}
+
+
+@router.get("/ops/outbox")
+def list_outbox_events(user: CurrentUserDep, session: SessionDep):
+    """Vue interne des événements durables en attente de relay."""
+    _require_admin(user)
+    rows = OutboxRepository(session).pending(limit=100)
+    return {
+        "data": [
+            {
+                "id": str(row.id),
+                "event_name": row.event_name,
+                "status": row.status,
+                "created_at": row.created_at,
+                "published_at": row.published_at,
+            }
+            for row in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@router.post("/ops/outbox/relay")
+def relay_outbox(user: CurrentUserDep, session: SessionDep):
+    """Relaye manuellement les événements durables en attente."""
+    _require_admin(user)
+    from payfund_app.ops.maintenance import relay_outbox_events
+
+    result = relay_outbox_events(session, get_bus())
+    return {"scanned": result.scanned, "published": result.published}
 
 
 @router.post("/ops/paystack/reconcile/{transaction_id}")
