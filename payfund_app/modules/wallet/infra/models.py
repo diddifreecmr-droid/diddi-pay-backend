@@ -145,6 +145,8 @@ class Transaction(Base):
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("wallet.accounts.id"), nullable=True
     )
+    # Référence métier fournie par le module appelant (course, commande, facture, etc.).
+    business_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
     # Identifiant de l'opération chez l'opérateur, pour le support et la réconciliation.

@@ -145,6 +145,7 @@ def pay_merchant(
         merchant_account_id=payload.merchant_account_id,
         amount=payload.amount,
         origin_module=payload.origin_module,
+        business_reference=payload.business_reference,
         idempotency_key=idempotency_key,
     )
     return TransferResponse(
@@ -228,6 +229,7 @@ def list_transactions(
                 currency=(entry.currency if entry else transaction.currency) or "XOF",
                 status=transaction.status,
                 origin_module=transaction.origin_module,
+                business_reference=transaction.business_reference,
                 created_at=transaction.created_at,
             )
             for transaction, entry in rows
@@ -255,6 +257,7 @@ def get_transaction(
         currency=(entry.currency if entry else transaction.currency) or "XOF",
         status=transaction.status,
         origin_module=transaction.origin_module,
+        business_reference=transaction.business_reference,
         created_at=transaction.created_at,
         completed_at=transaction.completed_at,
         direction=entry.direction if entry else None,

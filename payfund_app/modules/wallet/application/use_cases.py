@@ -212,6 +212,7 @@ class WalletUseCases:
         merchant_account_id: uuid.UUID,
         amount: int,
         origin_module: str | None,
+        business_reference: str | None,
         idempotency_key: str,
     ) -> TransferResult:
         """Paiement marchand. Le `merchant_account_id` est fourni par le QR scanné (§1)."""
@@ -232,6 +233,7 @@ class WalletUseCases:
             montant=montant,
             type_=str(TransactionType.MERCHANT_PAYMENT),
             reference=f"wallet:merchant:{merchant.id}",
+            business_reference=business_reference,
             idempotency_key=idempotency_key,
             origin_module=origin_module,
         )

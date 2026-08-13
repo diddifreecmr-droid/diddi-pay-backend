@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import func, select
 
 from payfund_app.modules.wallet.domain.entities import AccountStatus, AccountType, Direction
-from payfund_app.modules.wallet.infra.models import LedgerEntry
+from payfund_app.modules.wallet.infra.models import LedgerEntry, Transaction
 from payfund_app.modules.wallet.infra.repositories import AccountRepository
 
 BASE = "/payfund/v1/wallet"
@@ -226,6 +226,7 @@ def test_paiement_marchand(client, auth, session, make_user, fund_account):
             "merchant_account_id": str(marchand.id),
             "amount": 1500,
             "origin_module": "shop",
+            "business_reference": "ride-123",
         },
         headers=_key(),
     )
@@ -233,6 +234,9 @@ def test_paiement_marchand(client, auth, session, make_user, fund_account):
     assert response.status_code == 201
     assert response.json()["amount"] == 1500
     assert _solde(client, auth, payeur) == 8500
+    transaction_id = response.json()["transaction_id"]
+    transaction = session.get(Transaction, uuid.UUID(transaction_id))
+    assert transaction.business_reference == "ride-123"
 
 
 def test_paiement_vers_un_compte_non_marchand(client, auth, make_user, fund_account):
@@ -265,7 +269,12 @@ def test_historique_filtrable_par_module_d_origine(
     auth.as_user(payeur)
     client.post(
         f"{BASE}/pay/merchant",
-        json={"merchant_account_id": str(marchand.id), "amount": 1500, "origin_module": "shop"},
+        json={
+            "merchant_account_id": str(marchand.id),
+            "amount": 1500,
+            "origin_module": "shop",
+            "business_reference": "order-555",
+        },
         headers=_key(),
     )
     client.post(
@@ -283,6 +292,7 @@ def test_historique_filtrable_par_module_d_origine(
     assert shop["data"][0]["type"] == "merchant_payment"
     assert shop["data"][0]["amount"] == 1500
     assert shop["data"][0]["origin_module"] == "shop"
+    assert shop["data"][0]["business_reference"] == "order-555"
 
 
 def test_detail_transaction_d_un_tiers_est_invisible(

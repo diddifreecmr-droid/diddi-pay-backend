@@ -68,6 +68,7 @@ class MerchantPaymentRequest(BaseModel):
     merchant_account_id: uuid.UUID
     amount: int = Field(gt=0)
     origin_module: str | None = Field(default=None, max_length=30)
+    business_reference: str | None = Field(default=None, max_length=100)
 
 
 class TransferResponse(BaseModel):
@@ -84,6 +85,7 @@ class TransactionItem(BaseModel):
     currency: str
     status: str
     origin_module: str | None
+    business_reference: str | None
     created_at: datetime
 
 
