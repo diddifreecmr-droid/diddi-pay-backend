@@ -396,6 +396,30 @@ def list_pending_paystack_transactions(user: CurrentUserDep, session: SessionDep
     }
 
 
+@router.get("/ops/paystack/summary")
+def paystack_reconciliation_summary(user: CurrentUserDep, session: SessionDep):
+    """Résumé de réconciliation Paystack pour support et ops."""
+    _require_admin(user)
+    base = select(Transaction).where(
+        Transaction.type == "deposit",
+        Transaction.origin_module == "wallet",
+        Transaction.provider_reference.is_not(None),
+    )
+    rows = list(session.scalars(base))
+    summary = {"pending": 0, "completed": 0, "failed": 0, "missing_reference": 0}
+    for row in rows:
+        if row.provider_reference is None:
+            summary["missing_reference"] += 1
+        elif row.status == "pending":
+            summary["pending"] += 1
+        elif row.status == "completed":
+            summary["completed"] += 1
+        elif row.status in {"failed", "reversed"}:
+            summary["failed"] += 1
+    summary["total"] = len(rows)
+    return summary
+
+
 @router.post("/webhooks/paystack")
 async def paystack_webhook(
     request: Request,
