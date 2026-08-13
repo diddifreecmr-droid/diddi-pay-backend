@@ -91,3 +91,9 @@ def test_ops_outbox_listing_and_relay(client, auth, session, make_user):
         assert len(bus.published) == 1
     finally:
         set_bus(InMemoryEventBus())
+
+
+def test_readiness_route_reports_ready(client):
+    response = client.get("/payfund/v1/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"

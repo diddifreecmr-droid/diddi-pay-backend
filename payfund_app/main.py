@@ -10,11 +10,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import ProgrammingError
 
 from payfund_app.core.config import get_settings
 from payfund_app.core.database import SessionLocal
 from payfund_app.core.errors import register_exception_handlers
 from payfund_app.modules.fund.presentation.routers import router as fund_router
+from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
 from payfund_app.ops.maintenance import relay_outbox_events
 from payfund_app.modules.wallet.presentation.routers import router as wallet_router
@@ -66,3 +68,15 @@ app.include_router(fund_router, prefix=API_PREFIX)
 @app.get(f"{API_PREFIX}/health", tags=["ops"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get(f"{API_PREFIX}/ready", tags=["ops"])
+def ready() -> dict[str, str]:
+    """Readiness du runtime: la base est joignable et l'outbox existe."""
+    with SessionLocal() as session:
+        try:
+            OutboxRepository(session).pending(limit=1)
+        except ProgrammingError:
+            session.rollback()
+            return {"status": "degraded"}
+    return {"status": "ready"}
