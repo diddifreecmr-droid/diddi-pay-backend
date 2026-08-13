@@ -87,6 +87,39 @@ def test_ops_inspect_paystack_transaction(client, auth, session, make_user):
     assert body["amount"] == 5000
 
 
+def test_ops_list_pending_paystack_transactions(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    _, account_id = make_user()
+    pending = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=Money(5000, "XOF"),
+        provider_reference="ps-pending-1",
+    )
+    completed = TransactionRepository(session).create(
+        type_="deposit",
+        status="completed",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=Money(3000, "XOF"),
+        provider_reference="ps-done-1",
+    )
+    session.commit()
+
+    response = client.get(f"{BASE}/ops/paystack/pending")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["data"][0]["transaction_id"] == str(pending.id)
+    assert body["data"][0]["provider_reference"] == "ps-pending-1"
+    assert body["data"][0]["amount"] == 5000
+
+
 def test_ops_outbox_listing_and_relay(client, auth, session, make_user):
     auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
     _, account_id = make_user()

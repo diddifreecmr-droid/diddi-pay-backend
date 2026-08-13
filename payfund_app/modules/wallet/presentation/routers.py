@@ -10,6 +10,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Header, Query, Request
+from sqlalchemy import select
 
 from payfund_app.core.errors import Forbidden
 from payfund_app.modules.wallet.application.qr_service import QrService
@@ -41,6 +42,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
 )
 from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
+from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.shared_kernel.events.bus import get_bus
 
@@ -362,6 +364,35 @@ def inspect_paystack_transaction(
         "currency": transaction.currency,
         "completed_at": transaction.completed_at,
         "origin_module": transaction.origin_module,
+    }
+
+
+@router.get("/ops/paystack/pending")
+def list_pending_paystack_transactions(user: CurrentUserDep, session: SessionDep):
+    """Vue d'ensemble des dépôts Paystack qui attendent encore une décision finale."""
+    _require_admin(user)
+    rows = list(
+        session.scalars(
+            select(Transaction).where(
+                Transaction.type == "deposit",
+                Transaction.status == "pending",
+                Transaction.provider_reference.is_not(None),
+                Transaction.origin_module == "wallet",
+            )
+        )
+    )
+    return {
+        "data": [
+            {
+                "transaction_id": str(row.id),
+                "provider_reference": row.provider_reference,
+                "amount": int(row.amount) if row.amount is not None else None,
+                "currency": row.currency,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "total": len(rows),
     }
 
 
