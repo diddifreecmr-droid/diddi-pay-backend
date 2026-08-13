@@ -176,6 +176,31 @@ def test_decaissement_vide_le_pool_vers_l_emprunteur(
     assert pool.amount == 50_000
 
 
+def test_decaissement_trace_le_mouvement_wallet(
+    client, auth, session, make_user, fund_account
+):
+    owner, _ = make_user()
+    investisseur, compte = make_user()
+    fund_account(compte, 300_000)
+    campaign_id = _campagne_financee(client, session, auth, owner, investisseur)
+
+    auth.as_user(owner)
+    loan_id = uuid.UUID(
+        client.post(
+            f"{BASE}/loans",
+            json={"campaign_id": str(campaign_id), "amount": 200_000, "duration_months": 6},
+        ).json()["loan_id"]
+    )
+
+    loan = _decaisser(session, loan_id)
+
+    assert loan.wallet_transaction_id is not None
+    detail = client.get(f"{WALLET}/transactions/{loan.wallet_transaction_id}").json()
+    assert detail["type"] == "fund_disbursement"
+    assert detail["status"] == "completed"
+    assert detail["amount"] == 200_000
+
+
 def test_pool_insuffisant_bloque_le_decaissement(
     client, auth, session, make_user, fund_account
 ):
