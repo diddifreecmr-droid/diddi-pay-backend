@@ -24,9 +24,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m payfund_app.ops")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    backfill = sub.add_parser("backfill-wallet", help="Create a missing personal wallet")
+    backfill = sub.add_parser("backfill-wallet", help="Create a missing wallet")
     backfill.add_argument("user_id", type=_parse_uuid)
     backfill.add_argument("--phone", default=None)
+    backfill.add_argument("--account-type", choices=("user", "merchant"), default="user")
     backfill.add_argument("--admin-role", default="admin")
 
     reconcile = sub.add_parser(
@@ -47,10 +48,15 @@ def main(argv: list[str] | None = None) -> int:
 
     with SessionLocal() as session:
         if args.command == "backfill-wallet":
-            result = backfill_wallet(session, user_id=args.user_id, phone=args.phone)
+            result = backfill_wallet(
+                session,
+                user_id=args.user_id,
+                phone=args.phone,
+                account_type=args.account_type,
+            )
             print(
                 f"wallet provisioned user_id={result.user_id} account_id={result.account_id} "
-                f"phone={result.phone}"
+                f"account_type={result.account_type} phone={result.phone}"
             )
             return 0
         if args.command == "reconcile-paystack":

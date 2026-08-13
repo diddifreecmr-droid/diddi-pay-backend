@@ -20,6 +20,21 @@ def test_backfill_wallet_creates_account(session):
 
     assert result.user_id == user_id
     assert result.phone == "+2250700000000"
+    assert result.account_type == "user"
+
+
+def test_backfill_wallet_can_create_merchant_account(session):
+    user_id = uuid.uuid4()
+
+    result = backfill_wallet(
+        session,
+        user_id=user_id,
+        phone=None,
+        account_type="merchant",
+    )
+
+    assert result.user_id == user_id
+    assert result.account_type == "merchant"
 
 
 def test_reconcile_paystack_deposit_completes_success(monkeypatch, session, make_user):

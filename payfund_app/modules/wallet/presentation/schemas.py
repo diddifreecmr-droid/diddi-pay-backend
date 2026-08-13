@@ -136,3 +136,4 @@ class VerifyQrResponse(BaseModel):
 class OpsBackfillRequest(BaseModel):
     user_id: uuid.UUID
     phone: str | None = Field(default=None, max_length=20)
+    account_type: Literal["user", "merchant"] = "user"

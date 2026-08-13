@@ -21,6 +21,7 @@ class BackfillResult:
     user_id: uuid.UUID
     account_id: uuid.UUID
     phone: str | None
+    account_type: str
 
 
 @dataclass(frozen=True)
@@ -29,12 +30,27 @@ class ReconcileResult:
     status: str
 
 
-def backfill_wallet(session: Session, *, user_id: uuid.UUID, phone: str | None = None) -> BackfillResult:
-    account = WalletUseCases(session).provisionner_compte(user_id)
+def backfill_wallet(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    phone: str | None = None,
+    account_type: str = "user",
+) -> BackfillResult:
+    use_cases = WalletUseCases(session)
+    if account_type == "merchant":
+        account = use_cases.provisionner_compte_marchand(user_id)
+    else:
+        account = use_cases.provisionner_compte(user_id)
     if phone:
         UserPhoneRepository(session).upsert(user_id, phone)
     session.commit()
-    return BackfillResult(user_id=user_id, account_id=account.id, phone=phone)
+    return BackfillResult(
+        user_id=user_id,
+        account_id=account.id,
+        phone=phone,
+        account_type=account_type,
+    )
 
 
 def reconcile_paystack_deposit(session: Session, *, transaction_id: uuid.UUID) -> ReconcileResult:

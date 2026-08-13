@@ -115,6 +115,17 @@ class WalletUseCases:
             return existing
         return self.accounts.create(user_id=user_id, account_type=AccountType.USER)
 
+    def provisionner_compte_marchand(self, user_id: uuid.UUID) -> Account:
+        """Crée le compte marchand d'un utilisateur, de manière idempotente.
+
+        Utile pour les modules qui veulent encaisser via QR sans que l'opérateur support doive
+        bricoler une ligne SQL. Le compte marchand reste distinct du wallet personnel.
+        """
+        existing = self.accounts.get_by_user(user_id, account_type=AccountType.MERCHANT)
+        if existing is not None:
+            return existing
+        return self.accounts.create(user_id=user_id, account_type=AccountType.MERCHANT)
+
     def compte_de(self, user_id: uuid.UUID) -> Account:
         account = self.accounts.get_by_user(user_id)
         if account is None:
