@@ -117,7 +117,7 @@ des ports hôte configurables via `.env` (voir « Démarrage »).
 | `GET /fund/campaigns` | ✅ |
 | `GET /fund/campaigns/{id}` | ✅ hors nom d'investisseur (voir plus bas) |
 | `POST /fund/campaigns/{id}/invest` | ✅ |
-| `POST /wallet/deposit` · `POST /wallet/withdraw` | ✅ passerelle simulée (stub) |
+| `POST /wallet/deposit` · `POST /wallet/withdraw` | ✅ passerelle simulée (`stub` ou sandbox `orange_money`) |
 | `POST /fund/loans/simulate` | ✅ |
 | `POST /fund/loans` | ✅ prend un `campaign_id` en plus du contrat |
 | `GET /fund/loans/{id}` · `GET /fund/loans/{id}/schedule` | ✅ |
@@ -144,6 +144,9 @@ Le **canal** par lequel l'opérateur notifie l'issue (webhook entrant ou job de 
 spécifié nulle part et le contrat n'expose aucune route de callback. La confirmation passe donc
 par les use cases `confirmer_operation` / `echouer_operation`, à brancher sur le canal retenu au
 moment d'intégrer Orange Money et MTN pour de vrai.
+
+En attendant le vrai connecteur, `PAYMENT_GATEWAY_MODE=sandbox_orange_money` active une sandbox
+explicite pour Orange Money. Le mode `stub` reste le fallback générique.
 
 ### Prêts — crowdlending
 

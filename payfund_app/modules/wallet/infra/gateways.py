@@ -20,6 +20,7 @@ from typing import Protocol
 from payfund_app.core.config import get_settings
 
 PROVIDERS = ("orange_money", "mtn_momo", "wave", "moov", "card_gateway")
+MODES = ("stub", "sandbox_orange_money")
 
 
 class GatewayStatus(StrEnum):
@@ -45,11 +46,11 @@ class PaymentGatewayPort(Protocol):
 
 
 class StubGateway:
-    """Passerelle simulée. Ne joint aucun opérateur réel.
+    """Passerelle simulée générique.
 
-    Par défaut elle renvoie `pending`, comme le ferait Orange Money : c'est ce qui justifie le
-    `202` du contrat API. `PAYMENT_GATEWAY_AUTOCONFIRM=true` la fait répondre `completed` tout de
-    suite, pour travailler en local sans simuler le retour de l'opérateur.
+    Par défaut elle renvoie `pending`, comme le ferait un vrai opérateur en attente de callback.
+    `PAYMENT_GATEWAY_AUTOCONFIRM=true` la fait répondre `completed` tout de suite, pour travailler
+    en local sans simuler le retour de l'opérateur.
     """
 
     def __init__(self, autoconfirm: bool | None = None) -> None:
@@ -74,9 +75,45 @@ class StubGateway:
         return self._operation()
 
 
+class OrangeMoneySandboxGateway(StubGateway):
+    """Sandbox explicite pour Orange Money.
+
+    Ce mode garde les mêmes statuts que le stub, mais il rend visible le rail testé afin que les
+    futurs appels réels Orange Money puissent se brancher sans changer les use cases du wallet.
+    """
+
+    provider_name = "orange_money"
+
+    def _ensure_provider(self, provider: str) -> None:
+        if provider != self.provider_name:
+            raise NotImplementedError(
+                f"Sandbox Orange Money non disponible pour le provider {provider!r}."
+            )
+
+    def initier_depot(
+        self, *, provider: str, phone: str, montant: int, reference: str
+    ) -> GatewayOperation:
+        self._ensure_provider(provider)
+        return GatewayOperation(
+            provider_reference=f"orange-money-sandbox-deposit-{uuid.uuid4()}",
+            status=GatewayStatus.COMPLETED if self.autoconfirm else GatewayStatus.PENDING,
+        )
+
+    def initier_retrait(
+        self, *, provider: str, phone: str, montant: int, reference: str
+    ) -> GatewayOperation:
+        self._ensure_provider(provider)
+        return GatewayOperation(
+            provider_reference=f"orange-money-sandbox-withdraw-{uuid.uuid4()}",
+            status=GatewayStatus.COMPLETED if self.autoconfirm else GatewayStatus.PENDING,
+        )
+
+
 def get_gateway() -> PaymentGatewayPort:
     mode = get_settings().payment_gateway_mode
     if mode == "stub":
         return StubGateway()
+    if mode == "sandbox_orange_money":
+        return OrangeMoneySandboxGateway()
     # Les adaptateurs réels (Orange Money, MTN, Wave, Moov, cartes) viendront ici.
     raise NotImplementedError(f"Passerelle non implémentée : {mode!r}")

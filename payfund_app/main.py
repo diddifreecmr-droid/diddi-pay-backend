@@ -9,7 +9,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.errors import register_exception_handlers
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
@@ -41,6 +43,18 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+
+# Authentification par JWT dans l'en-tête `Authorization`, pas par cookie : pas besoin de
+# `allow_credentials`, donc `allow_origins=["*"]` reste valide (le navigateur l'accepterait de
+# toute façon mal combiné à des credentials). Restreindre via `CORS_ORIGINS` en production.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origins_list,
+    allow_origin_regex=get_settings().cors_origin_regex,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(wallet_router, prefix=API_PREFIX)
 app.include_router(fund_router, prefix=API_PREFIX)
 
