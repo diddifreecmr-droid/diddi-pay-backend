@@ -118,10 +118,9 @@ class WalletUseCases:
     def compte_de(self, user_id: uuid.UUID) -> Account:
         account = self.accounts.get_by_user(user_id)
         if account is None:
-            raise AccountNotFound(
-                "Aucun compte wallet pour cet utilisateur.",
-                details={"user_id": str(user_id)},
-            )
+            # Self-heal: if the `user.registered` event was missed or replay hasn't happened yet,
+            # create the personal wallet lazily the first time the user actually touches Payfund.
+            account = self.provisionner_compte(user_id)
         return account
 
     # --- Lecture -------------------------------------------------------------

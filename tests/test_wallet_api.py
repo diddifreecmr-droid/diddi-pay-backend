@@ -38,11 +38,15 @@ def test_solde_initial_a_zero(client, auth, make_user):
     }
 
 
-def test_solde_sans_compte_wallet(client, auth):
-    auth.as_user(uuid.uuid4())
+def test_solde_autocreer_si_compte_manquant(client, auth, session):
+    user_id = uuid.uuid4()
+    auth.as_user(user_id)
+
     response = client.get(f"{BASE}/balance")
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "ACCOUNT_NOT_FOUND"
+
+    assert response.status_code == 200
+    assert response.json()["balance"] == 0
+    assert AccountRepository(session).get_by_user(user_id) is not None
 
 
 def test_transfert_p2p_deplace_les_fonds(client, auth, session, make_user, fund_account):

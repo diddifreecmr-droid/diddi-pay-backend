@@ -81,8 +81,5 @@ class WalletService:
     def compte_de_utilisateur(self, user_id: uuid.UUID) -> uuid.UUID:
         account = self.accounts.get_by_user(user_id)
         if account is None:
-            raise AccountNotFound(
-                "Aucun compte wallet pour cet utilisateur.",
-                details={"user_id": str(user_id)},
-            )
+            account = self.accounts.create(user_id=user_id, account_type=AccountType.USER)
         return account.id
