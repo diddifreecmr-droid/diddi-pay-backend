@@ -40,16 +40,6 @@ def _set_pin(client, auth, user_id, pin="1234"):
     return response.json()
 
 
-def _get_step_up(client, auth, user_id, recipient_phone="+2250701111111", amount=60000):
-    auth.as_user(user_id)
-    response = client.post(
-        f"{BASE}/transfer/step-up/request",
-        json={"recipient_phone": recipient_phone, "amount": amount},
-    )
-    assert response.status_code == 200
-    return response.json()
-
-
 def test_solde_initial_a_zero(client, auth, make_user):
     user_id, account_id = make_user()
     auth.as_user(user_id)
@@ -484,19 +474,11 @@ def test_step_up_threshold_is_configurable(
     assert response.status_code == 201
 
 
-def test_step_up_otp_allows_sensitive_transfer(
-    client, auth, session, make_user, fund_account
-):
+def test_step_up_proof_allows_sensitive_transfer(client, auth, make_user, fund_account):
     user_id, compte = make_user()
     make_user(phone="+2250701111111")
     fund_account(compte, 100_000)
     _set_pin(client, auth, user_id)
-    challenge = WalletUseCases(session).request_step_up_otp(
-        user_id=user_id,
-        recipient_phone="+2250701111111",
-        amount=60000,
-    )
-
     auth.as_user(user_id)
     response = client.post(
         f"{BASE}/transfer",
@@ -504,12 +486,66 @@ def test_step_up_otp_allows_sensitive_transfer(
             "recipient_phone": "+2250701111111",
             "amount": 60000,
             "pin": "1234",
-            "otp_code": challenge["code"],
+            "step_up_token": "test-transfer-step-up-token",
         },
         headers=_key(),
     )
 
     assert response.status_code == 201
+
+
+def test_step_up_proof_is_one_time_for_distinct_transfers(
+    client, auth, make_user, fund_account
+):
+    user_id, compte = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(compte, 150_000)
+    _set_pin(client, auth, user_id)
+    auth.as_user(user_id)
+    payload = {
+        "recipient_phone": "+2250701111111",
+        "amount": 60000,
+        "pin": "1234",
+        "step_up_token": "test-transfer-step-up-one-time",
+    }
+
+    first = client.post(f"{BASE}/transfer", json=payload, headers=_key())
+    second = client.post(f"{BASE}/transfer", json=payload, headers=_key())
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "STEP_UP_PROOF_ALREADY_USED"
+
+
+def test_large_transfer_replay_does_not_consume_a_second_proof(
+    client, auth, make_user, fund_account
+):
+    user_id, compte = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(compte, 100_000)
+    _set_pin(client, auth, user_id)
+    auth.as_user(user_id)
+    headers = _key()
+    first_payload = {
+        "recipient_phone": "+2250701111111",
+        "amount": 60000,
+        "pin": "1234",
+        "step_up_token": "test-transfer-step-up-idempotent",
+    }
+
+    first = client.post(f"{BASE}/transfer", json=first_payload, headers=headers)
+    replay = client.post(
+        f"{BASE}/transfer",
+        json={
+            "recipient_phone": "+2250701111111",
+            "amount": 60000,
+            "pin": "1234",
+        },
+        headers=headers,
+    )
+
+    assert first.status_code == replay.status_code == 201
+    assert first.json()["transaction_id"] == replay.json()["transaction_id"]
 
 
 def test_admin_reset_pin_audits_action(client, auth, session, make_user):

@@ -63,7 +63,14 @@ class TransferRequest(BaseModel):
     recipient_phone: str = Field(min_length=4, max_length=20)
     amount: int = Field(gt=0)
     pin: str = Field(min_length=4, max_length=12)
-    otp_code: str | None = Field(default=None, min_length=4, max_length=12)
+    step_up_token: str | None = Field(
+        default=None,
+        min_length=20,
+        description=(
+            "Preuve JWT DiddiFreeID a usage unique pour `wallet.transfer.high_value`; "
+            "requise uniquement lorsque la politique serveur l'exige."
+        ),
+    )
 
 
 class PinSetRequest(BaseModel):
@@ -104,18 +111,6 @@ class AdminPinResetRequest(BaseModel):
     new_pin: str = Field(min_length=4, max_length=12)
     confirm_new_pin: str = Field(min_length=4, max_length=12)
     reason: str = Field(min_length=5, max_length=200)
-
-
-class StepUpOtpRequest(BaseModel):
-    recipient_phone: str = Field(min_length=4, max_length=20)
-    amount: int = Field(gt=0)
-
-
-class StepUpOtpResponse(BaseModel):
-    challenge_id: uuid.UUID
-    expires_at: datetime
-    masked_recipient: str
-    delivery: str = "logging"
 
 
 class PinStatusResponse(BaseModel):

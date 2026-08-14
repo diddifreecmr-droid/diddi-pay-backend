@@ -42,16 +42,15 @@ from payfund_app.modules.wallet.domain.errors import (
     AccountNotFound,
     CannotTransferToSelf,
     GatewayUnavailable,
+    IdempotencyConflict,
     InvalidAmountError,
     InvalidPin,
-    InvalidStepUpOtp,
     MerchantNotFound,
     PinLocked,
     PinAlreadySet,
     PinRequired,
     RecipientNotFound,
     RecoveryCodeInvalid,
-    StepUpOtpExpired,
     StepUpOtpRequired,
     StepUpProofAlreadyUsed,
     TransactionNotFound,
@@ -72,7 +71,6 @@ from payfund_app.modules.wallet.infra.repositories import (
     OutboxRepository,
     TransactionPinRecoveryCodeRepository,
     TransactionPinRepository,
-    TransferOtpChallengeRepository,
     TransactionRepository,
     UserPhoneRepository,
 )
@@ -121,7 +119,6 @@ class WalletUseCases:
         self.pins = TransactionPinRepository(session)
         self.pin_recovery_codes = TransactionPinRecoveryCodeRepository(session)
         self.consumed_step_up_proofs = ConsumedStepUpProofRepository(session)
-        self.transfer_otp = TransferOtpChallengeRepository(session)
         self.pin_recovery_audit = PinRecoveryAuditRepository(session)
         self.gateways = GatewayAccountRepository(session)
         self.outbox = OutboxRepository(session)
@@ -187,9 +184,6 @@ class WalletUseCases:
     def _hash_recovery_code(self, code: str) -> str:
         return hashlib.sha256(code.encode()).hexdigest()
 
-    def _hash_otp_code(self, code: str) -> str:
-        return hashlib.sha256(code.encode()).hexdigest()
-
     def _verify_pin(self, account_id: uuid.UUID, pin: str) -> None:
         row = self.pins.get(account_id)
         if row is None:
@@ -233,23 +227,12 @@ class WalletUseCases:
         account = self.compte_de(user_id)
         if self.pins.get(account.id) is not None:
             raise PinAlreadySet()
-        if proof.user_id != user_id or proof.purpose != "wallet.pin.set":
-            from payfund_app.core.errors import StepUpProofInvalid
-
-            raise StepUpProofInvalid()
-        if self.consumed_step_up_proofs.get(proof.jti) is not None:
-            raise StepUpProofAlreadyUsed()
         self._ensure_password_policy(pin, confirm_pin)
-        try:
-            with self.session.begin_nested():
-                self.consumed_step_up_proofs.add(
-                    jti=proof.jti,
-                    user_id=user_id,
-                    purpose=proof.purpose,
-                    expires_at=proof.expires_at,
-                )
-        except IntegrityError as exc:
-            raise StepUpProofAlreadyUsed() from exc
+        self._consume_step_up_proof(
+            proof=proof,
+            user_id=user_id,
+            purpose="wallet.pin.set",
+        )
         row = self.pins.set_pin(
             account_id=account.id,
             pin_hash=self._hash_pin(pin),
@@ -338,58 +321,40 @@ class WalletUseCases:
         )
         return {"account": account, "pin": row, "recovery_codes": recovery_codes}
 
-    def request_step_up_otp(
-        self, *, user_id: uuid.UUID, recipient_phone: str, amount: int
-    ) -> dict:
-        account = self.compte_de(user_id)
-        montant = to_money(amount, account.currency)
-        challenge_code = "".join(secrets.choice("0123456789") for _ in range(6))
-        challenge = self.transfer_otp.add(
-            account_id=account.id,
-            recipient_phone=recipient_phone,
-            amount=montant.to_db(),
-            code_hash=self._hash_otp_code(challenge_code),
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
-        )
-        return {
-            "challenge": challenge,
-            "code": challenge_code,
-            "masked_recipient": self._mask_phone(recipient_phone),
-        }
+    def _consume_step_up_proof(
+        self, *, proof: StepUpProof, user_id: uuid.UUID, purpose: str
+    ) -> None:
+        if proof.user_id != user_id or proof.purpose != purpose:
+            from payfund_app.core.errors import StepUpProofInvalid
 
-    def _mask_phone(self, phone: str) -> str:
-        if len(phone) <= 4:
-            return phone
-        return f"{phone[:3]}***{phone[-2:]}"
+            raise StepUpProofInvalid()
+        if self.consumed_step_up_proofs.get(proof.jti) is not None:
+            raise StepUpProofAlreadyUsed()
+        try:
+            with self.session.begin_nested():
+                self.consumed_step_up_proofs.add(
+                    jti=proof.jti,
+                    user_id=user_id,
+                    purpose=purpose,
+                    expires_at=proof.expires_at,
+                )
+        except IntegrityError as exc:
+            raise StepUpProofAlreadyUsed() from exc
 
-    def _verify_step_up_otp(
-        self,
-        *,
-        account_id: uuid.UUID,
-        recipient_phone: str,
-        amount: int,
-        otp_code: str | None,
+    def _require_transfer_step_up(
+        self, *, user_id: uuid.UUID, amount: int, proof: StepUpProof | None
     ) -> None:
         if self.step_up_threshold_xof is None:
-            raise RuntimeError("La politique step-up OTP n'a pas ete injectee.")
+            raise RuntimeError("La politique step-up n'a pas ete injectee.")
         if amount < self.step_up_threshold_xof:
             return
-        latest = self.transfer_otp.latest_for_account(account_id)
-        if latest is None:
+        if proof is None:
             raise StepUpOtpRequired()
-        now = datetime.now(timezone.utc)
-        if latest.expires_at < now:
-            raise StepUpOtpExpired()
-        if latest.used_at is not None:
-            raise StepUpOtpRequired()
-        if latest.recipient_phone != recipient_phone or int(latest.amount) != amount:
-            raise StepUpOtpRequired()
-        if not otp_code:
-            raise StepUpOtpRequired()
-        if not hmac.compare_digest(self._hash_otp_code(otp_code), latest.code_hash):
-            raise InvalidStepUpOtp()
-        latest.used_at = now
-        self.session.flush()
+        self._consume_step_up_proof(
+            proof=proof,
+            user_id=user_id,
+            purpose="wallet.transfer.high_value",
+        )
 
     # --- Lecture -------------------------------------------------------------
 
@@ -442,19 +407,13 @@ class WalletUseCases:
         recipient_phone: str,
         amount: int,
         pin: str,
-        otp_code: str | None = None,
+        proof: StepUpProof | None = None,
         idempotency_key: str,
     ) -> TransferResult:
         """Transfert P2P interne — synchrone, les deux écritures dans la même transaction DB
         (Contrat API §1)."""
         source = self.compte_de(user_id)
         self._verify_pin(source.id, pin)
-        self._verify_step_up_otp(
-            account_id=source.id,
-            recipient_phone=recipient_phone,
-            amount=amount,
-            otp_code=otp_code,
-        )
         montant = to_money(amount, source.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
@@ -468,6 +427,25 @@ class WalletUseCases:
         destination = self.accounts.get_by_user(recipient_user_id)
         if destination is None:
             raise RecipientNotFound()
+
+        existing = self.transactions.get_by_idempotency_key(idempotency_key)
+        if existing is not None:
+            source_entry = self.ledger_repo.entry_for_account(existing.id, source.id)
+            destination_entry = self.ledger_repo.entry_for_account(
+                existing.id, destination.id
+            )
+            if (
+                existing.type != str(TransactionType.P2P_TRANSFER)
+                or source_entry is None
+                or source_entry.direction != str(Direction.DEBIT)
+                or destination_entry is None
+                or destination_entry.direction != str(Direction.CREDIT)
+                or Money.from_db(source_entry.amount, source_entry.currency) != montant
+            ):
+                raise IdempotencyConflict()
+            return TransferResult(existing, montant, True)
+
+        self._require_transfer_step_up(user_id=user_id, amount=amount, proof=proof)
 
         transaction, replayed = self.ledger.transfer(
             source_account_id=source.id,

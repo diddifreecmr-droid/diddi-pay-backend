@@ -34,6 +34,11 @@ def test_wallet_openapi_exposes_security_and_frontend_fields():
     pin_set = components["schemas"]["PinSetResponse"]["properties"]
     assert "recovery_codes" in pin_set
 
+    transfer = components["schemas"]["TransferRequest"]["properties"]
+    assert "step_up_token" in transfer
+    assert "otp_code" not in transfer
+    assert "/payfund/v1/wallet/transfer/step-up/request" not in schema["paths"]
+
     transaction = components["schemas"]["TransactionItem"]["properties"]
     assert "direction" in transaction
 

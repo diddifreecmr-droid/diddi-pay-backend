@@ -83,6 +83,12 @@ class IdempotencyKeyRequired(AppError):
     message = "En-tête `Idempotency-Key` obligatoire sur cette route."
 
 
+class IdempotencyConflict(AppError):
+    status_code = 409
+    code = "IDEMPOTENCY_CONFLICT"
+    message = "Cette cle d'idempotence appartient a une autre operation."
+
+
 class InvalidQrCodeError(AppError):
     status_code = 422
     code = "INVALID_QR_CODE"
@@ -140,7 +146,7 @@ class RecoveryCodeInvalid(AppError):
 class StepUpOtpRequired(AppError):
     status_code = 409
     code = "STEP_UP_OTP_REQUIRED"
-    message = "Une vérification OTP supplémentaire est requise."
+    message = "Une preuve de re-authentification DiddiFreeID est requise."
 
 
 class InvalidStepUpOtp(AppError):

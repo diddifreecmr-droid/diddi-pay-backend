@@ -54,8 +54,6 @@ from payfund_app.modules.wallet.presentation.schemas import (
     ProvisioningStatusResponse,
     RecipientLookupResponse,
     PendingOperationResponse,
-    StepUpOtpRequest,
-    StepUpOtpResponse,
     TransactionDetail,
     TransactionItem,
     TransferRequest,
@@ -178,24 +176,6 @@ def reset_pin(
     return {"status": "ok", "account_id": str(result["account"].id)}
 
 
-@router.post("/transfer/step-up/request", response_model=StepUpOtpResponse)
-def request_transfer_step_up(
-    payload: StepUpOtpRequest,
-    user: CurrentUserDep,
-    session: SessionDep,
-) -> StepUpOtpResponse:
-    result = WalletUseCases(session).request_step_up_otp(
-        user_id=user.user_id,
-        recipient_phone=payload.recipient_phone,
-        amount=payload.amount,
-    )
-    return StepUpOtpResponse(
-        challenge_id=result["challenge"].id,
-        expires_at=result["challenge"].expires_at,
-        masked_recipient=result["masked_recipient"],
-    )
-
-
 @router.post("/deposit", response_model=DepositResponse, status_code=202)
 def deposit(
     payload: DepositRequest,
@@ -275,7 +255,15 @@ def transfer(
     user: CurrentUserDep,
     session: SessionDep,
     idempotency_key: IdempotencyKeyDep,
+    step_up_verifier: StepUpProofVerifierDep,
 ) -> TransferResponse:
+    proof = None
+    if payload.step_up_token is not None:
+        proof = step_up_verifier.verify(
+            payload.step_up_token,
+            expected_user_id=user.user_id,
+            expected_purpose="wallet.transfer.high_value",
+        )
     result = WalletUseCases(
         session,
         bus=get_bus(),
@@ -285,7 +273,7 @@ def transfer(
         recipient_phone=payload.recipient_phone,
         amount=payload.amount,
         pin=payload.pin,
-        otp_code=payload.otp_code,
+        proof=proof,
         idempotency_key=idempotency_key,
     )
     return TransferResponse(
