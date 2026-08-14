@@ -40,6 +40,7 @@ from payfund_app.core.database import get_session  # noqa: E402
 from payfund_app.core.security import CurrentUser, StepUpProof  # noqa: E402
 from payfund_app.main import app  # noqa: E402
 from payfund_app.modules.wallet.application.ledger import LedgerService  # noqa: E402
+from payfund_app.modules.wallet.application.use_cases import WalletUseCases  # noqa: E402
 from payfund_app.modules.wallet.domain.entities import AccountType  # noqa: E402
 from payfund_app.modules.wallet.domain.money import Money  # noqa: E402
 from payfund_app.modules.wallet.infra.repositories import (  # noqa: E402
@@ -187,6 +188,23 @@ def make_user(session: Session):
         return user_id, account.id
 
     return _make
+
+
+@pytest.fixture
+def set_pin(session: Session):
+    """Configure explicitement le PIN d'un utilisateur pour un scenario de debit."""
+
+    def _set(user_id: uuid.UUID, pin: str = "1234") -> None:
+        WalletUseCases(session).admin_reset_pin(
+            admin_user_id=None,
+            user_id=user_id,
+            new_pin=pin,
+            confirm_new_pin=pin,
+            reason="test fixture setup",
+        )
+        session.commit()
+
+    return _set
 
 
 @pytest.fixture

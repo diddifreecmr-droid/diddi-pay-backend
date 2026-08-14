@@ -68,16 +68,19 @@ def test_creation_ouvre_un_compte_technique_de_pool(client, auth, session, make_
 
 
 def test_investissement_debite_l_investisseur_et_credite_le_pool(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     owner, _ = make_user()
     investisseur, compte = make_user()
+    set_pin(investisseur)
     fund_account(compte, 50_000)
     campaign_id = _creer_campagne(client, session, auth, owner)
 
     auth.as_user(investisseur)
     response = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 201
@@ -95,17 +98,42 @@ def test_investissement_debite_l_investisseur_et_credite_le_pool(
     assert pool_balance.amount == 10_000
 
 
-def test_investissement_impossible_sur_campagne_draft(
-    client, auth, session, make_user, fund_account
+def test_investissement_pin_invalide_ne_cree_aucune_ecriture(
+    client, auth, session, make_user, fund_account, set_pin
 ):
     owner, _ = make_user()
     investisseur, compte = make_user()
+    set_pin(investisseur)
+    fund_account(compte, 50_000)
+    campaign_id = _creer_campagne(client, session, auth, owner)
+    auth.as_user(investisseur)
+
+    response = client.post(
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "9999"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INVALID_PIN"
+    assert client.get(f"{WALLET}/balance").json()["balance"] == 50_000
+    assert session.scalar(select(func.count()).select_from(Investment)) == 0
+
+
+def test_investissement_impossible_sur_campagne_draft(
+    client, auth, session, make_user, fund_account, set_pin
+):
+    owner, _ = make_user()
+    investisseur, compte = make_user()
+    set_pin(investisseur)
     fund_account(compte, 50_000)
     campaign_id = _creer_campagne(client, session, auth, owner, active=False)
 
     auth.as_user(investisseur)
     response = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 409
@@ -115,15 +143,18 @@ def test_investissement_impossible_sur_campagne_draft(
 
 
 def test_investissement_dans_sa_propre_campagne(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     owner, compte = make_user()
+    set_pin(owner)
     fund_account(compte, 50_000)
     campaign_id = _creer_campagne(client, session, auth, owner)
 
     auth.as_user(owner)
     response = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 422
@@ -131,23 +162,29 @@ def test_investissement_dans_sa_propre_campagne(
 
 
 def test_investissement_objectif_deja_atteint(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     owner, _ = make_user()
     premier, compte_premier = make_user()
     second, compte_second = make_user()
+    set_pin(premier)
+    set_pin(second)
     fund_account(compte_premier, 50_000)
     fund_account(compte_second, 50_000)
     campaign_id = _creer_campagne(client, session, auth, owner, goal=10_000)
 
     auth.as_user(premier)
     client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     auth.as_user(second)
     response = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 5_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 5_000, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 409
@@ -155,17 +192,20 @@ def test_investissement_objectif_deja_atteint(
 
 
 def test_investissement_solde_insuffisant_ne_laisse_aucune_trace(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     """Atomicité : pas d'`investment` orphelin si le mouvement wallet échoue (§2)."""
     owner, _ = make_user()
     investisseur, compte = make_user()
+    set_pin(investisseur)
     fund_account(compte, 1_000)
     campaign_id = _creer_campagne(client, session, auth, owner)
 
     auth.as_user(investisseur)
     response = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 409
@@ -183,20 +223,25 @@ def test_investissement_solde_insuffisant_ne_laisse_aucune_trace(
 
 
 def test_investissement_rejoue_ne_compte_qu_une_fois(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     owner, _ = make_user()
     investisseur, compte = make_user()
+    set_pin(investisseur)
     fund_account(compte, 50_000)
     campaign_id = _creer_campagne(client, session, auth, owner)
     headers = _key()
 
     auth.as_user(investisseur)
     premiere = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=headers
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=headers,
     )
     seconde = client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=headers
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=headers,
     )
 
     assert premiere.status_code == seconde.status_code == 201
@@ -223,16 +268,19 @@ def test_liste_des_campagnes_filtrable_par_statut(client, auth, session, make_us
 
 
 def test_detail_campagne_liste_les_derniers_investissements(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     owner, _ = make_user()
     investisseur, compte = make_user()
+    set_pin(investisseur)
     fund_account(compte, 50_000)
     campaign_id = _creer_campagne(client, session, auth, owner)
 
     auth.as_user(investisseur)
     client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     detail = client.get(f"{BASE}/campaigns/{campaign_id}").json()

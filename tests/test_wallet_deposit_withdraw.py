@@ -183,16 +183,35 @@ def test_depot_rejoue_ne_cree_qu_une_transaction(client, auth, make_user):
 # --- Retrait -----------------------------------------------------------------
 
 
-def test_retrait_reserve_les_fonds_des_l_initiation(
-    client, auth, session, make_user, fund_account
-):
-    user_id, account_id = make_user()
-    fund_account(account_id, 10_000)
+def test_retrait_sans_pin_est_refuse_par_le_contrat(client, auth, make_user):
+    user_id, _ = make_user()
     auth.as_user(user_id)
 
     response = client.post(
         f"{BASE}/withdraw",
         json={"provider": PROVIDER, "amount": 3000, "phone": "+2250700000000"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 422
+
+
+def test_retrait_reserve_les_fonds_des_l_initiation(
+    client, auth, session, make_user, fund_account, set_pin
+):
+    user_id, account_id = make_user()
+    set_pin(user_id)
+    fund_account(account_id, 10_000)
+    auth.as_user(user_id)
+
+    response = client.post(
+        f"{BASE}/withdraw",
+        json={
+            "provider": PROVIDER,
+            "amount": 3000,
+            "phone": "+2250700000000",
+            "pin": "1234",
+        },
         headers=_key(),
     )
 
@@ -205,14 +224,20 @@ def test_retrait_reserve_les_fonds_des_l_initiation(
     assert len(_entries(session, body["transaction_id"])) == 2
 
 
-def test_retrait_au_dela_du_solde(client, auth, make_user, fund_account):
+def test_retrait_au_dela_du_solde(client, auth, make_user, fund_account, set_pin):
     user_id, account_id = make_user()
+    set_pin(user_id)
     fund_account(account_id, 1000)
     auth.as_user(user_id)
 
     response = client.post(
         f"{BASE}/withdraw",
-        json={"provider": PROVIDER, "amount": 5000, "phone": "+2250700000000"},
+        json={
+            "provider": PROVIDER,
+            "amount": 5000,
+            "phone": "+2250700000000",
+            "pin": "1234",
+        },
         headers=_key(),
     )
 
@@ -221,13 +246,19 @@ def test_retrait_au_dela_du_solde(client, auth, make_user, fund_account):
 
 
 def test_deux_retraits_ne_peuvent_pas_depasser_le_solde(
-    client, auth, make_user, fund_account
+    client, auth, make_user, fund_account, set_pin
 ):
     """C'est précisément ce que l'écriture à l'initiation protège."""
     user_id, account_id = make_user()
+    set_pin(user_id)
     fund_account(account_id, 10_000)
     auth.as_user(user_id)
-    payload = {"provider": PROVIDER, "amount": 6000, "phone": "+2250700000000"}
+    payload = {
+        "provider": PROVIDER,
+        "amount": 6000,
+        "phone": "+2250700000000",
+        "pin": "1234",
+    }
 
     premier = client.post(f"{BASE}/withdraw", json=payload, headers=_key())
     second = client.post(f"{BASE}/withdraw", json=payload, headers=_key())
@@ -237,14 +268,22 @@ def test_deux_retraits_ne_peuvent_pas_depasser_le_solde(
     assert client.get(f"{BASE}/balance").json()["balance"] == 4000
 
 
-def test_retrait_echoue_est_contre_passe(client, auth, session, make_user, fund_account):
+def test_retrait_echoue_est_contre_passe(
+    client, auth, session, make_user, fund_account, set_pin
+):
     """§2 : une correction se fait par écriture inverse, jamais par UPDATE/DELETE."""
     user_id, account_id = make_user()
+    set_pin(user_id)
     fund_account(account_id, 10_000)
     auth.as_user(user_id)
     transaction_id = client.post(
         f"{BASE}/withdraw",
-        json={"provider": PROVIDER, "amount": 3000, "phone": "+2250700000000"},
+        json={
+            "provider": PROVIDER,
+            "amount": 3000,
+            "phone": "+2250700000000",
+            "pin": "1234",
+        },
         headers=_key(),
     ).json()["transaction_id"]
 
@@ -259,14 +298,20 @@ def test_retrait_echoue_est_contre_passe(client, auth, session, make_user, fund_
 
 
 def test_retrait_confirme_cloture_sans_nouvelle_ecriture(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     user_id, account_id = make_user()
+    set_pin(user_id)
     fund_account(account_id, 10_000)
     auth.as_user(user_id)
     transaction_id = client.post(
         f"{BASE}/withdraw",
-        json={"provider": PROVIDER, "amount": 3000, "phone": "+2250700000000"},
+        json={
+            "provider": PROVIDER,
+            "amount": 3000,
+            "phone": "+2250700000000",
+            "pin": "1234",
+        },
         headers=_key(),
     ).json()["transaction_id"]
 

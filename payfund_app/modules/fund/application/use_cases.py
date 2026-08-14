@@ -120,6 +120,7 @@ class FundUseCases:
         campaign_id: uuid.UUID,
         investor_user_id: uuid.UUID,
         amount: int,
+        pin: str,
         idempotency_key: str,
     ) -> InvestmentResult:
         """Débite l'investisseur et crédite le compte de la campagne, atomiquement.
@@ -127,6 +128,7 @@ class FundUseCases:
         Contrat API §2 : « atomique avec la création de l'`investment` (les deux dans la même
         transaction DB) ». C'est le cas ici : le port est in-process et partage la session.
         """
+        self.wallet.verifier_pin_utilisateur(investor_user_id, pin)
         campaign = self.campaigns.get_for_update(campaign_id)
         if campaign is None:
             raise CampaignNotFound()
@@ -321,6 +323,7 @@ class LoanUseCases:
         loan_id: uuid.UUID,
         borrower_user_id: uuid.UUID,
         amount: int,
+        pin: str,
         idempotency_key: str,
     ) -> tuple[Loan, RepaymentSchedule]:
         """Règle tout ou partie de la prochaine échéance, et recrédite le pool de la campagne.
@@ -329,6 +332,7 @@ class LoanUseCases:
         ce qu'il reste dû sur celle-ci est refusé : ni le contrat ni l'architecture ne décrivent
         le report d'un excédent sur l'échéance suivante, ni le remboursement anticipé.
         """
+        self.wallet.verifier_pin_utilisateur(borrower_user_id, pin)
         loan = self.loans.get_for_update(loan_id)
         if loan is None or loan.borrower_user_id != borrower_user_id:
             raise LoanNotFound()

@@ -252,6 +252,7 @@ def withdraw(
         provider=payload.provider,
         amount=payload.amount,
         phone=payload.phone,
+        pin=payload.pin,
         idempotency_key=idempotency_key,
     )
     emit(
@@ -306,6 +307,7 @@ def pay_merchant(
         user_id=user.user_id,
         merchant_account_id=payload.merchant_account_id,
         amount=payload.amount,
+        pin=payload.pin,
         origin_module=payload.origin_module,
         business_reference=payload.business_reference,
         idempotency_key=idempotency_key,

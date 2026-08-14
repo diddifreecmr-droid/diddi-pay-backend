@@ -13,6 +13,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from payfund_app.modules.wallet.application.ledger import LedgerService
+from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import AccountType
 from payfund_app.modules.wallet.domain.errors import AccountNotFound
 from payfund_app.modules.wallet.domain.money import Money
@@ -26,6 +27,9 @@ class WalletService:
         self.session = session
         self.accounts = AccountRepository(session)
         self.ledger = LedgerService(session)
+
+    def verifier_pin_utilisateur(self, user_id: uuid.UUID, pin: str) -> None:
+        WalletUseCases(self.session).verifier_pin_utilisateur(user_id, pin)
 
     def debiter(
         self,

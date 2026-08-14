@@ -264,8 +264,9 @@ def test_compte_gele_refuse_les_sorties(client, auth, session, make_user, fund_a
     assert response.json()["error"]["code"] == "ACCOUNT_NOT_ACTIVE"
 
 
-def test_paiement_marchand(client, auth, session, make_user, fund_account):
+def test_paiement_marchand(client, auth, session, make_user, fund_account, set_pin):
     payeur, compte = make_user()
+    set_pin(payeur)
     fund_account(compte, 10_000)
     marchand = AccountRepository(session).create(
         user_id=uuid.uuid4(), account_type=AccountType.MERCHANT
@@ -280,6 +281,7 @@ def test_paiement_marchand(client, auth, session, make_user, fund_account):
             "amount": 1500,
             "origin_module": "shop",
             "business_reference": "ride-123",
+            "pin": "1234",
         },
         headers=_key(),
     )
@@ -292,15 +294,45 @@ def test_paiement_marchand(client, auth, session, make_user, fund_account):
     assert transaction.business_reference == "ride-123"
 
 
-def test_paiement_vers_un_compte_non_marchand(client, auth, make_user, fund_account):
+def test_paiement_marchand_pin_invalide_ne_debite_pas(
+    client, auth, session, make_user, fund_account, set_pin
+):
     payeur, compte = make_user()
+    set_pin(payeur)
+    fund_account(compte, 10_000)
+    marchand = AccountRepository(session).create(
+        user_id=uuid.uuid4(), account_type=AccountType.MERCHANT
+    )
+    session.commit()
+    auth.as_user(payeur)
+
+    response = client.post(
+        f"{BASE}/pay/merchant",
+        json={
+            "merchant_account_id": str(marchand.id),
+            "amount": 1500,
+            "pin": "9999",
+        },
+        headers=_key(),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INVALID_PIN"
+    assert _solde(client, auth, payeur) == 10_000
+
+
+def test_paiement_vers_un_compte_non_marchand(
+    client, auth, make_user, fund_account, set_pin
+):
+    payeur, compte = make_user()
+    set_pin(payeur)
     _, compte_ordinaire = make_user()
     fund_account(compte, 10_000)
 
     auth.as_user(payeur)
     response = client.post(
         f"{BASE}/pay/merchant",
-        json={"merchant_account_id": str(compte_ordinaire), "amount": 1500},
+        json={"merchant_account_id": str(compte_ordinaire), "amount": 1500, "pin": "1234"},
         headers=_key(),
     )
 
@@ -519,6 +551,7 @@ def test_historique_filtrable_par_module_d_origine(
             "amount": 1500,
             "origin_module": "shop",
             "business_reference": "order-555",
+            "pin": "1234",
         },
         headers=_key(),
     )

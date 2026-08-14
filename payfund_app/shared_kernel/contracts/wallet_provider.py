@@ -23,6 +23,10 @@ from uuid import UUID
 
 
 class WalletServicePort(Protocol):
+    def verifier_pin_utilisateur(self, user_id: UUID, pin: str) -> None:
+        """Autorise une sortie initiée par l'utilisateur avant tout mouvement de fonds."""
+        ...
+
     def debiter(
         self,
         compte_id: UUID,

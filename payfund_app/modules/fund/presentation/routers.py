@@ -127,6 +127,7 @@ def invest(
         campaign_id=campaign_id,
         investor_user_id=user.user_id,
         amount=payload.amount,
+        pin=payload.pin,
         idempotency_key=idempotency_key,
     )
     return InvestResponse(
@@ -233,6 +234,7 @@ def repay_loan(
         loan_id=loan_id,
         borrower_user_id=user.user_id,
         amount=payload.amount,
+        pin=payload.pin,
         idempotency_key=idempotency_key,
     )
     return RepayResponse(

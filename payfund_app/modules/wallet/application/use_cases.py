@@ -175,6 +175,9 @@ class WalletUseCases:
         account = self.compte_de(user_id)
         return account, self.pins.get(account.id)
 
+    def verifier_pin_utilisateur(self, user_id: uuid.UUID, pin: str) -> None:
+        self._verify_pin(self.compte_de(user_id).id, pin)
+
     def _hash_pin(self, pin: str) -> str:
         return _PIN_HASHER.hash(pin)
 
@@ -485,12 +488,14 @@ class WalletUseCases:
         user_id: uuid.UUID,
         merchant_account_id: uuid.UUID,
         amount: int,
+        pin: str,
         origin_module: str | None,
         business_reference: str | None,
         idempotency_key: str,
     ) -> TransferResult:
         """Paiement marchand. Le `merchant_account_id` est fourni par le QR scanné (§1)."""
         source = self.compte_de(user_id)
+        self._verify_pin(source.id, pin)
         montant = to_money(amount, source.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
@@ -633,15 +638,16 @@ class WalletUseCases:
         provider: str,
         amount: int,
         phone: str,
+        pin: str,
         idempotency_key: str,
     ) -> Transaction:
         """Initie un retrait. Les écritures sont passées **tout de suite** : les fonds quittent
         le compte du client vers le compte suspense, donc ils sont réservés."""
+        compte = self.compte_de(user_id)
+        self._verify_pin(compte.id, pin)
         rejeu = self.transactions.get_by_idempotency_key(idempotency_key)
         if rejeu is not None:
             return rejeu
-
-        compte = self.compte_de(user_id)
         montant = to_money(amount, compte.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")

@@ -43,7 +43,7 @@ class DepositRequest(BaseModel):
 
 
 class WithdrawRequest(DepositRequest):
-    pass
+    pin: str = Field(min_length=4, max_length=12)
 
 
 class PendingOperationResponse(BaseModel):
@@ -132,6 +132,7 @@ class RecipientLookupResponse(BaseModel):
 class MerchantPaymentRequest(BaseModel):
     merchant_account_id: uuid.UUID
     amount: int = Field(gt=0)
+    pin: str = Field(min_length=4, max_length=12)
     origin_module: str | None = Field(default=None, max_length=30)
     business_reference: str | None = Field(default=None, max_length=100)
 

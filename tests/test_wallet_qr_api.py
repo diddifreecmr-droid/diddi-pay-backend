@@ -257,10 +257,11 @@ def test_verification_d_un_qr_expire(client, auth, session, make_user):
 
 
 def test_parcours_complet_qr_puis_paiement(
-    client, auth, session, make_user, fund_account
+    client, auth, session, make_user, fund_account, set_pin
 ):
     proprietaire, _ = make_user()
     payeur, compte_payeur = make_user()
+    set_pin(payeur)
     fund_account(compte_payeur, 10_000)
     marchand_id = _marchand(session, proprietaire)
 
@@ -279,6 +280,7 @@ def test_parcours_complet_qr_puis_paiement(
             "merchant_account_id": decoded["merchant_account_id"],
             "amount": 1500,
             "origin_module": decoded["origin_module"],
+            "pin": "1234",
         },
         headers=_key(),
     )

@@ -51,6 +51,7 @@ class CampaignDetail(CampaignItem):
 
 class InvestRequest(BaseModel):
     amount: int = Field(gt=0)
+    pin: str = Field(min_length=4, max_length=12)
 
 
 class InvestResponse(BaseModel):
@@ -120,6 +121,7 @@ class ScheduleResponse(BaseModel):
 
 class RepayRequest(BaseModel):
     amount: int = Field(gt=0)
+    pin: str = Field(min_length=4, max_length=12)
 
 
 class RepayResponse(BaseModel):

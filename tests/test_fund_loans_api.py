@@ -12,6 +12,7 @@ from payfund_app.modules.fund.infra.scoring import get_scoring
 from payfund_app.modules.fund.infra.wallet_client import get_wallet_service
 from payfund_app.modules.wallet.infra.repositories import AccountRepository
 from payfund_app.modules.wallet.infra.models import Transaction
+from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from sqlalchemy import select
 
 BASE = "/payfund/v1/fund"
@@ -23,7 +24,18 @@ def _key() -> dict[str, str]:
 
 
 def _campagne_financee(client, session, auth, owner, investisseur, montant=250_000):
-    """Campagne active dont le pool a réellement été alimenté par un investissement."""
+    """Campagne active dont le pool est alimente par un investissement."""
+    pins = WalletUseCases(session)
+    for user_id in (owner, investisseur):
+        if not pins.has_pin(user_id):
+            pins.admin_reset_pin(
+                admin_user_id=None,
+                user_id=user_id,
+                new_pin="1234",
+                confirm_new_pin="1234",
+                reason="test fixture setup",
+            )
+    session.commit()
     auth.as_user(owner)
     campaign_id = uuid.UUID(
         client.post(
@@ -36,7 +48,9 @@ def _campagne_financee(client, session, auth, owner, investisseur, montant=250_0
 
     auth.as_user(investisseur)
     client.post(
-        f"{BASE}/campaigns/{campaign_id}/invest", json={"amount": montant}, headers=_key()
+        f"{BASE}/campaigns/{campaign_id}/invest",
+        json={"amount": montant, "pin": "1234"},
+        headers=_key(),
     )
     return campaign_id
 
@@ -310,7 +324,9 @@ def test_remboursement_solde_l_echeance_et_recredite_le_pool(
 
     auth.as_user(owner)
     response = client.post(
-        f"{BASE}/loans/{loan_id}/repay", json={"amount": 35_500}, headers=_key()
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 35_500, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 200
@@ -324,6 +340,23 @@ def test_remboursement_solde_l_echeance_et_recredite_le_pool(
     assert AccountRepository(session).balance(campaign.wallet_account_id).amount == 85_500
 
 
+def test_remboursement_pin_invalide_ne_debite_pas(
+    client, auth, session, make_user, fund_account
+):
+    owner, _, loan_id = _pret_decaisse(client, auth, session, make_user, fund_account)
+    auth.as_user(owner)
+
+    response = client.post(
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 35_500, "pin": "9999"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INVALID_PIN"
+    assert client.get(f"{WALLET}/balance").json()["balance"] == 200_000
+
+
 def test_remboursement_trace_le_mouvement_wallet(
     client, auth, session, make_user, fund_account
 ):
@@ -333,7 +366,9 @@ def test_remboursement_trace_le_mouvement_wallet(
 
     auth.as_user(owner)
     response = client.post(
-        f"{BASE}/loans/{loan_id}/repay", json={"amount": 35_500}, headers=_key()
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 35_500, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 200
@@ -357,7 +392,9 @@ def test_remboursement_partiel_laisse_l_echeance_ouverte(
 
     auth.as_user(owner)
     response = client.post(
-        f"{BASE}/loans/{loan_id}/repay", json={"amount": 10_000}, headers=_key()
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 10_000, "pin": "1234"},
+        headers=_key(),
     )
 
     installment = response.json()["installment"]
@@ -375,7 +412,9 @@ def test_remboursement_superieur_a_l_echeance_refuse(
 
     auth.as_user(owner)
     response = client.post(
-        f"{BASE}/loans/{loan_id}/repay", json={"amount": 71_000}, headers=_key()
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 71_000, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 422
@@ -398,7 +437,7 @@ def test_pret_entierement_rembourse_est_cloture(
     for echeance in echeancier:
         response = client.post(
             f"{BASE}/loans/{loan_id}/repay",
-            json={"amount": echeance["amount_due"]},
+            json={"amount": echeance["amount_due"], "pin": "1234"},
             headers=_key(),
         )
         assert response.status_code == 200
@@ -421,12 +460,14 @@ def test_remboursement_apres_cloture_refuse(
     for echeance in client.get(f"{BASE}/loans/{loan_id}/schedule").json()["data"]:
         client.post(
             f"{BASE}/loans/{loan_id}/repay",
-            json={"amount": echeance["amount_due"]},
+            json={"amount": echeance["amount_due"], "pin": "1234"},
             headers=_key(),
         )
 
     response = client.post(
-        f"{BASE}/loans/{loan_id}/repay", json={"amount": 1000}, headers=_key()
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 1000, "pin": "1234"},
+        headers=_key(),
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "INSTALLMENT_ALREADY_PAID"
@@ -447,7 +488,9 @@ def test_remboursement_avant_decaissement_refuse(
     ).json()["loan_id"]
 
     response = client.post(
-        f"{BASE}/loans/{loan_id}/repay", json={"amount": 35_500}, headers=_key()
+        f"{BASE}/loans/{loan_id}/repay",
+        json={"amount": 35_500, "pin": "1234"},
+        headers=_key(),
     )
 
     assert response.status_code == 409
