@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -66,17 +67,19 @@ class Settings(BaseSettings):
         avoir à lister chaque port.
         """
 
+        base_patterns = [
+            r"https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?",
+            r"https?://(?:[^/]+\.)?(?:diddifree\.com|vercel\.com)(?::\d+)?",
+        ]
         origins = self.cors_origins_list
         if "*" in origins:
-            return r"https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$|https?://(?:[^/]+\.)?(?:diddifree\.com|vercel\.com)(?::\d+)?$"
+            return r"^(?:" + "|".join(base_patterns) + r")$"
 
-        patterns = []
+        patterns = list(base_patterns)
         for origin in origins:
             parsed = urlparse(origin)
             if parsed.scheme and parsed.netloc:
-                patterns.append(f"{parsed.scheme}://{parsed.netloc}")
-        if not patterns:
-            return r"^$"
+                patterns.append(re.escape(f"{parsed.scheme}://{parsed.netloc}"))
         return r"^(?:" + "|".join(patterns) + r")$"
 
 
