@@ -413,7 +413,12 @@ def backfill_wallet(
 ):
     """Backfill interne: crée le wallet personnel si le provisioning événementiel a été manqué."""
     _require_admin(user)
-    account = WalletUseCases(session).provisionner_compte(payload.user_id)
+    use_cases = WalletUseCases(session)
+    account = (
+        use_cases.provisionner_compte_marchand(payload.user_id)
+        if payload.account_type == "merchant"
+        else use_cases.provisionner_compte(payload.user_id)
+    )
     phone = payload.phone
     if phone:
         from payfund_app.modules.wallet.infra.repositories import UserPhoneRepository

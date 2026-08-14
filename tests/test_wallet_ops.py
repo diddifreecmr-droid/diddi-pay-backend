@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from payfund_app.core.security import CurrentUser
+from payfund_app.modules.wallet.domain.entities import AccountType
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.money import Money
 from payfund_app.modules.wallet.infra.models import Transaction
@@ -30,6 +31,21 @@ def test_ops_backfill_cree_le_wallet_manquant(client, auth, session):
     body = response.json()
     assert body["status"] == "ok"
     assert AccountRepository(session).get_by_user(user_id) is not None
+
+
+def test_ops_backfill_peut_creer_un_compte_marchand(client, auth, session):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    user_id = uuid.uuid4()
+
+    response = client.post(
+        f"{BASE}/ops/backfill",
+        json={"user_id": str(user_id), "phone": "+2250700000000", "account_type": "merchant"},
+    )
+
+    assert response.status_code == 200
+    account = AccountRepository(session).get_by_user(user_id, account_type=AccountType.MERCHANT)
+    assert account is not None
+    assert account.account_type == "merchant"
 
 
 def test_ops_inspect_provisioning_status(client, auth, session, make_user):
