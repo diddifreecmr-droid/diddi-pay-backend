@@ -14,6 +14,7 @@ dependencies = [
     "httpx>=0.28",
     "pyjwt[crypto]>=2.10",
     "redis>=5.2",
+    "argon2-cffi>=23.1",
 ]
 
 [project.optional-dependencies]

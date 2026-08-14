@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 from sqlalchemy import func, select
@@ -313,8 +314,10 @@ def test_lookup_recipient_affiche_un_nom_cache(client, auth, make_user):
     assert "1111" in response.json()["display_name"]
 
 
-def test_pin_set_change_and_reset_recovery(client, auth, make_user, fund_account):
-    user_id, _ = make_user(phone="+2250701111111")
+def test_pin_set_change_and_reset_recovery(
+    client, auth, session, make_user, fund_account
+):
+    user_id, account_id = make_user(phone="+2250701111111")
     auth.as_user(user_id)
 
     created = client.post(
@@ -323,6 +326,7 @@ def test_pin_set_change_and_reset_recovery(client, auth, make_user, fund_account
     )
     assert created.status_code == 200
     recovery_code = created.json()["recovery_codes"][0]
+    assert WalletUseCases(session).pins.get(account_id).pin_hash.startswith("$argon2id$")
 
     changed = client.post(
         f"{BASE}/pin/change",
@@ -339,6 +343,32 @@ def test_pin_set_change_and_reset_recovery(client, auth, make_user, fund_account
         },
     )
     assert reset.status_code == 200
+
+
+def test_legacy_sha256_pin_is_rehashed_after_successful_verification(
+    client, auth, session, make_user, fund_account
+):
+    user_id, account_id = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(account_id, 10_000)
+    _set_pin(client, auth, user_id)
+
+    row = WalletUseCases(session).pins.get(account_id)
+    row.pin_salt = "legacy-salt"
+    row.pin_hash = hashlib.sha256(b"legacy-salt:1234").hexdigest()
+    session.commit()
+
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/transfer",
+        json={"recipient_phone": "+2250701111111", "amount": 1000, "pin": "1234"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 201
+    session.refresh(row)
+    assert row.pin_hash.startswith("$argon2id$")
+    assert row.pin_salt == "argon2id"
 
 
 def test_step_up_otp_required_for_large_transfer(client, auth, make_user, fund_account):

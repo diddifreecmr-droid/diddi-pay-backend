@@ -24,6 +24,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
 from sqlalchemy.orm import Session
 
 from payfund_app.modules.wallet.application.ledger import LedgerService
@@ -71,6 +73,9 @@ from payfund_app.modules.wallet.infra.repositories import (
 )
 from payfund_app.shared_kernel.events.bus import EventBusPort
 from payfund_app.shared_kernel.events.types import PAYMENT_COMPLETED, Event
+
+
+_PIN_HASHER = PasswordHasher()
 
 
 def to_money(amount: int, currency: str = "XOF") -> Money:
@@ -164,12 +169,11 @@ class WalletUseCases:
         account = self.compte_de(user_id)
         return account, self.pins.get(account.id)
 
-    def _pin_salt(self) -> str:
-        return secrets.token_urlsafe(12)
+    def _hash_pin(self, pin: str) -> str:
+        return _PIN_HASHER.hash(pin)
 
-    def _hash_pin(self, pin: str, salt: str) -> str:
-        digest = hashlib.sha256(f"{salt}:{pin}".encode()).hexdigest()
-        return digest
+    def _legacy_pin_hash(self, pin: str, salt: str) -> str:
+        return hashlib.sha256(f"{salt}:{pin}".encode()).hexdigest()
 
     def _hash_recovery_code(self, code: str) -> str:
         return hashlib.sha256(code.encode()).hexdigest()
@@ -184,10 +188,25 @@ class WalletUseCases:
         now = datetime.now(timezone.utc)
         if row.locked_until is not None and row.locked_until > now:
             raise PinLocked(details={"locked_until": row.locked_until})
-        expected = self._hash_pin(pin, row.pin_salt)
-        if not hmac.compare_digest(expected, row.pin_hash):
+        valid = False
+        if row.pin_hash.startswith("$argon2id$"):
+            try:
+                valid = _PIN_HASHER.verify(row.pin_hash, pin)
+            except (InvalidHashError, VerificationError):
+                valid = False
+        else:
+            expected = self._legacy_pin_hash(pin, row.pin_salt)
+            valid = hmac.compare_digest(expected, row.pin_hash)
+
+        if not valid:
             attempts = self.pins.register_failure(row)
             raise InvalidPin(details={"attempts": attempts, "remaining": max(0, 5 - attempts)})
+
+        if not row.pin_hash.startswith("$argon2id$") or _PIN_HASHER.check_needs_rehash(
+            row.pin_hash
+        ):
+            row.pin_hash = self._hash_pin(pin)
+            row.pin_salt = "argon2id"
         self.pins.clear_lock(row)
 
     def _ensure_password_policy(self, pin: str, confirm_pin: str) -> None:
@@ -197,11 +216,10 @@ class WalletUseCases:
     def define_pin(self, *, user_id: uuid.UUID, pin: str, confirm_pin: str) -> dict:
         account = self.compte_de(user_id)
         self._ensure_password_policy(pin, confirm_pin)
-        salt = self._pin_salt()
         row = self.pins.set_pin(
             account_id=account.id,
-            pin_hash=self._hash_pin(pin, salt),
-            pin_salt=salt,
+            pin_hash=self._hash_pin(pin),
+            pin_salt="argon2id",
         )
         recovery_codes = []
         for _ in range(6):
@@ -218,11 +236,10 @@ class WalletUseCases:
         account = self.compte_de(user_id)
         self._ensure_password_policy(new_pin, confirm_new_pin)
         self._verify_pin(account.id, current_pin)
-        salt = self._pin_salt()
         row = self.pins.set_pin(
             account_id=account.id,
-            pin_hash=self._hash_pin(new_pin, salt),
-            pin_salt=salt,
+            pin_hash=self._hash_pin(new_pin),
+            pin_salt="argon2id",
         )
         return {"account": account, "pin": row}
 
@@ -248,11 +265,10 @@ class WalletUseCases:
         if match is None:
             raise RecoveryCodeInvalid()
         match.consumed_at = datetime.now(timezone.utc)
-        salt = self._pin_salt()
         self.pins.set_pin(
             account_id=account.id,
-            pin_hash=self._hash_pin(new_pin, salt),
-            pin_salt=salt,
+            pin_hash=self._hash_pin(new_pin),
+            pin_salt="argon2id",
         )
         return {"account": account}
 
@@ -267,11 +283,10 @@ class WalletUseCases:
     ) -> dict:
         account = self.compte_de(user_id)
         self._ensure_password_policy(new_pin, confirm_new_pin)
-        salt = self._pin_salt()
         row = self.pins.set_pin(
             account_id=account.id,
-            pin_hash=self._hash_pin(new_pin, salt),
-            pin_salt=salt,
+            pin_hash=self._hash_pin(new_pin),
+            pin_salt="argon2id",
         )
         recovery_codes = []
         for _ in range(6):
