@@ -5,6 +5,7 @@ from payfund_app.modules.wallet.infra.gateways import (
     GatewayStatus,
     OrangeMoneySandboxGateway,
     StubGateway,
+    WaveSandboxGateway,
     get_gateway,
 )
 
@@ -33,6 +34,23 @@ def test_sandbox_orange_money_gateway_is_selectable(monkeypatch):
     )
     assert operation.status == GatewayStatus.PENDING
     assert operation.provider_reference.startswith("orange-money-sandbox-deposit-")
+
+
+def test_sandbox_wave_gateway_is_selectable(monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "sandbox_wave")
+    get_settings.cache_clear()
+
+    gateway = get_gateway()
+
+    assert isinstance(gateway, WaveSandboxGateway)
+    operation = gateway.initier_depot(
+        provider="wave",
+        phone="+2250700000000",
+        montant=5000,
+        reference="txn-wave-1",
+    )
+    assert operation.status == GatewayStatus.PENDING
+    assert operation.provider_reference.startswith("wave-sandbox-deposit-")
 
 
 def test_sandbox_orange_money_rejects_other_providers(monkeypatch):

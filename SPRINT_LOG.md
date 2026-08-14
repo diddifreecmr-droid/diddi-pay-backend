@@ -123,6 +123,11 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 - Added a provisioning status ops endpoint to inspect wallet creation state and phone index for a user.
 - Commit: `f485d81`
 
+## Sprint 25
+
+- Added a second sandbox payment rail for `wave` and verified the app in Docker with a live health check.
+- Commit: `80f63f7`
+
 ## Notes
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.

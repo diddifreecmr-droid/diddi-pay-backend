@@ -22,7 +22,7 @@ import httpx
 from payfund_app.core.config import get_settings
 
 PROVIDERS = ("paystack", "orange_money", "mtn_momo", "wave", "moov", "card_gateway")
-MODES = ("stub", "sandbox_orange_money")
+MODES = ("stub", "sandbox_orange_money", "sandbox_wave")
 
 
 class GatewayStatus(StrEnum):
@@ -124,6 +124,44 @@ class OrangeMoneySandboxGateway(StubGateway):
         )
 
 
+class WaveSandboxGateway(StubGateway):
+    """Sandbox explicite pour Wave.
+
+    On garde la même mécanique que le stub, mais avec un rail visible pour préparer l'intégration
+    réelle sans changer les use cases du wallet.
+    """
+
+    provider_name = "wave"
+
+    def _ensure_provider(self, provider: str) -> None:
+        if provider != self.provider_name:
+            raise NotImplementedError(f"Sandbox Wave non disponible pour le provider {provider!r}.")
+
+    def initier_depot(
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
+    ) -> GatewayOperation:
+        self._ensure_provider(provider)
+        return GatewayOperation(
+            provider_reference=f"wave-sandbox-deposit-{uuid.uuid4()}",
+            status=GatewayStatus.COMPLETED if self.autoconfirm else GatewayStatus.PENDING,
+        )
+
+    def initier_retrait(
+        self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
+    ) -> GatewayOperation:
+        self._ensure_provider(provider)
+        return GatewayOperation(
+            provider_reference=f"wave-sandbox-withdraw-{uuid.uuid4()}",
+            status=GatewayStatus.COMPLETED if self.autoconfirm else GatewayStatus.PENDING,
+        )
+
+    def verifier_depot(self, reference: str) -> GatewayOperation:
+        return GatewayOperation(
+            provider_reference=reference,
+            status=GatewayStatus.PENDING if not self.autoconfirm else GatewayStatus.COMPLETED,
+        )
+
+
 class PaystackGateway:
     """Adapter Paystack pour les dépôts wallet.
 
@@ -211,6 +249,8 @@ def get_gateway() -> PaymentGatewayPort:
         return StubGateway()
     if mode == "sandbox_orange_money":
         return OrangeMoneySandboxGateway()
+    if mode == "sandbox_wave":
+        return WaveSandboxGateway()
     if mode == "paystack":
         return PaystackGateway()
     # Les adaptateurs réels (Orange Money, MTN, Wave, Moov, cartes) viendront ici.
