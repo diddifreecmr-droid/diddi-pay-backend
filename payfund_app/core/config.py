@@ -2,6 +2,7 @@ from decimal import Decimal
 from functools import lru_cache
 from urllib.parse import urlparse
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,10 @@ class Settings(BaseSettings):
     paystack_secret_key: str = ""
     paystack_base_url: str = "https://api.paystack.co"
     paystack_webhook_secret: str = ""
+
+    # Politique de risque DiddiPay. Le seuil reste une decision serveur et peut etre ajuste par
+    # environnement sans modifier le code ni demander au frontend de connaitre la regle.
+    wallet_step_up_threshold_xof: int = Field(default=50_000, ge=1)
 
     # Taux d'intérêt annuel appliqué tant que le module de scoring IA n'expose pas d'interface
     # (Architecture §6). Valeur par défaut = celle de l'exemple du contrat API §2.

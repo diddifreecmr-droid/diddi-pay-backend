@@ -101,6 +101,7 @@ class WalletUseCases:
         session: Session,
         bus: EventBusPort | None = None,
         gateway: PaymentGatewayPort | None = None,
+        step_up_threshold_xof: int | None = None,
     ) -> None:
         self.session = session
         self.accounts = AccountRepository(session)
@@ -116,6 +117,7 @@ class WalletUseCases:
         self.ledger = LedgerService(session)
         self.bus = bus
         self._gateway = gateway
+        self.step_up_threshold_xof = step_up_threshold_xof
 
     @property
     def gateway(self) -> PaymentGatewayPort:
@@ -319,7 +321,9 @@ class WalletUseCases:
         amount: int,
         otp_code: str | None,
     ) -> None:
-        if amount < 50000:
+        if self.step_up_threshold_xof is None:
+            raise RuntimeError("La politique step-up OTP n'a pas ete injectee.")
+        if amount < self.step_up_threshold_xof:
             return
         latest = self.transfer_otp.latest_for_account(account_id)
         if latest is None:

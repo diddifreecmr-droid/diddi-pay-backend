@@ -253,7 +253,11 @@ def transfer(
     session: SessionDep,
     idempotency_key: IdempotencyKeyDep,
 ) -> TransferResponse:
-    result = WalletUseCases(session, bus=get_bus()).transferer_p2p(
+    result = WalletUseCases(
+        session,
+        bus=get_bus(),
+        step_up_threshold_xof=get_settings().wallet_step_up_threshold_xof,
+    ).transferer_p2p(
         user_id=user.user_id,
         recipient_phone=payload.recipient_phone,
         amount=payload.amount,

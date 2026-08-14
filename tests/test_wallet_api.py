@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy import func, select
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.security import CurrentUser
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import AccountStatus, AccountType, Direction
@@ -355,6 +356,26 @@ def test_step_up_otp_required_for_large_transfer(client, auth, make_user, fund_a
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "STEP_UP_OTP_REQUIRED"
+
+
+def test_step_up_threshold_is_configurable(
+    client, auth, make_user, fund_account, monkeypatch
+):
+    monkeypatch.setenv("WALLET_STEP_UP_THRESHOLD_XOF", "70000")
+    get_settings.cache_clear()
+    user_id, compte = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(compte, 100_000)
+    _set_pin(client, auth, user_id)
+
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/transfer",
+        json={"recipient_phone": "+2250701111111", "amount": 60000, "pin": "1234"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 201
 
 
 def test_step_up_otp_allows_sensitive_transfer(
