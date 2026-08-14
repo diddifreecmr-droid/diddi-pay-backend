@@ -58,6 +58,7 @@ TABLES = [
     "wallet.currency_conversions",
     "wallet.exchange_rates",
     "wallet.transaction_pin_recovery_codes",
+    "wallet.consumed_step_up_proofs",
     "wallet.transaction_pins",
     "wallet.transfer_otp_challenges",
     "wallet.pin_recovery_audits",

@@ -333,6 +333,25 @@ class TransactionPinRecoveryCode(Base):
     )
 
 
+class ConsumedStepUpProof(Base):
+    """Identifiant d'une preuve DiddiFreeID consommée, sans conserver le token signé."""
+
+    __tablename__ = "consumed_step_up_proofs"
+    __table_args__ = (
+        CheckConstraint("purpose <> ''", name="ck_step_up_proof_purpose"),
+        Index("idx_step_up_proofs_expiry", "expires_at"),
+        {"schema": "wallet"},
+    )
+
+    jti: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(80), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class TransferOtpChallenge(Base):
     """Challenge OTP interne pour les virements à risque."""
 

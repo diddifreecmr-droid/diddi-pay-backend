@@ -23,6 +23,7 @@ from payfund_app.modules.wallet.infra.models import (
     PinRecoveryAudit,
     TransactionPin,
     TransactionPinRecoveryCode,
+    ConsumedStepUpProof,
     TransferOtpChallenge,
     OutboxEvent,
     ReconciliationLog,
@@ -499,6 +500,32 @@ class TransactionPinRecoveryCodeRepository:
                 TransactionPinRecoveryCode.code_hash == code_hash
             )
         )
+
+
+class ConsumedStepUpProofRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, jti: uuid.UUID) -> ConsumedStepUpProof | None:
+        return self.session.get(ConsumedStepUpProof, jti)
+
+    def add(
+        self,
+        *,
+        jti: uuid.UUID,
+        user_id: uuid.UUID,
+        purpose: str,
+        expires_at: datetime,
+    ) -> ConsumedStepUpProof:
+        row = ConsumedStepUpProof(
+            jti=jti,
+            user_id=user_id,
+            purpose=purpose,
+            expires_at=expires_at,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
 
 
 class TransferOtpChallengeRepository:
