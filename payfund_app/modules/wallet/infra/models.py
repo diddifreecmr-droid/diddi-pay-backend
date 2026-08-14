@@ -269,3 +269,24 @@ class OutboxEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class ReconciliationLog(Base):
+    """Journal durable des décisions de réconciliation provider."""
+
+    __tablename__ = "reconciliation_logs"
+    __table_args__ = (
+        Index("idx_reconciliation_logs_transaction", "transaction_id", "created_at"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    transaction_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    event: Mapped[str] = mapped_column(String(50), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

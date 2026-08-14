@@ -43,7 +43,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
 from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.models import Transaction
-from payfund_app.modules.wallet.infra.repositories import OutboxRepository
+from payfund_app.modules.wallet.infra.repositories import OutboxRepository, ReconciliationLogRepository
 from payfund_app.shared_kernel.events.bus import get_bus
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -338,10 +338,34 @@ def reconcile_paystack_deposit(
     result = gateway.verifier_depot(transaction.provider_reference)
     if result.status is GatewayStatus.COMPLETED:
         use_cases.confirmer_operation(transaction.id, provider="paystack")
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event="manual_reconcile",
+            outcome="completed",
+            reason="provider_completed",
+        )
         return {"status": "completed", "transaction_id": str(transaction.id)}
     if result.status is GatewayStatus.FAILED:
         use_cases.echouer_operation(transaction.id, provider="paystack")
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event="manual_reconcile",
+            outcome="failed",
+            reason="provider_failed",
+        )
         return {"status": "failed", "transaction_id": str(transaction.id)}
+    ReconciliationLogRepository(session).append(
+        transaction_id=transaction.id,
+        provider="paystack",
+        provider_reference=transaction.provider_reference,
+        event="manual_reconcile",
+        outcome="pending",
+        reason="provider_pending",
+    )
     return {"status": "pending", "transaction_id": str(transaction.id)}
 
 
@@ -364,6 +388,33 @@ def inspect_paystack_transaction(
         "currency": transaction.currency,
         "completed_at": transaction.completed_at,
         "origin_module": transaction.origin_module,
+    }
+
+
+@router.get("/ops/paystack/{transaction_id}/reconciliations")
+def list_paystack_reconciliations(
+    transaction_id: uuid.UUID,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    """Historique des décisions de réconciliation pour une transaction Paystack."""
+    _require_admin(user)
+    rows = ReconciliationLogRepository(session).latest_for_transaction(transaction_id)
+    return {
+        "data": [
+            {
+                "id": str(row.id),
+                "transaction_id": str(row.transaction_id),
+                "provider": row.provider,
+                "provider_reference": row.provider_reference,
+                "event": row.event,
+                "outcome": row.outcome,
+                "reason": row.reason,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "total": len(rows),
     }
 
 
@@ -451,6 +502,14 @@ async def paystack_webhook(
     use_cases = WalletUseCases(session, bus=get_bus())
     if event == "charge.success" or data.get("status") == "success":
         use_cases.confirmer_operation(transaction.id, provider="paystack")
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event=str(event or "webhook"),
+            outcome="completed",
+            reason="charge_success",
+        )
         return {
             "status": "processed",
             "transaction_status": "completed",
@@ -459,10 +518,26 @@ async def paystack_webhook(
 
     if data.get("status") in {"failed", "abandoned", "reversed"}:
         use_cases.echouer_operation(transaction.id, provider="paystack")
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event=str(event or "webhook"),
+            outcome="failed",
+            reason=str(data.get("status")),
+        )
         return {
             "status": "processed",
             "transaction_status": "failed",
             "reason": str(data.get("status")),
         }
 
+    ReconciliationLogRepository(session).append(
+        transaction_id=transaction.id,
+        provider="paystack",
+        provider_reference=transaction.provider_reference,
+        event=str(event or "webhook"),
+        outcome="ignored",
+        reason="unhandled_event",
+    )
     return {"status": "ignored", "reason": "unhandled_event"}

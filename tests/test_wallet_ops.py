@@ -6,7 +6,11 @@ from payfund_app.core.security import CurrentUser
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.money import Money
 from payfund_app.modules.wallet.infra.models import Transaction
-from payfund_app.modules.wallet.infra.repositories import AccountRepository, TransactionRepository
+from payfund_app.modules.wallet.infra.repositories import (
+    AccountRepository,
+    ReconciliationLogRepository,
+    TransactionRepository,
+)
 from payfund_app.shared_kernel.events.bus import InMemoryEventBus, set_bus
 
 BASE = "/payfund/v1/wallet"
@@ -61,6 +65,11 @@ def test_ops_reconcile_paystack_finalise_un_webhook_manque(
     updated = session.get(Transaction, transaction.id)
     assert updated.status == "completed"
     assert AccountRepository(session).balance(account_id).amount == 5000
+    logs = ReconciliationLogRepository(session).latest_for_transaction(transaction.id)
+    assert len(logs) == 1
+    assert logs[0].outcome == "completed"
+    assert logs[0].event == "manual_reconcile"
+    assert logs[0].reason == "provider_completed"
 
 
 def test_ops_inspect_paystack_transaction(client, auth, session, make_user):
@@ -85,6 +94,47 @@ def test_ops_inspect_paystack_transaction(client, auth, session, make_user):
     assert body["provider_reference"] == "ps-audit-1"
     assert body["status"] == "pending"
     assert body["amount"] == 5000
+
+
+def test_ops_list_paystack_reconciliations(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    _, account_id = make_user()
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=Money(5000, "XOF"),
+        provider_reference="ps-history-1",
+    )
+    ReconciliationLogRepository(session).append(
+        transaction_id=transaction.id,
+        provider="paystack",
+        provider_reference="ps-history-1",
+        event="webhook",
+        outcome="completed",
+        reason="charge_success",
+    )
+    ReconciliationLogRepository(session).append(
+        transaction_id=transaction.id,
+        provider="paystack",
+        provider_reference="ps-history-1",
+        event="manual_reconcile",
+        outcome="completed",
+        reason="provider_completed",
+    )
+    session.commit()
+
+    response = client.get(f"{BASE}/ops/paystack/{transaction.id}/reconciliations")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert body["data"][0]["event"] == "manual_reconcile"
+    assert body["data"][0]["outcome"] == "completed"
+    assert body["data"][1]["event"] == "webhook"
+    assert body["data"][1]["reason"] == "charge_success"
 
 
 def test_ops_list_pending_paystack_transactions(client, auth, session, make_user):

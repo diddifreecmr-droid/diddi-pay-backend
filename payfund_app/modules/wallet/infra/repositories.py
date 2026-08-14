@@ -20,6 +20,7 @@ from payfund_app.modules.wallet.infra.models import (
     GatewayAccount,
     LedgerEntry,
     OutboxEvent,
+    ReconciliationLog,
     Transaction,
     UserPhone,
 )
@@ -277,6 +278,45 @@ class OutboxRepository:
         event.status = "published"
         event.published_at = datetime.now(timezone.utc)
         self.session.flush()
+
+
+class ReconciliationLogRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def append(
+        self,
+        *,
+        transaction_id: uuid.UUID,
+        provider: str,
+        provider_reference: str | None,
+        event: str,
+        outcome: str,
+        reason: str | None = None,
+    ) -> ReconciliationLog:
+        row = ReconciliationLog(
+            transaction_id=transaction_id,
+            provider=provider,
+            provider_reference=provider_reference,
+            event=event,
+            outcome=outcome,
+            reason=reason,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def latest_for_transaction(
+        self, transaction_id: uuid.UUID, limit: int = 20
+    ) -> list[ReconciliationLog]:
+        return list(
+            self.session.scalars(
+                select(ReconciliationLog)
+                .where(ReconciliationLog.transaction_id == transaction_id)
+                .order_by(ReconciliationLog.created_at.desc())
+                .limit(limit)
+            )
+        )
 
 
 class GatewayAccountRepository:
