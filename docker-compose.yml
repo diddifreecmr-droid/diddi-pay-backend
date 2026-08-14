@@ -49,6 +49,7 @@ services:
       DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json}
       EVENT_BUS_CHANNEL: ${EVENT_BUS_CHANNEL:-diddifree.events}
       PAYMENT_GATEWAY_MODE: ${PAYMENT_GATEWAY_MODE:-stub}
+      WALLET_STEP_UP_THRESHOLD_XOF: ${WALLET_STEP_UP_THRESHOLD_XOF:-50000}
       # Le déploiement ne se fait pas forcément via `docker compose` en CLI avec un `.env` à
       # côté du fichier (ex. Portainer, qui clone le dépôt et n'a donc jamais accès à un `.env`
       # non versionné) : une variable obligatoire ici (`${VAR:?...}`) ferait échouer le simple
