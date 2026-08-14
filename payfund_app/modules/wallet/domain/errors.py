@@ -99,3 +99,27 @@ class NotMerchantAccountOwner(AppError):
     status_code = 403
     code = "NOT_MERCHANT_ACCOUNT_OWNER"
     message = "Seul le propriétaire du compte marchand peut générer son QR code."
+
+
+class PinRequired(AppError):
+    status_code = 409
+    code = "PIN_REQUIRED"
+    message = "Un PIN transactionnel est requis."
+
+
+class InvalidPin(AppError):
+    status_code = 403
+    code = "INVALID_PIN"
+    message = "PIN transactionnel invalide."
+
+
+class PinLocked(AppError):
+    status_code = 423
+    code = "PIN_LOCKED"
+    message = "PIN temporairement bloqué."
+
+
+class RecoveryCodeInvalid(AppError):
+    status_code = 400
+    code = "RECOVERY_CODE_INVALID"
+    message = "Code de récupération invalide."

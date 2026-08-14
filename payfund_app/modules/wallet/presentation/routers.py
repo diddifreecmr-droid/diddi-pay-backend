@@ -32,6 +32,11 @@ from payfund_app.modules.wallet.presentation.schemas import (
     OpsBackfillRequest,
     Page,
     Pagination,
+    PinChangeRequest,
+    PinResetWithRecoveryRequest,
+    PinSetRequest,
+    PinStatusResponse,
+    RecipientLookupResponse,
     PendingOperationResponse,
     TransactionDetail,
     TransactionItem,
@@ -75,6 +80,77 @@ def get_balance(user: CurrentUserDep, session: SessionDep) -> BalanceResponse:
         currency=balance.currency,
         status=account.status,
     )
+
+
+@router.get("/recipient/lookup", response_model=RecipientLookupResponse)
+def lookup_recipient(
+    phone: Annotated[str, Query(min_length=4, max_length=20)],
+    user: CurrentUserDep,
+    session: SessionDep,
+) -> RecipientLookupResponse:
+    display_name = WalletUseCases(session).lookup_recipient_display_name(phone)
+    if display_name is None:
+        raise Forbidden("Destinataire introuvable.", code="RECIPIENT_NOT_FOUND")
+    return RecipientLookupResponse(display_name=display_name)
+
+
+@router.get("/pin", response_model=PinStatusResponse)
+def pin_status(user: CurrentUserDep, session: SessionDep) -> PinStatusResponse:
+    account, pin = WalletUseCases(session).pin_status(user.user_id)
+    return PinStatusResponse(
+        account_id=account.id,
+        has_pin=pin is not None,
+        failed_attempts=getattr(pin, "failed_attempts", 0),
+        locked_until=getattr(pin, "locked_until", None),
+    )
+
+
+@router.post("/pin/set")
+def set_pin(
+    payload: PinSetRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    result = WalletUseCases(session).define_pin(
+        user_id=user.user_id,
+        pin=payload.pin,
+        confirm_pin=payload.confirm_pin,
+    )
+    return {
+        "status": "ok",
+        "account_id": str(result["account"].id),
+        "recovery_codes": result["recovery_codes"],
+    }
+
+
+@router.post("/pin/change")
+def change_pin(
+    payload: PinChangeRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    result = WalletUseCases(session).change_pin(
+        user_id=user.user_id,
+        current_pin=payload.current_pin,
+        new_pin=payload.new_pin,
+        confirm_new_pin=payload.confirm_new_pin,
+    )
+    return {"status": "ok", "account_id": str(result["account"].id)}
+
+
+@router.post("/pin/reset")
+def reset_pin(
+    payload: PinResetWithRecoveryRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    result = WalletUseCases(session).reset_pin_with_recovery(
+        user_id=user.user_id,
+        recovery_code=payload.recovery_code,
+        new_pin=payload.new_pin,
+        confirm_new_pin=payload.confirm_new_pin,
+    )
+    return {"status": "ok", "account_id": str(result["account"].id)}
 
 
 @router.post("/deposit", response_model=DepositResponse, status_code=202)
@@ -160,6 +236,7 @@ def transfer(
         user_id=user.user_id,
         recipient_phone=payload.recipient_phone,
         amount=payload.amount,
+        pin=payload.pin,
         idempotency_key=idempotency_key,
     )
     return TransferResponse(
@@ -479,6 +556,57 @@ def reconcile_paystack_deposit(
     return {"status": "pending", "transaction_id": str(transaction.id)}
 
 
+@router.get("/ops/paystack/pending")
+def list_pending_paystack_transactions(user: CurrentUserDep, session: SessionDep):
+    _require_admin(user)
+    rows = list(
+        session.scalars(
+            select(Transaction).where(
+                Transaction.type == "deposit",
+                Transaction.status == "pending",
+                Transaction.provider_reference.is_not(None),
+                Transaction.origin_module == "wallet",
+            )
+        )
+    )
+    return {
+        "data": [
+            {
+                "transaction_id": str(row.id),
+                "provider_reference": row.provider_reference,
+                "amount": int(row.amount) if row.amount is not None else None,
+                "currency": row.currency,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@router.get("/ops/paystack/summary")
+def paystack_reconciliation_summary(user: CurrentUserDep, session: SessionDep):
+    _require_admin(user)
+    base = select(Transaction).where(
+        Transaction.type == "deposit",
+        Transaction.origin_module == "wallet",
+        Transaction.provider_reference.is_not(None),
+    )
+    rows = list(session.scalars(base))
+    summary = {"pending": 0, "completed": 0, "failed": 0, "missing_reference": 0}
+    for row in rows:
+        if row.provider_reference is None:
+            summary["missing_reference"] += 1
+        elif row.status == "pending":
+            summary["pending"] += 1
+        elif row.status == "completed":
+            summary["completed"] += 1
+        elif row.status in {"failed", "reversed"}:
+            summary["failed"] += 1
+    summary["total"] = len(rows)
+    return summary
+
+
 @router.get("/ops/paystack/{transaction_id}")
 def inspect_paystack_transaction(
     transaction_id: uuid.UUID,
@@ -526,59 +654,6 @@ def list_paystack_reconciliations(
         ],
         "total": len(rows),
     }
-
-
-@router.get("/ops/paystack/pending")
-def list_pending_paystack_transactions(user: CurrentUserDep, session: SessionDep):
-    """Vue d'ensemble des dépôts Paystack qui attendent encore une décision finale."""
-    _require_admin(user)
-    rows = list(
-        session.scalars(
-            select(Transaction).where(
-                Transaction.type == "deposit",
-                Transaction.status == "pending",
-                Transaction.provider_reference.is_not(None),
-                Transaction.origin_module == "wallet",
-            )
-        )
-    )
-    return {
-        "data": [
-            {
-                "transaction_id": str(row.id),
-                "provider_reference": row.provider_reference,
-                "amount": int(row.amount) if row.amount is not None else None,
-                "currency": row.currency,
-                "created_at": row.created_at,
-            }
-            for row in rows
-        ],
-        "total": len(rows),
-    }
-
-
-@router.get("/ops/paystack/summary")
-def paystack_reconciliation_summary(user: CurrentUserDep, session: SessionDep):
-    """Résumé de réconciliation Paystack pour support et ops."""
-    _require_admin(user)
-    base = select(Transaction).where(
-        Transaction.type == "deposit",
-        Transaction.origin_module == "wallet",
-        Transaction.provider_reference.is_not(None),
-    )
-    rows = list(session.scalars(base))
-    summary = {"pending": 0, "completed": 0, "failed": 0, "missing_reference": 0}
-    for row in rows:
-        if row.provider_reference is None:
-            summary["missing_reference"] += 1
-        elif row.status == "pending":
-            summary["pending"] += 1
-        elif row.status == "completed":
-            summary["completed"] += 1
-        elif row.status in {"failed", "reversed"}:
-            summary["failed"] += 1
-    summary["total"] = len(rows)
-    return summary
 
 
 @router.post("/webhooks/paystack")

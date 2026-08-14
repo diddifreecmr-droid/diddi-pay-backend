@@ -268,6 +268,57 @@ class KycDocument(Base):
     )
 
 
+class TransactionPin(Base):
+    """État de sécurité PIN d'un wallet personnel."""
+
+    __tablename__ = "transaction_pins"
+    __table_args__ = (
+        CheckConstraint("failed_attempts >= 0", name="ck_pin_failed_attempts"),
+        {"schema": "wallet"},
+    )
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("wallet.accounts.id"),
+        primary_key=True,
+    )
+    pin_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    pin_salt: Mapped[str] = mapped_column(String(64), nullable=False)
+    failed_attempts: Mapped[int] = mapped_column(
+        nullable=False, server_default=text("0")
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TransactionPinRecoveryCode(Base):
+    """Code de secours à usage unique pour réinitialiser un PIN perdu."""
+
+    __tablename__ = "transaction_pin_recovery_codes"
+    __table_args__ = (
+        Index("idx_pin_recovery_codes_account", "account_id", "created_at"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("wallet.accounts.id"),
+        nullable=False,
+    )
+    code_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class OutboxEvent(Base):
     """Événement durable à relayer vers le bus interne.
 

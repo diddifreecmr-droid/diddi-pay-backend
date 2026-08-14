@@ -16,9 +16,13 @@ d'écriture ; `reversed` = opération écrite puis annulée par contre-passation
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -35,8 +39,12 @@ from payfund_app.modules.wallet.domain.errors import (
     CannotTransferToSelf,
     GatewayUnavailable,
     InvalidAmountError,
+    InvalidPin,
     MerchantNotFound,
+    PinLocked,
+    PinRequired,
     RecipientNotFound,
+    RecoveryCodeInvalid,
     TransactionNotFound,
 )
 from payfund_app.modules.wallet.domain.money import Balance, InvalidAmount, Money
@@ -51,6 +59,8 @@ from payfund_app.modules.wallet.infra.repositories import (
     GatewayAccountRepository,
     LedgerRepository,
     OutboxRepository,
+    TransactionPinRecoveryCodeRepository,
+    TransactionPinRepository,
     TransactionRepository,
     UserPhoneRepository,
 )
@@ -92,6 +102,8 @@ class WalletUseCases:
         self.transactions = TransactionRepository(session)
         self.ledger_repo = LedgerRepository(session)
         self.phones = UserPhoneRepository(session)
+        self.pins = TransactionPinRepository(session)
+        self.pin_recovery_codes = TransactionPinRecoveryCodeRepository(session)
         self.gateways = GatewayAccountRepository(session)
         self.outbox = OutboxRepository(session)
         self.ledger = LedgerService(session)
@@ -135,6 +147,102 @@ class WalletUseCases:
             # create the personal wallet lazily the first time the user actually touches Payfund.
             account = self.provisionner_compte(user_id)
         return account
+
+    def has_pin(self, user_id: uuid.UUID) -> bool:
+        return self.pins.get(self.compte_de(user_id).id) is not None
+
+    def pin_status(self, user_id: uuid.UUID) -> tuple[Account, object | None]:
+        account = self.compte_de(user_id)
+        return account, self.pins.get(account.id)
+
+    def _pin_salt(self) -> str:
+        return secrets.token_urlsafe(12)
+
+    def _hash_pin(self, pin: str, salt: str) -> str:
+        digest = hashlib.sha256(f"{salt}:{pin}".encode()).hexdigest()
+        return digest
+
+    def _hash_recovery_code(self, code: str) -> str:
+        return hashlib.sha256(code.encode()).hexdigest()
+
+    def _verify_pin(self, account_id: uuid.UUID, pin: str) -> None:
+        row = self.pins.get(account_id)
+        if row is None:
+            raise PinRequired()
+        now = datetime.now(timezone.utc)
+        if row.locked_until is not None and row.locked_until > now:
+            raise PinLocked(details={"locked_until": row.locked_until})
+        expected = self._hash_pin(pin, row.pin_salt)
+        if not hmac.compare_digest(expected, row.pin_hash):
+            attempts = self.pins.register_failure(row)
+            raise InvalidPin(details={"attempts": attempts, "remaining": max(0, 5 - attempts)})
+        self.pins.clear_lock(row)
+
+    def _ensure_password_policy(self, pin: str, confirm_pin: str) -> None:
+        if pin != confirm_pin:
+            raise InvalidPin("Les deux PIN ne correspondent pas.")
+
+    def define_pin(self, *, user_id: uuid.UUID, pin: str, confirm_pin: str) -> dict:
+        account = self.compte_de(user_id)
+        self._ensure_password_policy(pin, confirm_pin)
+        salt = self._pin_salt()
+        row = self.pins.set_pin(
+            account_id=account.id,
+            pin_hash=self._hash_pin(pin, salt),
+            pin_salt=salt,
+        )
+        recovery_codes = []
+        for _ in range(6):
+            code = secrets.token_urlsafe(8)
+            self.pin_recovery_codes.add(
+                account_id=account.id, code_hash=self._hash_recovery_code(code)
+            )
+            recovery_codes.append(code)
+        return {"account": account, "pin": row, "recovery_codes": recovery_codes}
+
+    def change_pin(
+        self, *, user_id: uuid.UUID, current_pin: str, new_pin: str, confirm_new_pin: str
+    ) -> dict:
+        account = self.compte_de(user_id)
+        self._ensure_password_policy(new_pin, confirm_new_pin)
+        self._verify_pin(account.id, current_pin)
+        salt = self._pin_salt()
+        row = self.pins.set_pin(
+            account_id=account.id,
+            pin_hash=self._hash_pin(new_pin, salt),
+            pin_salt=salt,
+        )
+        return {"account": account, "pin": row}
+
+    def lookup_recipient_display_name(self, phone: str) -> str | None:
+        user_id = self.phones.user_id_for(phone)
+        if user_id is None:
+            return None
+        visible = phone[-4:] if len(phone) >= 4 else phone
+        return f"Compte se terminant par {visible}"
+
+    def reset_pin_with_recovery(
+        self, *, user_id: uuid.UUID, recovery_code: str, new_pin: str, confirm_new_pin: str
+    ) -> dict:
+        account = self.compte_de(user_id)
+        self._ensure_password_policy(new_pin, confirm_new_pin)
+        code_hash = self._hash_recovery_code(recovery_code)
+        rows = self.pin_recovery_codes.list_for_account(account.id)
+        match = None
+        for row in rows:
+            if row.consumed_at is None and hmac.compare_digest(row.code_hash, code_hash):
+                match = row
+                break
+        if match is None:
+            raise RecoveryCodeInvalid()
+        match.consumed_at = datetime.now(timezone.utc)
+        salt = self._pin_salt()
+        self.pins.set_pin(
+            account_id=account.id,
+            pin_hash=self._hash_pin(new_pin, salt),
+            pin_salt=salt,
+        )
+        return {"account": account}
 
     # --- Lecture -------------------------------------------------------------
 
@@ -186,11 +294,13 @@ class WalletUseCases:
         user_id: uuid.UUID,
         recipient_phone: str,
         amount: int,
+        pin: str,
         idempotency_key: str,
     ) -> TransferResult:
         """Transfert P2P interne — synchrone, les deux écritures dans la même transaction DB
         (Contrat API §1)."""
         source = self.compte_de(user_id)
+        self._verify_pin(source.id, pin)
         montant = to_money(amount, source.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
@@ -246,10 +356,12 @@ class WalletUseCases:
             montant=montant,
             type_=str(TransactionType.MERCHANT_PAYMENT),
             reference=f"wallet:merchant:{merchant.id}",
-            business_reference=business_reference,
             idempotency_key=idempotency_key,
             origin_module=origin_module,
         )
+        if business_reference is not None:
+            transaction.business_reference = business_reference
+            self.session.flush()
         if not replayed:
             self._publish_completed(transaction, montant)
         return TransferResult(transaction, montant, replayed)

@@ -156,4 +156,9 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 ## Sprint 30
 
 - Hardened the public contracts for DiddiPay and DiddiFund by documenting wallet provisioning, ops recovery routes, reconciliation views, and the KYC/document boundary.
+- Commit: `5a1f0ed`
+
+## Sprint 31
+
+- Added transaction PIN security for wallets, including mandatory PIN setup, PIN-protected P2P transfers, recovery codes, recipient lookup, and supporting database migrations/tests.
 - Commit: `pending`

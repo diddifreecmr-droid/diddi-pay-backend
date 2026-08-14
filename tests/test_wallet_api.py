@@ -22,6 +22,16 @@ def _solde(client, auth, user_id) -> int:
     return client.get(f"{BASE}/balance").json()["balance"]
 
 
+def _set_pin(client, auth, user_id, pin="1234"):
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/pin/set",
+        json={"pin": pin, "confirm_pin": pin, "otp_code": "000000"},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_solde_initial_a_zero(client, auth, make_user):
     user_id, account_id = make_user()
     auth.as_user(user_id)
@@ -53,11 +63,12 @@ def test_transfert_p2p_deplace_les_fonds(client, auth, session, make_user, fund_
     emetteur, compte_emetteur = make_user()
     destinataire, _ = make_user(phone="+2250701111111")
     fund_account(compte_emetteur, 10_000)
+    _set_pin(client, auth, emetteur)
 
     auth.as_user(emetteur)
     response = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 2000},
+        json={"recipient_phone": "+2250701111111", "amount": 2000, "pin": "1234"},
         headers=_key(),
     )
 
@@ -77,11 +88,12 @@ def test_transfert_ecrit_deux_lignes_a_somme_nulle(
     emetteur, compte_emetteur = make_user()
     make_user(phone="+2250701111111")
     fund_account(compte_emetteur, 10_000)
+    _set_pin(client, auth, emetteur)
 
     auth.as_user(emetteur)
     transaction_id = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 2000},
+        json={"recipient_phone": "+2250701111111", "amount": 2000, "pin": "1234"},
         headers=_key(),
     ).json()["transaction_id"]
 
@@ -102,11 +114,12 @@ def test_transfert_solde_insuffisant(client, auth, make_user, fund_account):
     emetteur, compte = make_user()
     make_user(phone="+2250701111111")
     fund_account(compte, 1000)
+    _set_pin(client, auth, emetteur)
 
     auth.as_user(emetteur)
     response = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 5000},
+        json={"recipient_phone": "+2250701111111", "amount": 5000, "pin": "1234"},
         headers=_key(),
     )
 
@@ -119,11 +132,12 @@ def test_transfert_solde_insuffisant(client, auth, make_user, fund_account):
 def test_transfert_vers_soi_meme(client, auth, make_user, fund_account):
     user_id, compte = make_user(phone="+2250700000000")
     fund_account(compte, 5000)
+    _set_pin(client, auth, user_id)
 
     auth.as_user(user_id)
     response = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250700000000", "amount": 1000},
+        json={"recipient_phone": "+2250700000000", "amount": 1000, "pin": "1234"},
         headers=_key(),
     )
 
@@ -134,11 +148,12 @@ def test_transfert_vers_soi_meme(client, auth, make_user, fund_account):
 def test_transfert_destinataire_inconnu(client, auth, make_user, fund_account):
     user_id, compte = make_user()
     fund_account(compte, 5000)
+    _set_pin(client, auth, user_id)
 
     auth.as_user(user_id)
     response = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250709999999", "amount": 1000},
+        json={"recipient_phone": "+2250709999999", "amount": 1000, "pin": "1234"},
         headers=_key(),
     )
 
@@ -146,12 +161,30 @@ def test_transfert_destinataire_inconnu(client, auth, make_user, fund_account):
     assert response.json()["error"]["code"] == "RECIPIENT_NOT_FOUND"
 
 
+def test_transfert_sans_pin_est_refuse(client, auth, make_user, fund_account):
+    user_id, compte = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(compte, 5000)
+
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/transfer",
+        json={"recipient_phone": "+2250701111111", "amount": 1000, "pin": "1234"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "PIN_REQUIRED"
+
+
 def test_idempotency_key_obligatoire(client, auth, make_user):
     user_id, _ = make_user()
+    _set_pin(client, auth, user_id)
     auth.as_user(user_id)
 
     response = client.post(
-        f"{BASE}/transfer", json={"recipient_phone": "+2250701111111", "amount": 1000}
+        f"{BASE}/transfer",
+        json={"recipient_phone": "+2250701111111", "amount": 1000, "pin": "1234"},
     )
 
     assert response.status_code == 400
@@ -165,8 +198,9 @@ def test_meme_cle_rejouee_ne_debite_qu_une_fois(
     emetteur, compte = make_user()
     make_user(phone="+2250701111111")
     fund_account(compte, 10_000)
+    _set_pin(client, auth, emetteur)
     headers = _key()
-    payload = {"recipient_phone": "+2250701111111", "amount": 2000}
+    payload = {"recipient_phone": "+2250701111111", "amount": 2000, "pin": "1234"}
 
     auth.as_user(emetteur)
     premiere = client.post(f"{BASE}/transfer", json=payload, headers=headers)
@@ -195,6 +229,7 @@ def test_compte_gele_refuse_les_sorties(client, auth, session, make_user, fund_a
     emetteur, compte = make_user()
     make_user(phone="+2250701111111")
     fund_account(compte, 10_000)
+    _set_pin(client, auth, emetteur)
 
     accounts = AccountRepository(session)
     accounts.set_status(accounts.get(compte), AccountStatus.FROZEN)
@@ -203,7 +238,7 @@ def test_compte_gele_refuse_les_sorties(client, auth, session, make_user, fund_a
     auth.as_user(emetteur)
     response = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 1000},
+        json={"recipient_phone": "+2250701111111", "amount": 1000, "pin": "1234"},
         headers=_key(),
     )
 
@@ -255,6 +290,44 @@ def test_paiement_vers_un_compte_non_marchand(client, auth, make_user, fund_acco
     assert response.json()["error"]["code"] == "MERCHANT_NOT_FOUND"
 
 
+def test_lookup_recipient_affiche_un_nom_cache(client, auth, make_user):
+    user_id, _ = make_user(phone="+2250701111111")
+    auth.as_user(uuid.uuid4())
+
+    response = client.get(f"{BASE}/recipient/lookup", params={"phone": "+2250701111111"})
+
+    assert response.status_code == 200
+    assert "1111" in response.json()["display_name"]
+
+
+def test_pin_set_change_and_reset_recovery(client, auth, make_user, fund_account):
+    user_id, _ = make_user(phone="+2250701111111")
+    auth.as_user(user_id)
+
+    created = client.post(
+        f"{BASE}/pin/set",
+        json={"pin": "1234", "confirm_pin": "1234", "otp_code": "000000"},
+    )
+    assert created.status_code == 200
+    recovery_code = created.json()["recovery_codes"][0]
+
+    changed = client.post(
+        f"{BASE}/pin/change",
+        json={"current_pin": "1234", "new_pin": "5678", "confirm_new_pin": "5678"},
+    )
+    assert changed.status_code == 200
+
+    reset = client.post(
+        f"{BASE}/pin/reset",
+        json={
+            "recovery_code": recovery_code,
+            "new_pin": "2468",
+            "confirm_new_pin": "2468",
+        },
+    )
+    assert reset.status_code == 200
+
+
 def test_historique_filtrable_par_module_d_origine(
     client, auth, session, make_user, fund_account
 ):
@@ -265,6 +338,7 @@ def test_historique_filtrable_par_module_d_origine(
     )
     make_user(phone="+2250701111111")
     session.commit()
+    _set_pin(client, auth, payeur)
 
     auth.as_user(payeur)
     client.post(
@@ -279,7 +353,7 @@ def test_historique_filtrable_par_module_d_origine(
     )
     client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 500},
+        json={"recipient_phone": "+2250701111111", "amount": 500, "pin": "1234"},
         headers=_key(),
     )
 
@@ -302,11 +376,12 @@ def test_detail_transaction_d_un_tiers_est_invisible(
     tiers, _ = make_user()
     make_user(phone="+2250701111111")
     fund_account(compte, 10_000)
+    _set_pin(client, auth, payeur)
 
     auth.as_user(payeur)
     transaction_id = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 1000},
+        json={"recipient_phone": "+2250701111111", "amount": 1000, "pin": "1234"},
         headers=_key(),
     ).json()["transaction_id"]
 
@@ -323,11 +398,12 @@ def test_detail_transaction_donne_le_sens_du_mouvement(
     emetteur, compte = make_user()
     destinataire, _ = make_user(phone="+2250701111111")
     fund_account(compte, 10_000)
+    _set_pin(client, auth, emetteur)
 
     auth.as_user(emetteur)
     transaction_id = client.post(
         f"{BASE}/transfer",
-        json={"recipient_phone": "+2250701111111", "amount": 1000},
+        json={"recipient_phone": "+2250701111111", "amount": 1000, "pin": "1234"},
         headers=_key(),
     ).json()["transaction_id"]
 

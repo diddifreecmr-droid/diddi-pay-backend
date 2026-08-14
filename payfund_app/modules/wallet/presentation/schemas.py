@@ -62,6 +62,36 @@ class DepositResponse(PendingOperationResponse):
 class TransferRequest(BaseModel):
     recipient_phone: str = Field(min_length=4, max_length=20)
     amount: int = Field(gt=0)
+    pin: str = Field(min_length=4, max_length=12)
+
+
+class PinSetRequest(BaseModel):
+    pin: str = Field(min_length=4, max_length=12)
+    confirm_pin: str = Field(min_length=4, max_length=12)
+    otp_code: str = Field(min_length=4, max_length=12)
+
+
+class PinChangeRequest(BaseModel):
+    current_pin: str = Field(min_length=4, max_length=12)
+    new_pin: str = Field(min_length=4, max_length=12)
+    confirm_new_pin: str = Field(min_length=4, max_length=12)
+
+
+class PinResetWithRecoveryRequest(BaseModel):
+    recovery_code: str = Field(min_length=6, max_length=64)
+    new_pin: str = Field(min_length=4, max_length=12)
+    confirm_new_pin: str = Field(min_length=4, max_length=12)
+
+
+class PinStatusResponse(BaseModel):
+    account_id: uuid.UUID
+    has_pin: bool
+    failed_attempts: int = 0
+    locked_until: datetime | None = None
+
+
+class RecipientLookupResponse(BaseModel):
+    display_name: str
 
 
 class MerchantPaymentRequest(BaseModel):

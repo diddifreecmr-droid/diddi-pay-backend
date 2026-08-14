@@ -51,7 +51,10 @@ TABLES = [
     "fund.campaigns",
     "wallet.currency_conversions",
     "wallet.exchange_rates",
+    "wallet.transaction_pin_recovery_codes",
+    "wallet.transaction_pins",
     "wallet.kyc_documents",
+    "wallet.outbox_events",
     "wallet.webhook_inbox_events",
     "wallet.reconciliation_logs",
     "wallet.ledger_entries",
@@ -68,7 +71,7 @@ def engine():
     with eng.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS wallet CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS fund CASCADE"))
-        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        conn.execute(text("DROP TABLE IF EXISTS public.alembic_version CASCADE"))
 
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)

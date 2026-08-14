@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import Select, and_, case, func, or_, select
@@ -20,6 +20,8 @@ from payfund_app.modules.wallet.infra.models import (
     GatewayAccount,
     LedgerEntry,
     KycDocument,
+    TransactionPin,
+    TransactionPinRecoveryCode,
     OutboxEvent,
     ReconciliationLog,
     WebhookInboxEvent,
@@ -419,5 +421,79 @@ class KycDocumentRepository:
                 select(KycDocument)
                 .where(KycDocument.user_id == user_id)
                 .order_by(KycDocument.created_at.desc())
+            )
+        )
+
+
+class TransactionPinRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, account_id: uuid.UUID) -> TransactionPin | None:
+        return self.session.get(TransactionPin, account_id)
+
+    def set_pin(
+        self,
+        *,
+        account_id: uuid.UUID,
+        pin_hash: str,
+        pin_salt: str,
+    ) -> TransactionPin:
+        row = self.get(account_id)
+        if row is None:
+            row = TransactionPin(
+                account_id=account_id,
+                pin_hash=pin_hash,
+                pin_salt=pin_salt,
+                failed_attempts=0,
+            )
+            self.session.add(row)
+        else:
+            row.pin_hash = pin_hash
+            row.pin_salt = pin_salt
+            row.failed_attempts = 0
+            row.locked_until = None
+            row.updated_at = datetime.now(timezone.utc)
+        self.session.flush()
+        return row
+
+    def register_failure(self, row: TransactionPin, *, lock_minutes: int = 15) -> int:
+        row.failed_attempts += 1
+        if row.failed_attempts >= 5:
+            row.locked_until = datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.flush()
+        return row.failed_attempts
+
+    def clear_lock(self, row: TransactionPin) -> None:
+        row.failed_attempts = 0
+        row.locked_until = None
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.flush()
+
+
+class TransactionPinRecoveryCodeRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, *, account_id: uuid.UUID, code_hash: str) -> TransactionPinRecoveryCode:
+        row = TransactionPinRecoveryCode(account_id=account_id, code_hash=code_hash)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def list_for_account(self, account_id: uuid.UUID) -> list[TransactionPinRecoveryCode]:
+        return list(
+            self.session.scalars(
+                select(TransactionPinRecoveryCode)
+                .where(TransactionPinRecoveryCode.account_id == account_id)
+                .order_by(TransactionPinRecoveryCode.created_at.desc())
+            )
+        )
+
+    def get_by_hash(self, code_hash: str) -> TransactionPinRecoveryCode | None:
+        return self.session.scalar(
+            select(TransactionPinRecoveryCode).where(
+                TransactionPinRecoveryCode.code_hash == code_hash
             )
         )
