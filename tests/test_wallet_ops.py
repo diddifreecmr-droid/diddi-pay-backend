@@ -31,6 +31,19 @@ def test_ops_backfill_cree_le_wallet_manquant(client, auth, session):
     assert AccountRepository(session).get_by_user(user_id) is not None
 
 
+def test_ops_inspect_provisioning_status(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    user_id, account_id = make_user("+2250700000000")
+
+    response = client.get(f"{BASE}/ops/provisioning/{user_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wallet_exists"] is True
+    assert body["account_id"] == str(account_id)
+    assert body["phone"] == "+2250700000000"
+
+
 def test_ops_reconcile_paystack_finalise_un_webhook_manque(
     client, auth, session, make_user, monkeypatch
 ):

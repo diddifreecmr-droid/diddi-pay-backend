@@ -42,7 +42,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
 )
 from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
-from payfund_app.modules.wallet.infra.models import Transaction
+from payfund_app.modules.wallet.infra.models import Transaction, UserPhone
 from payfund_app.modules.wallet.infra.repositories import (
     OutboxRepository,
     ReconciliationLogRepository,
@@ -291,6 +291,24 @@ def backfill_wallet(
 
         UserPhoneRepository(session).upsert(payload.user_id, phone)
     return {"status": "ok", "account_id": str(account.id), "user_id": str(payload.user_id)}
+
+
+@router.get("/ops/provisioning/{user_id}")
+def inspect_provisioning_status(user_id: uuid.UUID, user: CurrentUserDep, session: SessionDep):
+    """Vue support pour vérifier si un wallet existe déjà pour un user donné."""
+    _require_admin(user)
+    use_cases = WalletUseCases(session)
+    account = use_cases.accounts.get_by_user(user_id)
+    user_phone = session.scalar(select(UserPhone.phone).where(UserPhone.user_id == user_id))
+    return {
+        "user_id": str(user_id),
+        "wallet_exists": account is not None,
+        "account_id": str(account.id) if account is not None else None,
+        "account_type": account.account_type if account is not None else None,
+        "currency": account.currency if account is not None else None,
+        "status": account.status if account is not None else None,
+        "phone": user_phone,
+    }
 
 
 @router.get("/ops/outbox")
