@@ -248,6 +248,26 @@ class UserPhone(Base):
     )
 
 
+class KycDocument(Base):
+    """Référence KYC vers un document stocké ailleurs, par exemple diddifiles."""
+
+    __tablename__ = "kyc_documents"
+    __table_args__ = (
+        Index("idx_kyc_documents_user", "user_id", "created_at"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    file_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    document_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    source_module: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class OutboxEvent(Base):
     """Événement durable à relayer vers le bus interne.
 

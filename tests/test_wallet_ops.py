@@ -8,6 +8,7 @@ from payfund_app.modules.wallet.domain.money import Money
 from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.modules.wallet.infra.repositories import (
     AccountRepository,
+    KycDocumentRepository,
     ReconciliationLogRepository,
     TransactionRepository,
 )
@@ -42,6 +43,36 @@ def test_ops_inspect_provisioning_status(client, auth, session, make_user):
     assert body["wallet_exists"] is True
     assert body["account_id"] == str(account_id)
     assert body["phone"] == "+2250700000000"
+
+
+def test_ops_link_and_list_kyc_documents(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    user_id, _ = make_user()
+
+    response = client.post(
+        f"{BASE}/ops/kyc/link",
+        json={
+            "user_id": str(user_id),
+            "file_id": "file_kyc_123",
+            "document_type": "identity_card",
+            "status": "pending",
+            "source_module": "diddifiles",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["file_id"] == "file_kyc_123"
+
+    response = client.get(f"{BASE}/ops/kyc/{user_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["data"][0]["file_id"] == "file_kyc_123"
+    assert body["data"][0]["document_type"] == "identity_card"
+    assert KycDocumentRepository(session).list_for_user(user_id)[0].file_id == "file_kyc_123"
 
 
 def test_ops_reconcile_paystack_finalise_un_webhook_manque(

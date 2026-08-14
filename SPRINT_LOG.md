@@ -147,3 +147,8 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.
 - Unrelated worktree files are left untouched.
+
+## Sprint 29
+
+- Added KYC document hooks so wallet users can be linked to external file references such as diddifiles.
+- Commit: `pending`

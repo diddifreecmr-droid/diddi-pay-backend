@@ -28,6 +28,7 @@ from payfund_app.modules.wallet.presentation.schemas import (
     GenerateQrRequest,
     GenerateQrResponse,
     MerchantPaymentRequest,
+    KycDocumentRequest,
     OpsBackfillRequest,
     Page,
     Pagination,
@@ -44,6 +45,7 @@ from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.models import Transaction, UserPhone
 from payfund_app.modules.wallet.infra.repositories import (
+    KycDocumentRepository,
     OutboxRepository,
     ReconciliationLogRepository,
     WebhookInboxRepository,
@@ -336,6 +338,54 @@ def inspect_provisioning_status(user_id: uuid.UUID, user: CurrentUserDep, sessio
         "currency": account.currency if account is not None else None,
         "status": account.status if account is not None else None,
         "phone": user_phone,
+    }
+
+
+@router.post("/ops/kyc/link")
+def link_kyc_document(
+    payload: KycDocumentRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    """Lie un document KYC à un user, en gardant le stockage documentaire hors du wallet."""
+    _require_admin(user)
+    row = KycDocumentRepository(session).add(
+        user_id=payload.user_id,
+        file_id=payload.file_id,
+        document_type=payload.document_type,
+        status=payload.status,
+        source_module=payload.source_module,
+    )
+    return {
+        "status": "ok",
+        "kyc_document_id": str(row.id),
+        "user_id": str(row.user_id),
+        "file_id": row.file_id,
+        "document_type": row.document_type,
+        "status_value": row.status,
+        "source_module": row.source_module,
+    }
+
+
+@router.get("/ops/kyc/{user_id}")
+def list_kyc_documents(user_id: uuid.UUID, user: CurrentUserDep, session: SessionDep):
+    """Vue ops des pièces KYC connues pour un user."""
+    _require_admin(user)
+    rows = KycDocumentRepository(session).list_for_user(user_id)
+    return {
+        "data": [
+            {
+                "id": str(row.id),
+                "user_id": str(row.user_id),
+                "file_id": row.file_id,
+                "document_type": row.document_type,
+                "status": row.status,
+                "source_module": row.source_module,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "total": len(rows),
     }
 
 

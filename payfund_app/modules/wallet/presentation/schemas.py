@@ -137,3 +137,11 @@ class OpsBackfillRequest(BaseModel):
     user_id: uuid.UUID
     phone: str | None = Field(default=None, max_length=20)
     account_type: Literal["user", "merchant"] = "user"
+
+
+class KycDocumentRequest(BaseModel):
+    user_id: uuid.UUID
+    file_id: str = Field(min_length=1, max_length=100)
+    document_type: str = Field(min_length=1, max_length=40)
+    status: Literal["pending", "verified", "rejected"] = "pending"
+    source_module: str | None = Field(default=None, max_length=30)

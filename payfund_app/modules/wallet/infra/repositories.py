@@ -19,6 +19,7 @@ from payfund_app.modules.wallet.infra.models import (
     Account,
     GatewayAccount,
     LedgerEntry,
+    KycDocument,
     OutboxEvent,
     ReconciliationLog,
     WebhookInboxEvent,
@@ -386,3 +387,37 @@ class UserPhoneRepository:
             existing.phone = phone
             existing.updated_at = datetime.now()
         self.session.flush()
+
+
+class KycDocumentRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(
+        self,
+        *,
+        user_id: uuid.UUID,
+        file_id: str,
+        document_type: str,
+        status: str = "pending",
+        source_module: str | None = None,
+    ) -> KycDocument:
+        row = KycDocument(
+            user_id=user_id,
+            file_id=file_id,
+            document_type=document_type,
+            status=status,
+            source_module=source_module,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def list_for_user(self, user_id: uuid.UUID) -> list[KycDocument]:
+        return list(
+            self.session.scalars(
+                select(KycDocument)
+                .where(KycDocument.user_id == user_id)
+                .order_by(KycDocument.created_at.desc())
+            )
+        )
