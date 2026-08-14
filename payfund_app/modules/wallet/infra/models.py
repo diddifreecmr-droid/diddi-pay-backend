@@ -30,6 +30,7 @@ from sqlalchemy import (
     Index,
     Numeric,
     String,
+    UniqueConstraint,
     func,
     text,
 )
@@ -100,6 +101,7 @@ class LedgerEntry(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('debit','credit')", name="ck_ledger_direction"),
         CheckConstraint("amount > 0", name="ck_ledger_amount_positive"),
+        CheckConstraint("amount = trunc(amount)", name="ck_ledger_amount_integral"),
         Index("idx_ledger_account", "account_id", "created_at"),
         Index("idx_ledger_transaction", "transaction_id"),
         {"schema": "wallet"},
@@ -135,6 +137,7 @@ class Transaction(Base):
             "status IN ('pending','completed','failed','reversed')",
             name="ck_transactions_status",
         ),
+        Index("idx_transactions_account", "account_id"),
         {"schema": "wallet"},
     )
 
@@ -239,10 +242,14 @@ class UserPhone(Base):
     """Index téléphone → user_id, alimenté par `user.registered` / `user.updated`."""
 
     __tablename__ = "user_phones"
-    __table_args__ = ({"schema": "wallet"},)
+    __table_args__ = (
+        UniqueConstraint("phone", name="user_phones_phone_key"),
+        Index("ix_wallet_user_phones_phone", "phone"),
+        {"schema": "wallet"},
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
-    phone: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -254,6 +261,13 @@ class KycDocument(Base):
     __tablename__ = "kyc_documents"
     __table_args__ = (
         Index("idx_kyc_documents_user", "user_id", "created_at"),
+        CheckConstraint(
+            "user_id <> '00000000-0000-0000-0000-000000000000'", name="ck_kyc_user"
+        ),
+        CheckConstraint("file_id <> ''", name="ck_kyc_file_id"),
+        CheckConstraint(
+            "status IN ('pending','verified','rejected')", name="ck_kyc_status"
+        ),
         {"schema": "wallet"},
     )
 
@@ -376,6 +390,7 @@ class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     __table_args__ = (
         Index("idx_outbox_status_created_at", "status", "created_at"),
+        CheckConstraint("status IN ('pending','published')", name="ck_outbox_status"),
         {"schema": "wallet"},
     )
 
@@ -395,6 +410,11 @@ class WebhookInboxEvent(Base):
     __tablename__ = "webhook_inbox_events"
     __table_args__ = (
         Index("idx_webhook_inbox_provider_event", "provider", "event_key"),
+        CheckConstraint("provider <> ''", name="ck_webhook_inbox_provider"),
+        CheckConstraint("event_key <> ''", name="ck_webhook_inbox_event_key"),
+        CheckConstraint(
+            "status IN ('received','processed')", name="ck_webhook_inbox_status"
+        ),
         {"schema": "wallet"},
     )
 
@@ -417,6 +437,9 @@ class ReconciliationLog(Base):
     __tablename__ = "reconciliation_logs"
     __table_args__ = (
         Index("idx_reconciliation_logs_transaction", "transaction_id", "created_at"),
+        CheckConstraint("provider <> ''", name="ck_reconciliation_logs_provider"),
+        CheckConstraint("event <> ''", name="ck_reconciliation_logs_event"),
+        CheckConstraint("outcome <> ''", name="ck_reconciliation_logs_outcome"),
         {"schema": "wallet"},
     )
 
