@@ -33,7 +33,6 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         include_schemas=True,
         include_object=include_object,
-        version_table_schema="wallet",
         dialect_opts={"paramstyle": "named"},
     )
     with context.begin_transaction():
@@ -52,7 +51,6 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             include_schemas=True,
             include_object=include_object,
-            version_table_schema="wallet",
         )
         with context.begin_transaction():
             context.run_migrations()
