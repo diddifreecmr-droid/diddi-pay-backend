@@ -15,6 +15,7 @@ from payfund_app.modules.wallet.domain.entities import TransactionStatus, Transa
 from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.repositories import OutboxRepository, UserPhoneRepository
+from payfund_app.shared_kernel.logging import emit
 from payfund_app.shared_kernel.events.types import Event
 
 
@@ -39,6 +40,13 @@ def backfill_wallet(
     phone: str | None = None,
     account_type: str = "user",
 ) -> BackfillResult:
+    emit(
+        "info",
+        "ops.backfill.start",
+        user_id=str(user_id),
+        account_type=account_type,
+        phone=phone,
+    )
     use_cases = WalletUseCases(session)
     if account_type == "merchant":
         account = use_cases.provisionner_compte_marchand(user_id)
@@ -47,6 +55,14 @@ def backfill_wallet(
     if phone:
         UserPhoneRepository(session).upsert(user_id, phone)
     session.commit()
+    emit(
+        "info",
+        "ops.backfill.done",
+        user_id=str(user_id),
+        account_id=str(account.id),
+        account_type=account_type,
+        phone=phone,
+    )
     return BackfillResult(
         user_id=user_id,
         account_id=account.id,
@@ -56,6 +72,7 @@ def backfill_wallet(
 
 
 def reconcile_paystack_deposit(session: Session, *, transaction_id: uuid.UUID) -> ReconcileResult:
+    emit("info", "ops.reconcile.start", transaction_id=str(transaction_id))
     use_cases = WalletUseCases(session)
     transaction = use_cases.transactions.get(transaction_id)
     if transaction is None:
@@ -67,13 +84,31 @@ def reconcile_paystack_deposit(session: Session, *, transaction_id: uuid.UUID) -
     if result.status is GatewayStatus.COMPLETED:
         use_cases.confirmer_operation(transaction.id, provider="paystack")
         session.commit()
+        emit(
+            "info",
+            "ops.reconcile.done",
+            transaction_id=str(transaction.id),
+            status="completed",
+        )
         return ReconcileResult(transaction_id=transaction.id, status="completed")
     if result.status is GatewayStatus.FAILED:
         use_cases.echouer_operation(transaction.id, provider="paystack")
         session.commit()
+        emit(
+            "warning",
+            "ops.reconcile.done",
+            transaction_id=str(transaction.id),
+            status="failed",
+        )
         return ReconcileResult(transaction_id=transaction.id, status="failed")
 
     session.commit()
+    emit(
+        "info",
+        "ops.reconcile.done",
+        transaction_id=str(transaction.id),
+        status="pending",
+    )
     return ReconcileResult(transaction_id=transaction.id, status="pending")
 
 
@@ -99,6 +134,7 @@ class HousekeepingResult:
 
 def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult:
     """Sweep all pending Paystack deposits that still need a final provider verdict."""
+    emit("info", "ops.reconcile.sweep.start")
     pending_deposits = list(
         session.scalars(
             select(Transaction).where(
@@ -128,6 +164,7 @@ def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult
 
 def relay_outbox_events(session: Session, bus) -> RelayResult:
     """Publie les événements durables non encore relayés vers le bus temps réel."""
+    emit("info", "ops.outbox.relay.start")
     repo = OutboxRepository(session)
     try:
         pending_events = repo.pending()
@@ -140,6 +177,12 @@ def relay_outbox_events(session: Session, bus) -> RelayResult:
         repo.mark_published(row)
         published += 1
     session.commit()
+    emit(
+        "info",
+        "ops.outbox.relay.done",
+        scanned=len(pending_events),
+        published=published,
+    )
     return RelayResult(scanned=len(pending_events), published=published)
 
 
@@ -148,8 +191,19 @@ def run_housekeeping(session: Session, bus) -> HousekeepingResult:
 
     Ce point d'entrée est pensé pour un cron interne, un job planifié ou un hook de maintenance.
     """
+    emit("info", "ops.housekeeping.start")
     reconciliation = reconcile_pending_paystack_deposits(session)
     outbox = relay_outbox_events(session, bus)
+    emit(
+        "info",
+        "ops.housekeeping.done",
+        reconciliation_scanned=reconciliation.scanned,
+        reconciliation_completed=reconciliation.completed,
+        reconciliation_failed=reconciliation.failed,
+        reconciliation_pending=reconciliation.pending,
+        outbox_scanned=outbox.scanned,
+        outbox_published=outbox.published,
+    )
     return HousekeepingResult(reconciliation=reconciliation, outbox=outbox)
 
 

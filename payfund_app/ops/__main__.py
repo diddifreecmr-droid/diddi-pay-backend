@@ -17,6 +17,7 @@ from payfund_app.ops.maintenance import (
     require_admin,
 )
 from payfund_app.shared_kernel.events.bus import get_bus
+from payfund_app.shared_kernel.logging import emit
 
 
 def _parse_uuid(value: str) -> uuid.UUID:
@@ -72,10 +73,24 @@ def main(argv: list[str] | None = None) -> int:
                 f"wallet provisioned user_id={result.user_id} account_id={result.account_id} "
                 f"account_type={result.account_type} phone={result.phone}"
             )
+            emit(
+                "info",
+                "ops.cli.backfill.done",
+                user_id=str(result.user_id),
+                account_id=str(result.account_id),
+                account_type=result.account_type,
+                phone=result.phone,
+            )
             return 0
         if args.command == "reconcile-paystack":
             result = reconcile_paystack_deposit(session, transaction_id=args.transaction_id)
             print(f"transaction_id={result.transaction_id} status={result.status}")
+            emit(
+                "info",
+                "ops.cli.reconcile.done",
+                transaction_id=str(result.transaction_id),
+                status=result.status,
+            )
             return 0
         if args.command == "reconcile-paystack-pending":
             result = reconcile_pending_paystack_deposits(session)
@@ -83,10 +98,24 @@ def main(argv: list[str] | None = None) -> int:
                 f"scanned={result.scanned} completed={result.completed} "
                 f"failed={result.failed} pending={result.pending}"
             )
+            emit(
+                "info",
+                "ops.cli.reconcile_sweep.done",
+                scanned=result.scanned,
+                completed=result.completed,
+                failed=result.failed,
+                pending=result.pending,
+            )
             return 0
         if args.command == "relay-outbox":
             result = relay_outbox_events(session, get_bus())
             print(f"scanned={result.scanned} published={result.published}")
+            emit(
+                "info",
+                "ops.cli.relay.done",
+                scanned=result.scanned,
+                published=result.published,
+            )
             return 0
         if args.command == "housekeeping":
             result = run_housekeeping(session, get_bus())
@@ -97,6 +126,16 @@ def main(argv: list[str] | None = None) -> int:
                 f"{result.reconciliation.failed} reconciliation_pending="
                 f"{result.reconciliation.pending} outbox_scanned="
                 f"{result.outbox.scanned} outbox_published={result.outbox.published}"
+            )
+            emit(
+                "info",
+                "ops.cli.housekeeping.done",
+                reconciliation_scanned=result.reconciliation.scanned,
+                reconciliation_completed=result.reconciliation.completed,
+                reconciliation_failed=result.reconciliation.failed,
+                reconciliation_pending=result.reconciliation.pending,
+                outbox_scanned=result.outbox.scanned,
+                outbox_published=result.outbox.published,
             )
             return 0
 

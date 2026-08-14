@@ -48,6 +48,7 @@ from payfund_app.modules.wallet.infra.repositories import (
     ReconciliationLogRepository,
     WebhookInboxRepository,
 )
+from payfund_app.shared_kernel.logging import emit
 from payfund_app.shared_kernel.events.bus import get_bus
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -83,6 +84,15 @@ def deposit(
 ) -> DepositResponse:
     """Traitement asynchrone côté opérateur : le front interroge ensuite
     `GET /wallet/transactions/{id}` pour connaître l'issue."""
+    emit(
+        "info",
+        "wallet.deposit.start",
+        route="/payfund/v1/wallet/deposit",
+        user_id=str(user.user_id),
+        provider=payload.provider,
+        amount=payload.amount,
+        idempotency_key=idempotency_key,
+    )
     result = WalletUseCases(session, bus=get_bus()).deposer(
         user_id=user.user_id,
         provider=payload.provider,
@@ -107,12 +117,30 @@ def withdraw(
     session: SessionDep,
     idempotency_key: IdempotencyKeyDep,
 ) -> PendingOperationResponse:
+    emit(
+        "info",
+        "wallet.withdraw.start",
+        route="/payfund/v1/wallet/withdraw",
+        user_id=str(user.user_id),
+        provider=payload.provider,
+        amount=payload.amount,
+        idempotency_key=idempotency_key,
+    )
     transaction = WalletUseCases(session, bus=get_bus()).retirer(
         user_id=user.user_id,
         provider=payload.provider,
         amount=payload.amount,
         phone=payload.phone,
         idempotency_key=idempotency_key,
+    )
+    emit(
+        "info",
+        "wallet.withdraw.done",
+        route="/payfund/v1/wallet/withdraw",
+        user_id=str(user.user_id),
+        transaction_id=str(transaction.id),
+        status=transaction.status,
+        provider_reference=transaction.provider_reference,
     )
     return PendingOperationResponse(
         transaction_id=transaction.id, status=transaction.status
@@ -510,12 +538,20 @@ async def paystack_webhook(
     x_paystack_signature: Annotated[str | None, Header(alias="x-paystack-signature")] = None,
 ):
     raw_body = await request.body()
+    emit(
+        "info",
+        "paystack.webhook.start",
+        route="/payfund/v1/wallet/webhooks/paystack",
+        bytes=len(raw_body),
+    )
     secret = get_settings().paystack_webhook_secret or get_settings().paystack_secret_key
     if not secret:
+        emit("warning", "paystack.webhook.ignored", reason="missing_secret")
         return {"status": "ignored", "reason": "missing_secret"}
 
     expected = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
     if not x_paystack_signature or not hmac.compare_digest(expected, x_paystack_signature):
+        emit("warning", "paystack.webhook.invalid_signature", reason="signature_mismatch")
         return {"status": "invalid_signature", "reason": "signature_mismatch"}
 
     payload = await request.json()
@@ -523,18 +559,26 @@ async def paystack_webhook(
     data = payload.get("data") or {}
     reference = data.get("reference")
     if not reference:
+        emit("warning", "paystack.webhook.ignored", reason="missing_reference")
         return {"status": "ignored", "reason": "missing_reference"}
 
     transaction = WalletUseCases(session, bus=get_bus()).transactions.get_by_provider_reference(
         reference
     )
     if transaction is None:
+        emit("warning", "paystack.webhook.unknown_reference", reference=reference)
         return {"status": "unknown_reference", "reason": "no_local_transaction"}
 
     event_key = f"paystack:{event or 'webhook'}:{reference}"
     inbox = WebhookInboxRepository(session)
     existing_inbox = inbox.seen(event_key)
     if existing_inbox is not None:
+        emit(
+            "info",
+            "paystack.webhook.duplicate",
+            transaction_id=str(transaction.id),
+            reference=reference,
+        )
         ReconciliationLogRepository(session).append(
             transaction_id=transaction.id,
             provider="paystack",
@@ -552,6 +596,12 @@ async def paystack_webhook(
     inbox_row = inbox.record(provider="paystack", event_key=event_key, payload=payload)
     use_cases = WalletUseCases(session, bus=get_bus())
     if transaction.status in {"completed", "failed", "reversed"}:
+        emit(
+            "info",
+            "paystack.webhook.already_finalized",
+            transaction_id=str(transaction.id),
+            status=transaction.status,
+        )
         ReconciliationLogRepository(session).append(
             transaction_id=transaction.id,
             provider="paystack",
@@ -569,6 +619,13 @@ async def paystack_webhook(
 
     if event == "charge.success" or data.get("status") == "success":
         use_cases.confirmer_operation(transaction.id, provider="paystack")
+        emit(
+            "info",
+            "paystack.webhook.processed",
+            transaction_id=str(transaction.id),
+            status="completed",
+            reason="charge_success",
+        )
         ReconciliationLogRepository(session).append(
             transaction_id=transaction.id,
             provider="paystack",
@@ -586,6 +643,13 @@ async def paystack_webhook(
 
     if data.get("status") in {"failed", "abandoned", "reversed"}:
         use_cases.echouer_operation(transaction.id, provider="paystack")
+        emit(
+            "warning",
+            "paystack.webhook.processed",
+            transaction_id=str(transaction.id),
+            status="failed",
+            reason=str(data.get("status")),
+        )
         ReconciliationLogRepository(session).append(
             transaction_id=transaction.id,
             provider="paystack",
@@ -610,4 +674,11 @@ async def paystack_webhook(
         reason="unhandled_event",
     )
     inbox.mark_processed(inbox_row)
+    emit(
+        "info",
+        "paystack.webhook.ignored",
+        transaction_id=str(transaction.id),
+        event=str(event or "webhook"),
+        reason="unhandled_event",
+    )
     return {"status": "ignored", "reason": "unhandled_event"}

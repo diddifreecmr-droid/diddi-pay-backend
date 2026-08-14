@@ -138,6 +138,11 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 - Added a combined housekeeping runner for Paystack reconciliation and outbox relay.
 - Commit: `5e1bf8a`
 
+## Sprint 28
+
+- Added structured JSON observability logs for deposits, withdrawals, Paystack webhooks, and ops maintenance flows.
+- Commit: `5c9cde9`
+
 ## Notes
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.
