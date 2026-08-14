@@ -8,6 +8,7 @@ from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.shared_kernel.events.bus import InMemoryEventBus
 from payfund_app.ops.maintenance import (
     backfill_wallet,
+    run_housekeeping,
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
     relay_outbox_events,
@@ -135,5 +136,43 @@ def test_relay_outbox_events_publishes_and_marks_done(session, make_user):
 
     assert result.scanned == 1
     assert result.published == 1
+    assert bus.published[0].event == "payment.completed"
+    assert OutboxRepository(session).pending() == []
+
+
+def test_run_housekeeping_reconciles_then_relays(session, make_user, monkeypatch):
+    _, account_id = make_user()
+    from payfund_app.modules.wallet.application.use_cases import WalletUseCases
+    from payfund_app.modules.wallet.domain.money import Money
+    from payfund_app.modules.wallet.infra.repositories import TransactionRepository, OutboxRepository
+
+    use_cases = WalletUseCases(session)
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=None,
+        provider_reference="ps-housekeeping-1",
+    )
+    transaction.amount = 5000
+    transaction.currency = "XOF"
+    use_cases._publish_completed(transaction, Money(1000, "XOF"))
+    session.commit()
+
+    class FakeGateway:
+        def verifier_depot(self, reference):
+            return GatewayOperation(provider_reference=reference, status=GatewayStatus.COMPLETED)
+
+    monkeypatch.setattr("payfund_app.ops.maintenance.PaystackGateway", FakeGateway)
+
+    bus = InMemoryEventBus()
+    result = run_housekeeping(session, bus)
+
+    assert result.reconciliation.scanned == 1
+    assert result.reconciliation.completed == 1
+    assert result.outbox.scanned == 1
+    assert result.outbox.published == 1
     assert bus.published[0].event == "payment.completed"
     assert OutboxRepository(session).pending() == []

@@ -133,6 +133,11 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 - Extended the Wave sandbox to cover withdrawal initiation as well as deposits.
 - Commit: `620519e`
 
+## Sprint 27
+
+- Added a combined housekeeping runner for Paystack reconciliation and outbox relay.
+- Commit: `5e1bf8a`
+
 ## Notes
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.

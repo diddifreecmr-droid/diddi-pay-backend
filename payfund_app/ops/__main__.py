@@ -10,6 +10,7 @@ from payfund_app.core.database import SessionLocal
 from payfund_app.core.security import CurrentUser
 from payfund_app.ops.maintenance import (
     backfill_wallet,
+    run_housekeeping,
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
     relay_outbox_events,
@@ -49,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     relay.add_argument("--admin-role", default="admin")
 
+    housekeeping = sub.add_parser(
+        "housekeeping",
+        help="Run the standard maintenance cycle: Paystack reconciliation then outbox relay",
+    )
+    housekeeping.add_argument("--admin-role", default="admin")
+
     args = parser.parse_args(argv)
     admin_user = CurrentUser(uuid.uuid4(), args.admin_role, "active")
     require_admin(admin_user)
@@ -80,6 +87,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "relay-outbox":
             result = relay_outbox_events(session, get_bus())
             print(f"scanned={result.scanned} published={result.published}")
+            return 0
+        if args.command == "housekeeping":
+            result = run_housekeeping(session, get_bus())
+            print(
+                "reconciliation_scanned="
+                f"{result.reconciliation.scanned} reconciliation_completed="
+                f"{result.reconciliation.completed} reconciliation_failed="
+                f"{result.reconciliation.failed} reconciliation_pending="
+                f"{result.reconciliation.pending} outbox_scanned="
+                f"{result.outbox.scanned} outbox_published={result.outbox.published}"
+            )
             return 0
 
     return 1

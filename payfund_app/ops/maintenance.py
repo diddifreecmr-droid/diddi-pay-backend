@@ -91,6 +91,12 @@ class RelayResult:
     published: int
 
 
+@dataclass(frozen=True)
+class HousekeepingResult:
+    reconciliation: BulkReconcileResult
+    outbox: RelayResult
+
+
 def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult:
     """Sweep all pending Paystack deposits that still need a final provider verdict."""
     pending_deposits = list(
@@ -135,6 +141,16 @@ def relay_outbox_events(session: Session, bus) -> RelayResult:
         published += 1
     session.commit()
     return RelayResult(scanned=len(pending_events), published=published)
+
+
+def run_housekeeping(session: Session, bus) -> HousekeepingResult:
+    """Exécute le cycle standard d'entretien: réconciliation Paystack puis relay outbox.
+
+    Ce point d'entrée est pensé pour un cron interne, un job planifié ou un hook de maintenance.
+    """
+    reconciliation = reconcile_pending_paystack_deposits(session)
+    outbox = relay_outbox_events(session, bus)
+    return HousekeepingResult(reconciliation=reconciliation, outbox=outbox)
 
 
 def require_admin(user: CurrentUser) -> None:
