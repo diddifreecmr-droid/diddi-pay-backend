@@ -69,7 +69,23 @@ class TransferRequest(BaseModel):
 class PinSetRequest(BaseModel):
     pin: str = Field(min_length=4, max_length=12)
     confirm_pin: str = Field(min_length=4, max_length=12)
-    otp_code: str = Field(min_length=4, max_length=12)
+    otp_code: str = Field(
+        min_length=4,
+        max_length=12,
+        description="Code OTP de re-verification d'identite obtenu via DiddiFreeID.",
+    )
+
+
+class PinMutationResponse(BaseModel):
+    status: Literal["ok"]
+    account_id: uuid.UUID
+
+
+class PinSetResponse(PinMutationResponse):
+    recovery_codes: list[str] = Field(
+        min_length=1,
+        description="Codes affiches une seule fois et a conserver hors de l'appareil.",
+    )
 
 
 class PinChangeRequest(BaseModel):
@@ -136,6 +152,7 @@ class TransactionItem(BaseModel):
     status: str
     origin_module: str | None
     business_reference: str | None
+    direction: Literal["debit", "credit"] | None
     created_at: datetime
 
 
@@ -143,7 +160,6 @@ class TransactionDetail(TransactionItem):
     # Sens du mouvement pour le compte de l'appelant : le contrat expose un montant unique,
     # `direction` lève l'ambiguïté entre un envoi et une réception. `None` tant qu'une opération
     # n'a pas produit d'écriture (dépôt en attente de l'opérateur).
-    direction: str | None
     completed_at: datetime | None
 
 
@@ -195,3 +211,120 @@ class KycDocumentRequest(BaseModel):
     document_type: str = Field(min_length=1, max_length=40)
     status: Literal["pending", "verified", "rejected"] = "pending"
     source_module: str | None = Field(default=None, max_length=30)
+
+
+class OpsBackfillResponse(BaseModel):
+    status: Literal["ok"]
+    account_id: uuid.UUID
+    user_id: uuid.UUID
+
+
+class ProvisioningStatusResponse(BaseModel):
+    user_id: uuid.UUID
+    wallet_exists: bool
+    account_id: uuid.UUID | None
+    account_type: str | None
+    currency: str | None
+    status: str | None
+    phone: str | None
+
+
+class KycLinkResponse(BaseModel):
+    status: Literal["ok"]
+    kyc_document_id: uuid.UUID
+    user_id: uuid.UUID
+    file_id: str
+    document_type: str
+    status_value: str
+    source_module: str | None
+
+
+class KycDocumentItem(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    file_id: str
+    document_type: str
+    status: str
+    source_module: str | None
+    created_at: datetime
+
+
+class KycDocumentListResponse(BaseModel):
+    data: list[KycDocumentItem]
+    total: int
+
+
+class OutboxEventItem(BaseModel):
+    id: uuid.UUID
+    event_name: str
+    status: str
+    created_at: datetime
+    published_at: datetime | None
+
+
+class OutboxEventListResponse(BaseModel):
+    data: list[OutboxEventItem]
+    total: int
+
+
+class OutboxRelayResponse(BaseModel):
+    scanned: int
+    published: int
+
+
+class PaystackReconcileResponse(BaseModel):
+    status: str
+    transaction_id: uuid.UUID | None = None
+
+
+class PendingPaystackTransactionItem(BaseModel):
+    transaction_id: uuid.UUID
+    provider_reference: str
+    amount: int | None
+    currency: str | None
+    created_at: datetime
+
+
+class PendingPaystackTransactionListResponse(BaseModel):
+    data: list[PendingPaystackTransactionItem]
+    total: int
+
+
+class PaystackReconciliationSummaryResponse(BaseModel):
+    pending: int
+    completed: int
+    failed: int
+    missing_reference: int
+    total: int
+
+
+class PaystackTransactionInspectionResponse(BaseModel):
+    status: str
+    transaction_id: uuid.UUID | None = None
+    provider_reference: str | None = None
+    amount: int | None = None
+    currency: str | None = None
+    completed_at: datetime | None = None
+    origin_module: str | None = None
+
+
+class PaystackReconciliationItem(BaseModel):
+    id: uuid.UUID
+    transaction_id: uuid.UUID
+    provider: str
+    provider_reference: str | None
+    event: str
+    outcome: str
+    reason: str | None
+    created_at: datetime
+
+
+class PaystackReconciliationListResponse(BaseModel):
+    data: list[PaystackReconciliationItem]
+    total: int
+
+
+class PaystackWebhookResponse(BaseModel):
+    status: str
+    reason: str | None = None
+    transaction_status: str | None = None

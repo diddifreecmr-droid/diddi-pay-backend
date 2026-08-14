@@ -29,14 +29,28 @@ from payfund_app.modules.wallet.presentation.schemas import (
     GenerateQrResponse,
     MerchantPaymentRequest,
     KycDocumentRequest,
+    KycDocumentListResponse,
+    KycLinkResponse,
     OpsBackfillRequest,
+    OpsBackfillResponse,
+    OutboxEventListResponse,
+    OutboxRelayResponse,
     Page,
     Pagination,
     AdminPinResetRequest,
     PinChangeRequest,
+    PinMutationResponse,
     PinResetWithRecoveryRequest,
     PinSetRequest,
+    PinSetResponse,
     PinStatusResponse,
+    PendingPaystackTransactionListResponse,
+    PaystackReconcileResponse,
+    PaystackReconciliationListResponse,
+    PaystackReconciliationSummaryResponse,
+    PaystackTransactionInspectionResponse,
+    PaystackWebhookResponse,
+    ProvisioningStatusResponse,
     RecipientLookupResponse,
     PendingOperationResponse,
     StepUpOtpRequest,
@@ -108,7 +122,7 @@ def pin_status(user: CurrentUserDep, session: SessionDep) -> PinStatusResponse:
     )
 
 
-@router.post("/pin/set")
+@router.post("/pin/set", response_model=PinSetResponse)
 def set_pin(
     payload: PinSetRequest,
     user: CurrentUserDep,
@@ -126,7 +140,7 @@ def set_pin(
     }
 
 
-@router.post("/pin/change")
+@router.post("/pin/change", response_model=PinMutationResponse)
 def change_pin(
     payload: PinChangeRequest,
     user: CurrentUserDep,
@@ -141,7 +155,7 @@ def change_pin(
     return {"status": "ok", "account_id": str(result["account"].id)}
 
 
-@router.post("/pin/reset")
+@router.post("/pin/reset", response_model=PinMutationResponse)
 def reset_pin(
     payload: PinResetWithRecoveryRequest,
     user: CurrentUserDep,
@@ -370,6 +384,7 @@ def list_transactions(
                 status=transaction.status,
                 origin_module=transaction.origin_module,
                 business_reference=transaction.business_reference,
+                direction=entry.direction if entry else None,
                 created_at=transaction.created_at,
             )
             for transaction, entry in rows
@@ -409,7 +424,7 @@ def _require_admin(user: CurrentUserDep) -> None:
         raise Forbidden("Accès administrateur requis.", code="ADMIN_REQUIRED")
 
 
-@router.post("/ops/backfill")
+@router.post("/ops/backfill", response_model=OpsBackfillResponse)
 def backfill_wallet(
     payload: OpsBackfillRequest,
     user: CurrentUserDep,
@@ -431,7 +446,7 @@ def backfill_wallet(
     return {"status": "ok", "account_id": str(account.id), "user_id": str(payload.user_id)}
 
 
-@router.get("/ops/provisioning/{user_id}")
+@router.get("/ops/provisioning/{user_id}", response_model=ProvisioningStatusResponse)
 def inspect_provisioning_status(user_id: uuid.UUID, user: CurrentUserDep, session: SessionDep):
     """Vue support pour vérifier si un wallet existe déjà pour un user donné."""
     _require_admin(user)
@@ -449,7 +464,7 @@ def inspect_provisioning_status(user_id: uuid.UUID, user: CurrentUserDep, sessio
     }
 
 
-@router.post("/ops/kyc/link")
+@router.post("/ops/kyc/link", response_model=KycLinkResponse)
 def link_kyc_document(
     payload: KycDocumentRequest,
     user: CurrentUserDep,
@@ -475,7 +490,7 @@ def link_kyc_document(
     }
 
 
-@router.get("/ops/kyc/{user_id}")
+@router.get("/ops/kyc/{user_id}", response_model=KycDocumentListResponse)
 def list_kyc_documents(user_id: uuid.UUID, user: CurrentUserDep, session: SessionDep):
     """Vue ops des pièces KYC connues pour un user."""
     _require_admin(user)
@@ -497,7 +512,7 @@ def list_kyc_documents(user_id: uuid.UUID, user: CurrentUserDep, session: Sessio
     }
 
 
-@router.get("/ops/outbox")
+@router.get("/ops/outbox", response_model=OutboxEventListResponse)
 def list_outbox_events(user: CurrentUserDep, session: SessionDep):
     """Vue interne des événements durables en attente de relay."""
     _require_admin(user)
@@ -517,7 +532,7 @@ def list_outbox_events(user: CurrentUserDep, session: SessionDep):
     }
 
 
-@router.post("/ops/outbox/relay")
+@router.post("/ops/outbox/relay", response_model=OutboxRelayResponse)
 def relay_outbox(user: CurrentUserDep, session: SessionDep):
     """Relaye manuellement les événements durables en attente."""
     _require_admin(user)
@@ -527,7 +542,7 @@ def relay_outbox(user: CurrentUserDep, session: SessionDep):
     return {"scanned": result.scanned, "published": result.published}
 
 
-@router.post("/ops/pin/reset")
+@router.post("/ops/pin/reset", response_model=PinSetResponse)
 def admin_reset_pin(
     payload: AdminPinResetRequest,
     user: CurrentUserDep,
@@ -548,7 +563,9 @@ def admin_reset_pin(
     }
 
 
-@router.post("/ops/paystack/reconcile/{transaction_id}")
+@router.post(
+    "/ops/paystack/reconcile/{transaction_id}", response_model=PaystackReconcileResponse
+)
 def reconcile_paystack_deposit(
     transaction_id: uuid.UUID,
     user: CurrentUserDep,
@@ -608,7 +625,7 @@ def reconcile_paystack_deposit(
     return {"status": "pending", "transaction_id": str(transaction.id)}
 
 
-@router.get("/ops/paystack/pending")
+@router.get("/ops/paystack/pending", response_model=PendingPaystackTransactionListResponse)
 def list_pending_paystack_transactions(user: CurrentUserDep, session: SessionDep):
     _require_admin(user)
     rows = list(
@@ -636,7 +653,7 @@ def list_pending_paystack_transactions(user: CurrentUserDep, session: SessionDep
     }
 
 
-@router.get("/ops/paystack/summary")
+@router.get("/ops/paystack/summary", response_model=PaystackReconciliationSummaryResponse)
 def paystack_reconciliation_summary(user: CurrentUserDep, session: SessionDep):
     _require_admin(user)
     base = select(Transaction).where(
@@ -659,7 +676,9 @@ def paystack_reconciliation_summary(user: CurrentUserDep, session: SessionDep):
     return summary
 
 
-@router.get("/ops/paystack/{transaction_id}")
+@router.get(
+    "/ops/paystack/{transaction_id}", response_model=PaystackTransactionInspectionResponse
+)
 def inspect_paystack_transaction(
     transaction_id: uuid.UUID,
     user: CurrentUserDep,
@@ -681,7 +700,10 @@ def inspect_paystack_transaction(
     }
 
 
-@router.get("/ops/paystack/{transaction_id}/reconciliations")
+@router.get(
+    "/ops/paystack/{transaction_id}/reconciliations",
+    response_model=PaystackReconciliationListResponse,
+)
 def list_paystack_reconciliations(
     transaction_id: uuid.UUID,
     user: CurrentUserDep,
@@ -708,7 +730,34 @@ def list_paystack_reconciliations(
     }
 
 
-@router.post("/webhooks/paystack")
+@router.post(
+    "/webhooks/paystack",
+    response_model=PaystackWebhookResponse,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "event": {"type": "string", "example": "charge.success"},
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "reference": {"type": "string"},
+                                    "status": {"type": "string"},
+                                },
+                                "additionalProperties": True,
+                            },
+                        },
+                        "additionalProperties": True,
+                    }
+                }
+            },
+        }
+    },
+)
 async def paystack_webhook(
     request: Request,
     session: SessionDep,

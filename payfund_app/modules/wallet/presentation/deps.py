@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, Header
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from payfund_app.core.database import get_session
@@ -14,14 +15,15 @@ from payfund_app.modules.wallet.domain.errors import IdempotencyKeyRequired
 from payfund_app.shared_kernel.contracts.identity_provider import JwksIdentityVerifier
 
 _verifier = JwksIdentityVerifier()
+_bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    authorization: Annotated[str | None, Header()] = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> CurrentUser:
-    if not authorization or not authorization.lower().startswith("bearer "):
+    if credentials is None or credentials.scheme.lower() != "bearer":
         raise Unauthenticated("En-tête `Authorization: Bearer <access_token>` attendu.")
-    return _verifier.verify(authorization.split(" ", 1)[1].strip())
+    return _verifier.verify(credentials.credentials)
 
 
 def get_idempotency_key(
