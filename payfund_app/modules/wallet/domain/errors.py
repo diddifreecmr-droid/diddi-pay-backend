@@ -119,6 +119,18 @@ class PinLocked(AppError):
     message = "PIN temporairement bloqué."
 
 
+class PinAlreadySet(AppError):
+    status_code = 409
+    code = "PIN_ALREADY_SET"
+    message = "Un PIN existe déjà. Utilisez la route de changement ou de récupération."
+
+
+class StepUpProofAlreadyUsed(AppError):
+    status_code = 409
+    code = "STEP_UP_PROOF_ALREADY_USED"
+    message = "Cette preuve de ré-authentification a déjà été utilisée."
+
+
 class RecoveryCodeInvalid(AppError):
     status_code = 400
     code = "RECOVERY_CODE_INVALID"

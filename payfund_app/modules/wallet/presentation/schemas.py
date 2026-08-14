@@ -69,10 +69,9 @@ class TransferRequest(BaseModel):
 class PinSetRequest(BaseModel):
     pin: str = Field(min_length=4, max_length=12)
     confirm_pin: str = Field(min_length=4, max_length=12)
-    otp_code: str = Field(
-        min_length=4,
-        max_length=12,
-        description="Code OTP de re-verification d'identite obtenu via DiddiFreeID.",
+    step_up_token: str = Field(
+        min_length=20,
+        description="Preuve JWT courte, signée par DiddiFreeID pour `wallet.pin.set`.",
     )
 
 

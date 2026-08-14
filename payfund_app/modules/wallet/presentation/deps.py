@@ -12,9 +12,14 @@ from payfund_app.core.database import get_session
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.core.security import CurrentUser
 from payfund_app.modules.wallet.domain.errors import IdempotencyKeyRequired
-from payfund_app.shared_kernel.contracts.identity_provider import JwksIdentityVerifier
+from payfund_app.shared_kernel.contracts.identity_provider import (
+    JwksIdentityVerifier,
+    JwksStepUpProofVerifier,
+    StepUpProofVerifierPort,
+)
 
 _verifier = JwksIdentityVerifier()
+_step_up_verifier = JwksStepUpProofVerifier()
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -35,6 +40,13 @@ def get_idempotency_key(
     return idempotency_key.strip()
 
 
+def get_step_up_proof_verifier() -> StepUpProofVerifierPort:
+    return _step_up_verifier
+
+
 SessionDep = Annotated[Session, Depends(get_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
 IdempotencyKeyDep = Annotated[str, Depends(get_idempotency_key)]
+StepUpProofVerifierDep = Annotated[
+    StepUpProofVerifierPort, Depends(get_step_up_proof_verifier)
+]

@@ -6,7 +6,14 @@ pour isoler les modules du *mécanisme* de vérification, pas pour introduire un
 
 from typing import Protocol
 
-from payfund_app.core.security import CurrentUser, decode_access_token
+from uuid import UUID
+
+from payfund_app.core.security import (
+    CurrentUser,
+    StepUpProof,
+    decode_access_token,
+    decode_step_up_token,
+)
 
 
 class IdentityVerifierPort(Protocol):
@@ -20,3 +27,20 @@ class JwksIdentityVerifier:
 
     def verify(self, access_token: str) -> CurrentUser:
         return decode_access_token(access_token)
+
+
+class StepUpProofVerifierPort(Protocol):
+    def verify(
+        self, token: str, *, expected_user_id: UUID, expected_purpose: str
+    ) -> StepUpProof: ...
+
+
+class JwksStepUpProofVerifier:
+    def verify(
+        self, token: str, *, expected_user_id: UUID, expected_purpose: str
+    ) -> StepUpProof:
+        return decode_step_up_token(
+            token,
+            expected_user_id=expected_user_id,
+            expected_purpose=expected_purpose,
+        )

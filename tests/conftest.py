@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from alembic import command
@@ -36,7 +37,7 @@ TEST_DATABASE_URL = os.environ.get(
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 from payfund_app.core.database import get_session  # noqa: E402
-from payfund_app.core.security import CurrentUser  # noqa: E402
+from payfund_app.core.security import CurrentUser, StepUpProof  # noqa: E402
 from payfund_app.main import app  # noqa: E402
 from payfund_app.modules.wallet.application.ledger import LedgerService  # noqa: E402
 from payfund_app.modules.wallet.domain.entities import AccountType  # noqa: E402
@@ -46,7 +47,10 @@ from payfund_app.modules.wallet.infra.repositories import (  # noqa: E402
     GatewayAccountRepository,
     UserPhoneRepository,
 )
-from payfund_app.modules.wallet.presentation.deps import get_current_user  # noqa: E402
+from payfund_app.modules.wallet.presentation.deps import (  # noqa: E402
+    get_current_user,
+    get_step_up_proof_verifier,
+)
 from payfund_app.shared_kernel.events.bus import InMemoryEventBus, set_bus  # noqa: E402
 
 TABLES = [
@@ -136,6 +140,16 @@ class _Auth:
         self.user = CurrentUser(user_id, "user", "active")
 
 
+class _StepUpVerifier:
+    def verify(self, token, *, expected_user_id, expected_purpose):
+        return StepUpProof(
+            jti=uuid.uuid5(uuid.NAMESPACE_URL, token),
+            user_id=expected_user_id,
+            purpose=expected_purpose,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+
+
 @pytest.fixture
 def auth() -> _Auth:
     return _Auth()
@@ -149,6 +163,7 @@ def client(session: Session, auth: _Auth, bus: InMemoryEventBus) -> Iterator[Tes
 
     app.dependency_overrides[get_session] = _session_override
     app.dependency_overrides[get_current_user] = lambda: auth.user
+    app.dependency_overrides[get_step_up_proof_verifier] = lambda: _StepUpVerifier()
     # Pas de `with TestClient(...)` : on n'exécute pas le lifespan, donc pas de thread Redis.
     yield TestClient(app)
     app.dependency_overrides.clear()

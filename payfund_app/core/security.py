@@ -8,13 +8,20 @@ Le JWT ne porte que `sub`, `role`, `status`, `iat`, `exp` (§2) — il n'y a don
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 import jwt
 from jwt import PyJWKClient
 
 from payfund_app.core.config import get_settings
-from payfund_app.core.errors import Forbidden, TokenExpired, Unauthenticated
+from payfund_app.core.errors import (
+    Forbidden,
+    StepUpProofExpired,
+    StepUpProofInvalid,
+    TokenExpired,
+    Unauthenticated,
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +29,14 @@ class CurrentUser:
     user_id: UUID
     role: str
     status: str
+
+
+@dataclass(frozen=True)
+class StepUpProof:
+    jti: UUID
+    user_id: UUID
+    purpose: str
+    expires_at: datetime
 
 
 _jwk_client: PyJWKClient | None = None
@@ -64,3 +79,43 @@ def decode_access_token(token: str) -> CurrentUser:
         raise Unauthenticated("Claim `sub` invalide.") from exc
 
     return CurrentUser(user_id=user_id, role=str(claims.get("role", "user")), status=status)
+
+
+def decode_step_up_token(
+    token: str, *, expected_user_id: UUID, expected_purpose: str
+) -> StepUpProof:
+    """Verify a short-lived, purpose-bound DiddiFreeID proof locally through JWKS."""
+    try:
+        signing_key = _client().get_signing_key_from_jwt(token).key
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256"],
+            issuer=get_settings().diddifreeid_issuer,
+            options={
+                "require": ["sub", "iss", "purpose", "jti", "iat", "exp"],
+                "verify_aud": False,
+            },
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise StepUpProofExpired() from exc
+    except jwt.PyJWTError as exc:
+        raise StepUpProofInvalid() from exc
+
+    try:
+        user_id = UUID(str(claims["sub"]))
+        jti = UUID(str(claims["jti"]))
+        expires_at = datetime.fromtimestamp(int(claims["exp"]), tz=timezone.utc)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise StepUpProofInvalid() from exc
+
+    purpose = str(claims.get("purpose", ""))
+    if user_id != expected_user_id or purpose != expected_purpose:
+        raise StepUpProofInvalid()
+
+    return StepUpProof(
+        jti=jti,
+        user_id=user_id,
+        purpose=purpose,
+        expires_at=expires_at,
+    )

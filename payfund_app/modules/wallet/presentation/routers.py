@@ -20,6 +20,7 @@ from payfund_app.modules.wallet.presentation.deps import (
     CurrentUserDep,
     IdempotencyKeyDep,
     SessionDep,
+    StepUpProofVerifierDep,
 )
 from payfund_app.modules.wallet.presentation.schemas import (
     DepositResponse,
@@ -127,11 +128,18 @@ def set_pin(
     payload: PinSetRequest,
     user: CurrentUserDep,
     session: SessionDep,
+    step_up_verifier: StepUpProofVerifierDep,
 ):
+    proof = step_up_verifier.verify(
+        payload.step_up_token,
+        expected_user_id=user.user_id,
+        expected_purpose="wallet.pin.set",
+    )
     result = WalletUseCases(session).define_pin(
         user_id=user.user_id,
         pin=payload.pin,
         confirm_pin=payload.confirm_pin,
+        proof=proof,
     )
     return {
         "status": "ok",

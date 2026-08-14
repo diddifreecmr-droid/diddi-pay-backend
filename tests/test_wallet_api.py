@@ -30,7 +30,11 @@ def _set_pin(client, auth, user_id, pin="1234"):
     auth.as_user(user_id)
     response = client.post(
         f"{BASE}/pin/set",
-        json={"pin": pin, "confirm_pin": pin, "otp_code": "000000"},
+        json={
+            "pin": pin,
+            "confirm_pin": pin,
+            "step_up_token": f"test-step-up-token-{uuid.uuid4()}",
+        },
     )
     assert response.status_code == 200
     return response.json()
@@ -322,7 +326,11 @@ def test_pin_set_change_and_reset_recovery(
 
     created = client.post(
         f"{BASE}/pin/set",
-        json={"pin": "1234", "confirm_pin": "1234", "otp_code": "000000"},
+        json={
+            "pin": "1234",
+            "confirm_pin": "1234",
+            "step_up_token": f"test-step-up-token-{uuid.uuid4()}",
+        },
     )
     assert created.status_code == 200
     recovery_code = created.json()["recovery_codes"][0]
@@ -369,6 +377,42 @@ def test_legacy_sha256_pin_is_rehashed_after_successful_verification(
     session.refresh(row)
     assert row.pin_hash.startswith("$argon2id$")
     assert row.pin_salt == "argon2id"
+
+
+def test_pin_set_rejects_replayed_step_up_proof(client, auth, make_user):
+    user_id, _ = make_user()
+    auth.as_user(user_id)
+    payload = {
+        "pin": "1234",
+        "confirm_pin": "1234",
+        "step_up_token": "test-step-up-token-replayed-proof",
+    }
+
+    first = client.post(f"{BASE}/pin/set", json=payload)
+    second_user, _ = make_user()
+    auth.as_user(second_user)
+    second = client.post(f"{BASE}/pin/set", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "STEP_UP_PROOF_ALREADY_USED"
+
+
+def test_pin_set_cannot_replace_an_existing_pin(client, auth, make_user):
+    user_id, _ = make_user()
+    _set_pin(client, auth, user_id)
+
+    response = client.post(
+        f"{BASE}/pin/set",
+        json={
+            "pin": "9999",
+            "confirm_pin": "9999",
+            "step_up_token": f"test-step-up-token-{uuid.uuid4()}",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "PIN_ALREADY_SET"
 
 
 def test_step_up_otp_required_for_large_transfer(client, auth, make_user, fund_account):

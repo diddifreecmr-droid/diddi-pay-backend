@@ -27,7 +27,9 @@ from datetime import date, datetime, timedelta, timezone
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
+from payfund_app.core.security import StepUpProof
 from payfund_app.modules.wallet.application.ledger import LedgerService
 from payfund_app.modules.wallet.domain.entities import (
     AccountType,
@@ -45,11 +47,13 @@ from payfund_app.modules.wallet.domain.errors import (
     InvalidStepUpOtp,
     MerchantNotFound,
     PinLocked,
+    PinAlreadySet,
     PinRequired,
     RecipientNotFound,
     RecoveryCodeInvalid,
     StepUpOtpExpired,
     StepUpOtpRequired,
+    StepUpProofAlreadyUsed,
     TransactionNotFound,
 )
 from payfund_app.modules.wallet.domain.money import Balance, InvalidAmount, Money
@@ -64,6 +68,7 @@ from payfund_app.modules.wallet.infra.repositories import (
     GatewayAccountRepository,
     LedgerRepository,
     PinRecoveryAuditRepository,
+    ConsumedStepUpProofRepository,
     OutboxRepository,
     TransactionPinRecoveryCodeRepository,
     TransactionPinRepository,
@@ -115,6 +120,7 @@ class WalletUseCases:
         self.phones = UserPhoneRepository(session)
         self.pins = TransactionPinRepository(session)
         self.pin_recovery_codes = TransactionPinRecoveryCodeRepository(session)
+        self.consumed_step_up_proofs = ConsumedStepUpProofRepository(session)
         self.transfer_otp = TransferOtpChallengeRepository(session)
         self.pin_recovery_audit = PinRecoveryAuditRepository(session)
         self.gateways = GatewayAccountRepository(session)
@@ -213,9 +219,34 @@ class WalletUseCases:
         if pin != confirm_pin:
             raise InvalidPin("Les deux PIN ne correspondent pas.")
 
-    def define_pin(self, *, user_id: uuid.UUID, pin: str, confirm_pin: str) -> dict:
+    def define_pin(
+        self,
+        *,
+        user_id: uuid.UUID,
+        pin: str,
+        confirm_pin: str,
+        proof: StepUpProof,
+    ) -> dict:
         account = self.compte_de(user_id)
+        if self.pins.get(account.id) is not None:
+            raise PinAlreadySet()
+        if proof.user_id != user_id or proof.purpose != "wallet.pin.set":
+            from payfund_app.core.errors import StepUpProofInvalid
+
+            raise StepUpProofInvalid()
+        if self.consumed_step_up_proofs.get(proof.jti) is not None:
+            raise StepUpProofAlreadyUsed()
         self._ensure_password_policy(pin, confirm_pin)
+        try:
+            with self.session.begin_nested():
+                self.consumed_step_up_proofs.add(
+                    jti=proof.jti,
+                    user_id=user_id,
+                    purpose=proof.purpose,
+                    expires_at=proof.expires_at,
+                )
+        except IntegrityError as exc:
+            raise StepUpProofAlreadyUsed() from exc
         row = self.pins.set_pin(
             account_id=account.id,
             pin_hash=self._hash_pin(pin),

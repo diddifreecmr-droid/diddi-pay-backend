@@ -54,6 +54,18 @@ class TokenExpired(AppError):
     message = "Token expiré."
 
 
+class StepUpProofInvalid(AppError):
+    status_code = 403
+    code = "STEP_UP_PROOF_INVALID"
+    message = "Preuve de ré-authentification invalide."
+
+
+class StepUpProofExpired(AppError):
+    status_code = 410
+    code = "STEP_UP_PROOF_EXPIRED"
+    message = "La preuve de ré-authentification a expiré."
+
+
 class Forbidden(AppError):
     status_code = 403
     code = "FORBIDDEN"

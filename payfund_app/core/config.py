@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     diddifreeid_jwks_url: str = (
         "https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json"
     )
+    diddifreeid_issuer: str = "diddifree-id"
 
     redis_url: str = "redis://localhost:6379/0"
     event_bus_channel: str = "diddifree.events"
