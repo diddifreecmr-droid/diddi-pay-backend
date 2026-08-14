@@ -43,7 +43,11 @@ from payfund_app.modules.wallet.presentation.schemas import (
 from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.models import Transaction
-from payfund_app.modules.wallet.infra.repositories import OutboxRepository, ReconciliationLogRepository
+from payfund_app.modules.wallet.infra.repositories import (
+    OutboxRepository,
+    ReconciliationLogRepository,
+    WebhookInboxRepository,
+)
 from payfund_app.shared_kernel.events.bus import get_bus
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -509,6 +513,25 @@ async def paystack_webhook(
     if transaction is None:
         return {"status": "unknown_reference", "reason": "no_local_transaction"}
 
+    event_key = f"paystack:{event or 'webhook'}:{reference}"
+    inbox = WebhookInboxRepository(session)
+    existing_inbox = inbox.seen(event_key)
+    if existing_inbox is not None:
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event=str(event or "webhook"),
+            outcome="ignored",
+            reason="duplicate_event",
+        )
+        return {
+            "status": "ignored",
+            "reason": "duplicate_event",
+            "transaction_status": transaction.status,
+        }
+
+    inbox_row = inbox.record(provider="paystack", event_key=event_key, payload=payload)
     use_cases = WalletUseCases(session, bus=get_bus())
     if transaction.status in {"completed", "failed", "reversed"}:
         ReconciliationLogRepository(session).append(
@@ -519,6 +542,7 @@ async def paystack_webhook(
             outcome=transaction.status,
             reason="already_finalized",
         )
+        inbox.mark_processed(inbox_row)
         return {
             "status": "ignored",
             "reason": "already_finalized",
@@ -535,6 +559,7 @@ async def paystack_webhook(
             outcome="completed",
             reason="charge_success",
         )
+        inbox.mark_processed(inbox_row)
         return {
             "status": "processed",
             "transaction_status": "completed",
@@ -551,6 +576,7 @@ async def paystack_webhook(
             outcome="failed",
             reason=str(data.get("status")),
         )
+        inbox.mark_processed(inbox_row)
         return {
             "status": "processed",
             "transaction_status": "failed",
@@ -565,4 +591,5 @@ async def paystack_webhook(
         outcome="ignored",
         reason="unhandled_event",
     )
+    inbox.mark_processed(inbox_row)
     return {"status": "ignored", "reason": "unhandled_event"}

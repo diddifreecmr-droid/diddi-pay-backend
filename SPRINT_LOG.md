@@ -113,6 +113,11 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 - Added Paystack reconciliation audit logs and duplicate-finalized callback guards.
 - Commit: `79677be`
 
+## Sprint 23
+
+- Added durable webhook inbox tracking for Paystack callbacks.
+- Commit: `6b6cdb8`
+
 ## Notes
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.

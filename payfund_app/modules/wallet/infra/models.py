@@ -271,6 +271,28 @@ class OutboxEvent(Base):
     )
 
 
+class WebhookInboxEvent(Base):
+    """Journal durable des callbacks provider déjà vus."""
+
+    __tablename__ = "webhook_inbox_events"
+    __table_args__ = (
+        Index("idx_webhook_inbox_provider_event", "provider", "event_key"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_key: Mapped[str] = mapped_column(String(180), nullable=False, unique=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="received")
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class ReconciliationLog(Base):
     """Journal durable des décisions de réconciliation provider."""
 

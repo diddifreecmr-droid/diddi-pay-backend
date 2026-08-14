@@ -9,7 +9,12 @@ from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.models import Transaction
-from payfund_app.modules.wallet.infra.repositories import AccountRepository, TransactionRepository
+from payfund_app.modules.wallet.infra.repositories import (
+    AccountRepository,
+    ReconciliationLogRepository,
+    TransactionRepository,
+    WebhookInboxRepository,
+)
 
 BASE = "/payfund/v1/wallet"
 
@@ -107,6 +112,10 @@ def test_paystack_webhook_confirms_deposit(client, auth, session, make_user, mon
     transaction = session.get(Transaction, transaction.id)
     assert transaction.status == "completed"
     assert AccountRepository(session).balance(account_id).amount == 5000
+    inbox = WebhookInboxRepository(session).seen("paystack:charge.success:paystack-ref-1")
+    assert inbox is not None
+    assert inbox.status == "processed"
+    assert ReconciliationLogRepository(session).latest_for_transaction(transaction.id)[0].reason == "charge_success"
 
 
 def test_paystack_webhook_ignores_duplicate_finalized_transaction(
@@ -148,6 +157,53 @@ def test_paystack_webhook_ignores_duplicate_finalized_transaction(
     assert response.json()["reason"] == "already_finalized"
     transaction = session.get(Transaction, transaction.id)
     assert transaction.status == "completed"
+    inbox = WebhookInboxRepository(session).seen("paystack:charge.success:paystack-ref-final")
+    assert inbox is not None
+    assert inbox.status == "processed"
+
+
+def test_paystack_webhook_ignores_duplicate_event_key(client, auth, session, make_user, monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    user_id, account_id = make_user()
+    auth.as_user(user_id)
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=None,
+        provider_reference="paystack-ref-repeat",
+    )
+    transaction.amount = 5000
+    transaction.currency = "XOF"
+    session.commit()
+
+    payload = {
+        "event": "charge.success",
+        "data": {"reference": "paystack-ref-repeat", "status": "success"},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
+
+    first = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": signature},
+    )
+    second = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": signature},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["reason"] == "duplicate_event"
+    assert WebhookInboxRepository(session).seen("paystack:charge.success:paystack-ref-repeat") is not None
 
 
 def test_paystack_webhook_reports_invalid_signature(client, monkeypatch):

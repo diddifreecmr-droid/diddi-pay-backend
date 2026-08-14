@@ -21,6 +21,7 @@ from payfund_app.modules.wallet.infra.models import (
     LedgerEntry,
     OutboxEvent,
     ReconciliationLog,
+    WebhookInboxEvent,
     Transaction,
     UserPhone,
 )
@@ -277,6 +278,39 @@ class OutboxRepository:
     def mark_published(self, event: OutboxEvent) -> None:
         event.status = "published"
         event.published_at = datetime.now(timezone.utc)
+        self.session.flush()
+
+
+class WebhookInboxRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def seen(self, event_key: str) -> WebhookInboxEvent | None:
+        return self.session.scalar(
+            select(WebhookInboxEvent).where(WebhookInboxEvent.event_key == event_key)
+        )
+
+    def record(
+        self,
+        *,
+        provider: str,
+        event_key: str,
+        payload: dict,
+        status: str = "received",
+    ) -> WebhookInboxEvent:
+        row = WebhookInboxEvent(
+            provider=provider,
+            event_key=event_key,
+            payload=payload,
+            status=status,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def mark_processed(self, row: WebhookInboxEvent) -> None:
+        row.status = "processed"
+        row.processed_at = datetime.now(timezone.utc)
         self.session.flush()
 
 

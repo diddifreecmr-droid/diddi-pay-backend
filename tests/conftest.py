@@ -51,6 +51,8 @@ TABLES = [
     "fund.campaigns",
     "wallet.currency_conversions",
     "wallet.exchange_rates",
+    "wallet.webhook_inbox_events",
+    "wallet.reconciliation_logs",
     "wallet.ledger_entries",
     "wallet.transactions",
     "wallet.gateway_accounts",
