@@ -19,6 +19,12 @@ from sqlalchemy.orm import Session, sessionmaker
 # dès que le shell n'a pas lui-même sourcé `.env` — exactement le genre de port oublié à éviter
 # sur un serveur qui héberge plusieurs piles (voir `.env.example`).
 load_dotenv()
+os.environ["PAYMENT_GATEWAY_MODE"] = "stub"
+os.environ.pop("PAYSTACK_SECRET_KEY", None)
+
+from payfund_app.core.config import get_settings  # noqa: E402
+
+get_settings.cache_clear()
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -65,6 +71,17 @@ TABLES = [
     "wallet.user_phones",
     "wallet.accounts",
 ]
+
+
+@pytest.fixture(autouse=True)
+def reset_payment_gateway_settings():
+    os.environ["PAYMENT_GATEWAY_MODE"] = "stub"
+    os.environ.pop("PAYSTACK_SECRET_KEY", None)
+    get_settings.cache_clear()
+    yield
+    os.environ["PAYMENT_GATEWAY_MODE"] = "stub"
+    os.environ.pop("PAYSTACK_SECRET_KEY", None)
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")

@@ -470,6 +470,8 @@ class WalletUseCases:
     # --- Interne -------------------------------------------------------------
 
     def _publish_completed(self, transaction: Transaction, montant: Money) -> None:
+        if transaction.status != str(TransactionStatus.COMPLETED):
+            return
         if self.bus is None:
             self.outbox.enqueue(
                 event_name=PAYMENT_COMPLETED,

@@ -350,7 +350,7 @@ class LoanUseCases:
             raise CampaignNotFound()
 
         compte_emprunteur = self.wallet.compte_de_utilisateur(borrower_user_id)
-        self.wallet.debiter(
+        wallet_transaction_id = self.wallet.debiter(
             compte_id=compte_emprunteur,
             contrepartie_compte_id=campaign.wallet_account_id,
             montant=amount,
@@ -359,6 +359,7 @@ class LoanUseCases:
             type_transaction="fund_repayment",
             origin_module=ORIGIN_MODULE,
         )
+        loan.wallet_transaction_id = wallet_transaction_id
 
         echeance.amount_paid = echeance.amount_paid + Decimal(amount)
         if int(echeance.amount_paid) >= int(echeance.amount_due):

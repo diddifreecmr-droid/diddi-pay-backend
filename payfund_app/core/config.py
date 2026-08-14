@@ -1,6 +1,5 @@
 from decimal import Decimal
 from functools import lru_cache
-import re
 from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -68,7 +67,7 @@ class Settings(BaseSettings):
         for origin in origins:
             parsed = urlparse(origin)
             if parsed.scheme and parsed.netloc:
-                patterns.append(f"{re.escape(parsed.scheme)}://{re.escape(parsed.netloc)}")
+                patterns.append(f"{parsed.scheme}://{parsed.netloc}")
         if not patterns:
             return r"^$"
         return r"^(?:" + "|".join(patterns) + r")$"

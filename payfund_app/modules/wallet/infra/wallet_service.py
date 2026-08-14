@@ -46,6 +46,8 @@ class WalletService:
             idempotency_key=idempotency_key,
             origin_module=origin_module,
         )
+        transaction.amount = Money(montant).to_db()
+        transaction.currency = Money(montant).currency
         return transaction.id
 
     def crediter(
@@ -67,6 +69,8 @@ class WalletService:
             idempotency_key=idempotency_key,
             origin_module=origin_module,
         )
+        transaction.amount = Money(montant).to_db()
+        transaction.currency = Money(montant).currency
         return transaction.id
 
     def ouvrir_compte_technique(self, reference: str) -> uuid.UUID:
