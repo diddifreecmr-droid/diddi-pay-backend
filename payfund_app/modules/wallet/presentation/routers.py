@@ -333,6 +333,16 @@ def reconcile_paystack_deposit(
         return {"status": "not_found"}
     if transaction.provider_reference is None:
         return {"status": "missing_provider_reference"}
+    if transaction.status in {"completed", "failed", "reversed"}:
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event="manual_reconcile",
+            outcome=transaction.status,
+            reason="already_finalized",
+        )
+        return {"status": "already_finalized", "transaction_id": str(transaction.id)}
 
     gateway = PaystackGateway()
     result = gateway.verifier_depot(transaction.provider_reference)
@@ -500,6 +510,21 @@ async def paystack_webhook(
         return {"status": "unknown_reference", "reason": "no_local_transaction"}
 
     use_cases = WalletUseCases(session, bus=get_bus())
+    if transaction.status in {"completed", "failed", "reversed"}:
+        ReconciliationLogRepository(session).append(
+            transaction_id=transaction.id,
+            provider="paystack",
+            provider_reference=transaction.provider_reference,
+            event=str(event or "webhook"),
+            outcome=transaction.status,
+            reason="already_finalized",
+        )
+        return {
+            "status": "ignored",
+            "reason": "already_finalized",
+            "transaction_status": transaction.status,
+        }
+
     if event == "charge.success" or data.get("status") == "success":
         use_cases.confirmer_operation(transaction.id, provider="paystack")
         ReconciliationLogRepository(session).append(

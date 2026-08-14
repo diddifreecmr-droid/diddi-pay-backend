@@ -108,6 +108,11 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 - Added pending Paystack deposits ops view.
 - Commit: `68cbd8a`
 
+## Sprint 22
+
+- Added Paystack reconciliation audit logs and duplicate-finalized callback guards.
+- Commit: `79677be`
+
 ## Notes
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.

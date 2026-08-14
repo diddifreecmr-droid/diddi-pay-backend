@@ -109,6 +109,47 @@ def test_paystack_webhook_confirms_deposit(client, auth, session, make_user, mon
     assert AccountRepository(session).balance(account_id).amount == 5000
 
 
+def test_paystack_webhook_ignores_duplicate_finalized_transaction(
+    client, auth, session, make_user, monkeypatch
+):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    user_id, account_id = make_user()
+    auth.as_user(user_id)
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="completed",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=None,
+        provider_reference="paystack-ref-final",
+    )
+    transaction.amount = 5000
+    transaction.currency = "XOF"
+    session.commit()
+
+    payload = {
+        "event": "charge.success",
+        "data": {"reference": "paystack-ref-final", "status": "success"},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
+
+    response = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": signature},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason"] == "already_finalized"
+    transaction = session.get(Transaction, transaction.id)
+    assert transaction.status == "completed"
+
+
 def test_paystack_webhook_reports_invalid_signature(client, monkeypatch):
     monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
     monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
