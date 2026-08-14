@@ -166,4 +166,9 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 ## Sprint 32
 
 - Documented wallet step-up OTP, admin PIN recovery, wallet self-heal provisioning, and the frontend/module usage contract for DiddiPay.
+- Commit: `645d19a`
+
+## Sprint 33
+
+- Added a backend integration brief for DiddiGo, DiddiFiles, and future modules consuming DiddiPay.
 - Commit: `pending`
