@@ -128,6 +128,11 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 - Added a second sandbox payment rail for `wave` and verified the app in Docker with a live health check.
 - Commit: `80f63f7`
 
+## Sprint 26
+
+- Extended the Wave sandbox to cover withdrawal initiation as well as deposits.
+- Commit: `620519e`
+
 ## Notes
 
 - The exact code changes continue to be verified by tests and compile checks before each commit.

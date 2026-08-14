@@ -52,6 +52,15 @@ def test_sandbox_wave_gateway_is_selectable(monkeypatch):
     assert operation.status == GatewayStatus.PENDING
     assert operation.provider_reference.startswith("wave-sandbox-deposit-")
 
+    retrait = gateway.initier_retrait(
+        provider="wave",
+        phone="+2250700000000",
+        montant=2000,
+        reference="txn-wave-2",
+    )
+    assert retrait.status == GatewayStatus.PENDING
+    assert retrait.provider_reference.startswith("wave-sandbox-withdraw-")
+
 
 def test_sandbox_orange_money_rejects_other_providers(monkeypatch):
     monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "sandbox_orange_money")
