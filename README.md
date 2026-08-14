@@ -155,6 +155,10 @@ Pour le premier provider réel, Paystack :
 - `PAYSTACK_WEBHOOK_SECRET=<secret key ou secret dédié au webhook>`
 - le webhook `POST /payfund/v1/wallet/webhooks/paystack` finalise les dépôts
 
+La politique de step-up OTP est indépendante du provider. Le seuil se configure avec
+`WALLET_STEP_UP_THRESHOLD_XOF` (défaut : `50000`) et un transfert de ce montant ou plus exige
+le challenge. Le frontend ne doit pas recopier cette valeur : il traite `STEP_UP_OTP_REQUIRED`.
+
 ### Côté frontend: accès au wallet
 
 - Le frontend n'a pas à créer le wallet explicitement.

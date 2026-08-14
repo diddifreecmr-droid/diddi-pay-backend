@@ -47,6 +47,11 @@ Documentation interactive (Swagger) pour explorer toutes les routes et leurs sch
 http://<host>:48213/payfund/v1/docs
 ```
 
+Swagger est le contrat HTTP exécutable : toute route, tout corps de requête et toute réponse
+JSON de succès doivent y être décrits. Ce brief ne remplace pas ces schémas ; il explique les
+enchaînements d'écrans, les responsabilités entre services et les règles métier qui ne doivent pas
+être recopiées dans le frontend.
+
 `<host>` dépend de où tourne le backend par rapport à l'app :
 
 | Contexte Flutter | Valeur de `<host>` |
@@ -56,10 +61,9 @@ http://<host>:48213/payfund/v1/docs
 | Appareil physique (même Wi-Fi que le backend) | l'IP LAN de la machine qui héberge Docker, ex. `192.168.1.x` |
 | Flutter Web | `localhost` — **mais voir l'avertissement CORS ci-dessous** |
 
-⚠️ **Flutter Web** : l'API n'a **aucun middleware CORS configuré** actuellement. Si tu comptes
-tester en Flutter Web (Chrome), les requêtes seront bloquées par le navigateur. Dis-le-moi et
-j'ajoute `CORSMiddleware` côté backend — ce n'est pas fait par défaut pour ne pas ouvrir l'API
-inutilement en prod.
+**Flutter Web** : CORS accepte les origines `localhost` sur tous les ports ainsi que les sous-domaines
+de `diddifree.com` et `vercel.com`. Les origines de production supplémentaires se configurent avec
+`CORS_ORIGINS`.
 
 ## 4. Authentification — le point critique
 
@@ -119,9 +123,9 @@ les schémas de requête/réponse exacts.
   1. login DiddiFreeID,
   2. `GET /wallet/balance`,
   3. affichage du solde.
-- Si un transfert P2P dépasse le seuil sensible, l'UI doit d'abord appeler
-  `POST /wallet/transfer/step-up/request`, afficher la confirmation OTP, puis rejouer
-  `POST /wallet/transfer` avec `pin` + `otp_code`.
+- Le frontend ne copie pas le seuil sensible. Il tente `POST /wallet/transfer`; si DiddiPay répond
+  `409 STEP_UP_OTP_REQUIRED`, l'UI appelle `POST /wallet/transfer/step-up/request`, affiche la
+  confirmation OTP, puis rejoue le transfert avec le même contexte et `otp_code`.
 - Le PIN est un vrai secret transactionnel. Il ne doit jamais être remplacé par un simple écran
   "confirmez le montant".
 - En cas de perte du PIN, le parcours normal est la récupération par code de secours. Le chemin
@@ -129,7 +133,5 @@ les schémas de requête/réponse exacts.
 
 ## 7. Ce qui n'est pas encore branché
 
-- Dépôt/retrait via Orange Money / MTN : mode `stub` actuellement (`PAYMENT_GATEWAY_MODE=stub`),
-  les opérations restent `pending` tant que personne ne les confirme manuellement côté backend —
-  utile à savoir si tu testes ce flux, ce n'est pas un bug si ça ne se confirme pas tout seul.
-- CORS (voir section 3) — à activer sur demande si Flutter Web est dans le scope.
+- Paystack est le premier provider réel pour les dépôts. Le retrait Paystack n'est pas encore
+  implémenté ; Orange Money, Wave et les autres rails restent en sandbox ou en mode `stub`.

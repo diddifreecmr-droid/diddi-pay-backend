@@ -5,6 +5,10 @@
 **Format:** JSON only  
 **Auth:** DiddiFreeID JWT verified locally through JWKS
 
+The generated OpenAPI document at `/payfund/v1/openapi.json` is the executable HTTP contract: every
+route, request body, header and JSON success response must be represented there. This document adds
+business semantics and lifecycle rules that OpenAPI cannot express by itself.
+
 ## 1. Scope
 
 DiddiPay owns wallet state and money movement.
@@ -150,7 +154,8 @@ Verifies and decodes a QR payload.
 
 ### `GET /wallet/transactions`
 
-Lists transactions with filters and pagination.
+Lists transactions with filters and pagination. Every item includes `direction`, whose values are
+`credit`, `debit`, or `null` while a pending provider operation has not produced a ledger entry.
 
 ### `GET /wallet/transactions/{transaction_id}`
 
@@ -160,17 +165,36 @@ Returns transaction detail, including direction from the caller point of view.
 
 Defines or changes the transaction PIN after OTP verification.
 
+Success response:
+
+```json
+{
+  "status": "ok",
+  "account_id": "uuid",
+  "recovery_codes": ["one-time-code-1", "one-time-code-2"]
+}
+```
+
+Recovery codes are returned only when issued and must be shown once to the user.
+
 ### `POST /wallet/pin/change`
 
 Changes an existing PIN after the current PIN is verified.
+
+Success response: `{ "status": "ok", "account_id": "uuid" }`.
 
 ### `POST /wallet/pin/reset`
 
 Resets the PIN using a recovery code issued at PIN creation or admin recovery.
 
+Success response: `{ "status": "ok", "account_id": "uuid" }`.
+
 ### `POST /wallet/transfer/step-up/request`
 
 Creates a short-lived OTP challenge for sensitive transfers.
+
+The frontend must not embed the risk threshold. It attempts the transfer and reacts to
+`STEP_UP_OTP_REQUIRED`; the threshold is a server-side policy configured per environment.
 
 ### `POST /wallet/ops/pin/reset`
 

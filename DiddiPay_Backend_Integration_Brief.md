@@ -113,10 +113,14 @@ Le module appelant ne doit pas stocker un second solde local.
 
 ### Transfert sensible
 
-Quand le montant dépasse le seuil sensible :
-1. demander le step-up OTP ;
-2. valider le PIN ;
-3. rejouer le transfert avec `otp_code`.
+Le module ne connaît pas le seuil sensible. Il tente le transfert et, sur
+`STEP_UP_OTP_REQUIRED` :
+1. demande le step-up OTP ;
+2. conserve le même destinataire et le même montant ;
+3. rejoue le transfert avec `otp_code`.
+
+Le seuil est configuré côté DiddiPay avec `WALLET_STEP_UP_THRESHOLD_XOF` et peut varier entre
+staging et production sans redéploiement du frontend.
 
 Le module appelant ne doit pas inventer une logique parallèle de validation.
 
