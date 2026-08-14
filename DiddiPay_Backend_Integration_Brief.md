@@ -127,6 +127,10 @@ Le module appelant ne doit pas inventer une logique parallèle de validation.
 Le PIN est toujours vérifié côté serveur. Les recovery codes et l'admin reset
 audité existent pour les cas de support.
 
+La création initiale du PIN exige une preuve JWT DiddiFreeID liée au purpose `wallet.pin.set`.
+DiddiPay vérifie cette preuve localement avec le JWKS et conserve uniquement son `jti` pour empêcher
+un rejeu. Un module ne doit jamais vérifier ni transmettre lui-même le code OTP brut.
+
 ## 5. Sécurité
 
 - Le JWT DiddiFreeID se vérifie localement via le JWKS.

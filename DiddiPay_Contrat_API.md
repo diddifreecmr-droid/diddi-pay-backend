@@ -163,7 +163,21 @@ Returns transaction detail, including direction from the caller point of view.
 
 ### `POST /wallet/pin/set`
 
-Defines or changes the transaction PIN after OTP verification.
+Defines the first transaction PIN after DiddiFreeID step-up verification. An existing PIN must be
+changed through `/wallet/pin/change` or recovered through `/wallet/pin/reset`.
+
+Request:
+
+```json
+{
+  "pin": "1234",
+  "confirm_pin": "1234",
+  "step_up_token": "<short-lived-jwt-from-diddifreeid>"
+}
+```
+
+The proof must be signed by DiddiFreeID with `purpose=wallet.pin.set`, must belong to the same
+authenticated user, and can be consumed only once.
 
 Success response:
 
@@ -176,6 +190,9 @@ Success response:
 ```
 
 Recovery codes are returned only when issued and must be shown once to the user.
+
+Additional errors: `PIN_ALREADY_SET`, `STEP_UP_PROOF_INVALID`, `STEP_UP_PROOF_EXPIRED`,
+`STEP_UP_PROOF_ALREADY_USED`.
 
 ### `POST /wallet/pin/change`
 

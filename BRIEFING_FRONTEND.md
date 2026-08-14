@@ -128,6 +128,11 @@ les schémas de requête/réponse exacts.
   confirmation OTP, puis rejoue le transfert avec le même contexte et `otp_code`.
 - Le PIN est un vrai secret transactionnel. Il ne doit jamais être remplacé par un simple écran
   "confirmez le montant".
+- Pour le premier PIN, demander puis vérifier le challenge `wallet.pin.set` auprès de DiddiFreeID.
+  Envoyer le `step_up_token` reçu à `POST /wallet/pin/set`; ne jamais transmettre le code OTP brut
+  à DiddiPay. Les `recovery_codes` de la réponse doivent être affichés une seule fois.
+- Si un PIN existe déjà, utiliser `/wallet/pin/change`. `/wallet/pin/set` répond
+  `PIN_ALREADY_SET` et ne sert jamais de raccourci pour remplacer un PIN oublié.
 - En cas de perte du PIN, le parcours normal est la récupération par code de secours. Le chemin
   support/admin n'est qu'un filet d'exploitation.
 
