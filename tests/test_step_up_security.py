@@ -83,3 +83,14 @@ def test_step_up_proof_rejects_expired_token(signing_keys):
             expected_user_id=user_id,
             expected_purpose="wallet.pin.set",
         )
+
+
+def test_step_up_proof_rejects_excessive_lifetime(signing_keys):
+    user_id = uuid.uuid4()
+
+    with pytest.raises(StepUpProofInvalid):
+        decode_step_up_token(
+            _token(signing_keys, user_id=user_id, expires_in=600),
+            expected_user_id=user_id,
+            expected_purpose="wallet.pin.set",
+        )

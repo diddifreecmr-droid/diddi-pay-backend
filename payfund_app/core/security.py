@@ -105,6 +105,7 @@ def decode_step_up_token(
     try:
         user_id = UUID(str(claims["sub"]))
         jti = UUID(str(claims["jti"]))
+        issued_at = datetime.fromtimestamp(int(claims["iat"]), tz=timezone.utc)
         expires_at = datetime.fromtimestamp(int(claims["exp"]), tz=timezone.utc)
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise StepUpProofInvalid() from exc
@@ -112,6 +113,9 @@ def decode_step_up_token(
     purpose = str(claims.get("purpose", ""))
     if user_id != expected_user_id or purpose != expected_purpose:
         raise StepUpProofInvalid()
+    proof_ttl = (expires_at - issued_at).total_seconds()
+    if proof_ttl > get_settings().diddifreeid_step_up_max_ttl_seconds:
+        raise StepUpProofInvalid("Durée de validité de la preuve excessive.")
 
     return StepUpProof(
         jti=jti,
