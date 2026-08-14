@@ -151,4 +151,9 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 ## Sprint 29
 
 - Added KYC document hooks so wallet users can be linked to external file references such as diddifiles.
+- Commit: `a1768c5`
+
+## Sprint 30
+
+- Hardened the public contracts for DiddiPay and DiddiFund by documenting wallet provisioning, ops recovery routes, reconciliation views, and the KYC/document boundary.
 - Commit: `pending`

@@ -23,6 +23,41 @@ It manages:
 DiddiPay does not own global identity. DiddiFreeID provides authentication only.
 Module-specific roles and profiles stay inside the owning module.
 
+### Wallet provisioning
+
+The wallet account is provisioned automatically on first access to wallet state.
+In practice, `GET /wallet/balance` is the normal consumer entry point and will
+return the wallet balance once the account exists.
+
+If an event-driven provisioning step was missed, operators may repair the
+state with an internal backfill route:
+
+- `POST /wallet/ops/backfill`
+
+This is an ops-only escape hatch and not a client-facing creation endpoint.
+
+### Ops and reconciliation
+
+DiddiPay exposes internal ops views for support and recovery:
+
+- `GET /wallet/ops/provisioning/{user_id}`
+- `POST /wallet/ops/backfill`
+- `POST /wallet/ops/paystack/reconcile/{transaction_id}`
+- `GET /wallet/ops/paystack/pending`
+- `GET /wallet/ops/paystack/summary`
+- `GET /wallet/ops/paystack/{transaction_id}`
+- `GET /wallet/ops/paystack/{transaction_id}/reconciliations`
+- `GET /wallet/ops/outbox`
+- `POST /wallet/ops/outbox/relay`
+
+These routes are for internal operations only.
+
+### KYC hooks
+
+DiddiPay can link wallet users to external document references for KYC.
+The wallet service stores document metadata, not the file blob itself.
+The intended integration target is DiddiFiles or any equivalent file service.
+
 ## 2. Money Model
 
 - All amounts are integers in minor units.

@@ -18,6 +18,12 @@ DiddiFund owns:
 DiddiFreeID only authenticates the user.
 Fund-specific roles stay inside DiddiFund.
 
+### Role boundary
+
+The central identity service does not store fund-specific roles.
+Examples such as investor qualification, campaign ownership eligibility, or loan
+permissions stay inside DiddiFund and are derived from DiddiFund-owned state.
+
 ## 2. Public Routes
 
 ### `POST /fund/campaigns`
@@ -82,6 +88,10 @@ Money movement remains centralized in DiddiPay:
 - debit borrower for repayment
 - credit campaign pool on repayment
 - disburse loan from pool to borrower when the back-office action runs
+
+The wallet service remains the source of truth for money movement and ledger
+state. DiddiFund consumes the wallet contract; it does not reimplement wallet
+balance logic.
 
 ## 5. Identity and Roles
 
