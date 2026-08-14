@@ -63,6 +63,7 @@ class TransferRequest(BaseModel):
     recipient_phone: str = Field(min_length=4, max_length=20)
     amount: int = Field(gt=0)
     pin: str = Field(min_length=4, max_length=12)
+    otp_code: str | None = Field(default=None, min_length=4, max_length=12)
 
 
 class PinSetRequest(BaseModel):
@@ -81,6 +82,25 @@ class PinResetWithRecoveryRequest(BaseModel):
     recovery_code: str = Field(min_length=6, max_length=64)
     new_pin: str = Field(min_length=4, max_length=12)
     confirm_new_pin: str = Field(min_length=4, max_length=12)
+
+
+class AdminPinResetRequest(BaseModel):
+    user_id: uuid.UUID
+    new_pin: str = Field(min_length=4, max_length=12)
+    confirm_new_pin: str = Field(min_length=4, max_length=12)
+    reason: str = Field(min_length=5, max_length=200)
+
+
+class StepUpOtpRequest(BaseModel):
+    recipient_phone: str = Field(min_length=4, max_length=20)
+    amount: int = Field(gt=0)
+
+
+class StepUpOtpResponse(BaseModel):
+    challenge_id: uuid.UUID
+    expires_at: datetime
+    masked_recipient: str
+    delivery: str = "logging"
 
 
 class PinStatusResponse(BaseModel):

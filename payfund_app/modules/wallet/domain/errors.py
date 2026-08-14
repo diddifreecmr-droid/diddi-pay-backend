@@ -123,3 +123,21 @@ class RecoveryCodeInvalid(AppError):
     status_code = 400
     code = "RECOVERY_CODE_INVALID"
     message = "Code de récupération invalide."
+
+
+class StepUpOtpRequired(AppError):
+    status_code = 409
+    code = "STEP_UP_OTP_REQUIRED"
+    message = "Une vérification OTP supplémentaire est requise."
+
+
+class InvalidStepUpOtp(AppError):
+    status_code = 403
+    code = "INVALID_STEP_UP_OTP"
+    message = "OTP de vérification invalide."
+
+
+class StepUpOtpExpired(AppError):
+    status_code = 410
+    code = "STEP_UP_OTP_EXPIRED"
+    message = "OTP de vérification expiré."

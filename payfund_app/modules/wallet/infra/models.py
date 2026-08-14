@@ -319,6 +319,53 @@ class TransactionPinRecoveryCode(Base):
     )
 
 
+class TransferOtpChallenge(Base):
+    """Challenge OTP interne pour les virements à risque."""
+
+    __tablename__ = "transfer_otp_challenges"
+    __table_args__ = (
+        Index("idx_transfer_otp_account_created", "account_id", "created_at"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("wallet.accounts.id"), nullable=False
+    )
+    recipient_phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PinRecoveryAudit(Base):
+    """Journal de support pour les opérations de récupération PIN."""
+
+    __tablename__ = "pin_recovery_audits"
+    __table_args__ = (
+        Index("idx_pin_recovery_audits_account", "account_id", "created_at"),
+        {"schema": "wallet"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("wallet.accounts.id"), nullable=False
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class OutboxEvent(Base):
     """Événement durable à relayer vers le bus interne.
 

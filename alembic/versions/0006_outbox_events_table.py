@@ -1,7 +1,7 @@
 """Ajout de la table outbox pour les événements internes durables.
 
 Revision ID: 0006_outbox_events_table
-Revises: 0005_business_reference_on_transactions
+Revises: 0005_business_ref_txn
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0006_outbox_events_table"
-down_revision: str | None = "0005_business_reference_on_transactions"
+down_revision: str | None = "0005_business_ref_txn"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

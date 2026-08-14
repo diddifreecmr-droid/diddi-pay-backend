@@ -53,6 +53,8 @@ TABLES = [
     "wallet.exchange_rates",
     "wallet.transaction_pin_recovery_codes",
     "wallet.transaction_pins",
+    "wallet.transfer_otp_challenges",
+    "wallet.pin_recovery_audits",
     "wallet.kyc_documents",
     "wallet.outbox_events",
     "wallet.webhook_inbox_events",
@@ -69,9 +71,14 @@ TABLES = [
 def engine():
     eng = create_engine(TEST_DATABASE_URL, future=True)
     with eng.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
         conn.execute(text("DROP SCHEMA IF EXISTS wallet CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS fund CASCADE"))
-        conn.execute(text("DROP TABLE IF EXISTS public.alembic_version CASCADE"))
+        conn.execute(text("CREATE SCHEMA wallet"))
+        conn.execute(text("CREATE SCHEMA fund"))
+        conn.execute(text("DROP TABLE IF EXISTS wallet.alembic_version CASCADE"))
+        conn.execute(text("DROP TYPE IF EXISTS wallet.alembic_version CASCADE"))
 
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)

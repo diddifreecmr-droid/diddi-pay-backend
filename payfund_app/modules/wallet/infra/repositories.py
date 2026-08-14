@@ -20,8 +20,10 @@ from payfund_app.modules.wallet.infra.models import (
     GatewayAccount,
     LedgerEntry,
     KycDocument,
+    PinRecoveryAudit,
     TransactionPin,
     TransactionPinRecoveryCode,
+    TransferOtpChallenge,
     OutboxEvent,
     ReconciliationLog,
     WebhookInboxEvent,
@@ -497,3 +499,63 @@ class TransactionPinRecoveryCodeRepository:
                 TransactionPinRecoveryCode.code_hash == code_hash
             )
         )
+
+
+class TransferOtpChallengeRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(
+        self,
+        *,
+        account_id: uuid.UUID,
+        recipient_phone: str,
+        amount: Decimal,
+        code_hash: str,
+        expires_at: datetime,
+    ) -> TransferOtpChallenge:
+        row = TransferOtpChallenge(
+            account_id=account_id,
+            recipient_phone=recipient_phone,
+            amount=amount,
+            code_hash=code_hash,
+            expires_at=expires_at,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get(self, challenge_id: uuid.UUID) -> TransferOtpChallenge | None:
+        return self.session.get(TransferOtpChallenge, challenge_id)
+
+    def latest_for_account(self, account_id: uuid.UUID) -> TransferOtpChallenge | None:
+        return self.session.scalar(
+            select(TransferOtpChallenge)
+            .where(TransferOtpChallenge.account_id == account_id)
+            .order_by(TransferOtpChallenge.created_at.desc())
+        )
+
+
+class PinRecoveryAuditRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(
+        self,
+        *,
+        account_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None,
+        action: str,
+        reason: str,
+        metadata: dict | None = None,
+    ) -> PinRecoveryAudit:
+        row = PinRecoveryAudit(
+            account_id=account_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            reason=reason,
+            metadata_json=metadata,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row

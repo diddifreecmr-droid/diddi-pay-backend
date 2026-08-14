@@ -32,12 +32,15 @@ from payfund_app.modules.wallet.presentation.schemas import (
     OpsBackfillRequest,
     Page,
     Pagination,
+    AdminPinResetRequest,
     PinChangeRequest,
     PinResetWithRecoveryRequest,
     PinSetRequest,
     PinStatusResponse,
     RecipientLookupResponse,
     PendingOperationResponse,
+    StepUpOtpRequest,
+    StepUpOtpResponse,
     TransactionDetail,
     TransactionItem,
     TransferRequest,
@@ -153,6 +156,24 @@ def reset_pin(
     return {"status": "ok", "account_id": str(result["account"].id)}
 
 
+@router.post("/transfer/step-up/request", response_model=StepUpOtpResponse)
+def request_transfer_step_up(
+    payload: StepUpOtpRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+) -> StepUpOtpResponse:
+    result = WalletUseCases(session).request_step_up_otp(
+        user_id=user.user_id,
+        recipient_phone=payload.recipient_phone,
+        amount=payload.amount,
+    )
+    return StepUpOtpResponse(
+        challenge_id=result["challenge"].id,
+        expires_at=result["challenge"].expires_at,
+        masked_recipient=result["masked_recipient"],
+    )
+
+
 @router.post("/deposit", response_model=DepositResponse, status_code=202)
 def deposit(
     payload: DepositRequest,
@@ -237,6 +258,7 @@ def transfer(
         recipient_phone=payload.recipient_phone,
         amount=payload.amount,
         pin=payload.pin,
+        otp_code=payload.otp_code,
         idempotency_key=idempotency_key,
     )
     return TransferResponse(
@@ -494,6 +516,27 @@ def relay_outbox(user: CurrentUserDep, session: SessionDep):
 
     result = relay_outbox_events(session, get_bus())
     return {"scanned": result.scanned, "published": result.published}
+
+
+@router.post("/ops/pin/reset")
+def admin_reset_pin(
+    payload: AdminPinResetRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+):
+    _require_admin(user)
+    result = WalletUseCases(session).admin_reset_pin(
+        admin_user_id=user.user_id,
+        user_id=payload.user_id,
+        new_pin=payload.new_pin,
+        confirm_new_pin=payload.confirm_new_pin,
+        reason=payload.reason,
+    )
+    return {
+        "status": "ok",
+        "account_id": str(result["account"].id),
+        "recovery_codes": result["recovery_codes"],
+    }
 
 
 @router.post("/ops/paystack/reconcile/{transaction_id}")

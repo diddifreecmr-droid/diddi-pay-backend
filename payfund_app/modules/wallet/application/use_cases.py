@@ -40,11 +40,14 @@ from payfund_app.modules.wallet.domain.errors import (
     GatewayUnavailable,
     InvalidAmountError,
     InvalidPin,
+    InvalidStepUpOtp,
     MerchantNotFound,
     PinLocked,
     PinRequired,
     RecipientNotFound,
     RecoveryCodeInvalid,
+    StepUpOtpExpired,
+    StepUpOtpRequired,
     TransactionNotFound,
 )
 from payfund_app.modules.wallet.domain.money import Balance, InvalidAmount, Money
@@ -58,9 +61,11 @@ from payfund_app.modules.wallet.infra.repositories import (
     AccountRepository,
     GatewayAccountRepository,
     LedgerRepository,
+    PinRecoveryAuditRepository,
     OutboxRepository,
     TransactionPinRecoveryCodeRepository,
     TransactionPinRepository,
+    TransferOtpChallengeRepository,
     TransactionRepository,
     UserPhoneRepository,
 )
@@ -104,6 +109,8 @@ class WalletUseCases:
         self.phones = UserPhoneRepository(session)
         self.pins = TransactionPinRepository(session)
         self.pin_recovery_codes = TransactionPinRecoveryCodeRepository(session)
+        self.transfer_otp = TransferOtpChallengeRepository(session)
+        self.pin_recovery_audit = PinRecoveryAuditRepository(session)
         self.gateways = GatewayAccountRepository(session)
         self.outbox = OutboxRepository(session)
         self.ledger = LedgerService(session)
@@ -163,6 +170,9 @@ class WalletUseCases:
         return digest
 
     def _hash_recovery_code(self, code: str) -> str:
+        return hashlib.sha256(code.encode()).hexdigest()
+
+    def _hash_otp_code(self, code: str) -> str:
         return hashlib.sha256(code.encode()).hexdigest()
 
     def _verify_pin(self, account_id: uuid.UUID, pin: str) -> None:
@@ -244,6 +254,90 @@ class WalletUseCases:
         )
         return {"account": account}
 
+    def admin_reset_pin(
+        self,
+        *,
+        admin_user_id: uuid.UUID | None,
+        user_id: uuid.UUID,
+        new_pin: str,
+        confirm_new_pin: str,
+        reason: str,
+    ) -> dict:
+        account = self.compte_de(user_id)
+        self._ensure_password_policy(new_pin, confirm_new_pin)
+        salt = self._pin_salt()
+        row = self.pins.set_pin(
+            account_id=account.id,
+            pin_hash=self._hash_pin(new_pin, salt),
+            pin_salt=salt,
+        )
+        recovery_codes = []
+        for _ in range(6):
+            code = secrets.token_urlsafe(8)
+            self.pin_recovery_codes.add(
+                account_id=account.id, code_hash=self._hash_recovery_code(code)
+            )
+            recovery_codes.append(code)
+        self.pin_recovery_audit.add(
+            account_id=account.id,
+            actor_user_id=admin_user_id,
+            action="admin_reset_pin",
+            reason=reason,
+            metadata={"recovery_codes_issued": len(recovery_codes)},
+        )
+        return {"account": account, "pin": row, "recovery_codes": recovery_codes}
+
+    def request_step_up_otp(
+        self, *, user_id: uuid.UUID, recipient_phone: str, amount: int
+    ) -> dict:
+        account = self.compte_de(user_id)
+        montant = to_money(amount, account.currency)
+        challenge_code = "".join(secrets.choice("0123456789") for _ in range(6))
+        challenge = self.transfer_otp.add(
+            account_id=account.id,
+            recipient_phone=recipient_phone,
+            amount=montant.to_db(),
+            code_hash=self._hash_otp_code(challenge_code),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        )
+        return {
+            "challenge": challenge,
+            "code": challenge_code,
+            "masked_recipient": self._mask_phone(recipient_phone),
+        }
+
+    def _mask_phone(self, phone: str) -> str:
+        if len(phone) <= 4:
+            return phone
+        return f"{phone[:3]}***{phone[-2:]}"
+
+    def _verify_step_up_otp(
+        self,
+        *,
+        account_id: uuid.UUID,
+        recipient_phone: str,
+        amount: int,
+        otp_code: str | None,
+    ) -> None:
+        if amount < 50000:
+            return
+        latest = self.transfer_otp.latest_for_account(account_id)
+        if latest is None:
+            raise StepUpOtpRequired()
+        now = datetime.now(timezone.utc)
+        if latest.expires_at < now:
+            raise StepUpOtpExpired()
+        if latest.used_at is not None:
+            raise StepUpOtpRequired()
+        if latest.recipient_phone != recipient_phone or int(latest.amount) != amount:
+            raise StepUpOtpRequired()
+        if not otp_code:
+            raise StepUpOtpRequired()
+        if not hmac.compare_digest(self._hash_otp_code(otp_code), latest.code_hash):
+            raise InvalidStepUpOtp()
+        latest.used_at = now
+        self.session.flush()
+
     # --- Lecture -------------------------------------------------------------
 
     def consulter_solde(self, user_id: uuid.UUID) -> tuple[Account, Balance]:
@@ -295,12 +389,19 @@ class WalletUseCases:
         recipient_phone: str,
         amount: int,
         pin: str,
+        otp_code: str | None = None,
         idempotency_key: str,
     ) -> TransferResult:
         """Transfert P2P interne — synchrone, les deux écritures dans la même transaction DB
         (Contrat API §1)."""
         source = self.compte_de(user_id)
         self._verify_pin(source.id, pin)
+        self._verify_step_up_otp(
+            account_id=source.id,
+            recipient_phone=recipient_phone,
+            amount=amount,
+            otp_code=otp_code,
+        )
         montant = to_money(amount, source.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")

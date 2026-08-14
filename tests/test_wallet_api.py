@@ -6,6 +6,8 @@ import uuid
 
 from sqlalchemy import func, select
 
+from payfund_app.core.security import CurrentUser
+from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import AccountStatus, AccountType, Direction
 from payfund_app.modules.wallet.infra.models import LedgerEntry, Transaction
 from payfund_app.modules.wallet.infra.repositories import AccountRepository
@@ -27,6 +29,16 @@ def _set_pin(client, auth, user_id, pin="1234"):
     response = client.post(
         f"{BASE}/pin/set",
         json={"pin": pin, "confirm_pin": pin, "otp_code": "000000"},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _get_step_up(client, auth, user_id, recipient_phone="+2250701111111", amount=60000):
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/transfer/step-up/request",
+        json={"recipient_phone": recipient_phone, "amount": amount},
     )
     assert response.status_code == 200
     return response.json()
@@ -326,6 +338,70 @@ def test_pin_set_change_and_reset_recovery(client, auth, make_user, fund_account
         },
     )
     assert reset.status_code == 200
+
+
+def test_step_up_otp_required_for_large_transfer(client, auth, make_user, fund_account):
+    user_id, compte = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(compte, 100_000)
+    _set_pin(client, auth, user_id)
+
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/transfer",
+        json={"recipient_phone": "+2250701111111", "amount": 60000, "pin": "1234"},
+        headers=_key(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "STEP_UP_OTP_REQUIRED"
+
+
+def test_step_up_otp_allows_sensitive_transfer(
+    client, auth, session, make_user, fund_account
+):
+    user_id, compte = make_user()
+    make_user(phone="+2250701111111")
+    fund_account(compte, 100_000)
+    _set_pin(client, auth, user_id)
+    challenge = WalletUseCases(session).request_step_up_otp(
+        user_id=user_id,
+        recipient_phone="+2250701111111",
+        amount=60000,
+    )
+
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/transfer",
+        json={
+            "recipient_phone": "+2250701111111",
+            "amount": 60000,
+            "pin": "1234",
+            "otp_code": challenge["code"],
+        },
+        headers=_key(),
+    )
+
+    assert response.status_code == 201
+
+
+def test_admin_reset_pin_audits_action(client, auth, session, make_user):
+    auth.user = CurrentUser(uuid.uuid4(), "admin", "active")
+    user_id, _ = make_user(phone="+2250701111111")
+
+    response = client.post(
+        f"{BASE}/ops/pin/reset",
+        json={
+            "user_id": str(user_id),
+            "new_pin": "1111",
+            "confirm_new_pin": "1111",
+            "reason": "support recovery",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["recovery_codes"]) == 6
 
 
 def test_historique_filtrable_par_module_d_origine(
