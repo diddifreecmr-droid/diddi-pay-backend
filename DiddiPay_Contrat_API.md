@@ -34,6 +34,10 @@ state with an internal backfill route:
 
 - `POST /wallet/ops/backfill`
 
+The current implementation also self-heals on first authenticated access inside the wallet use case
+layer: if the provisioning event was missed, the first balance read creates the wallet before
+returning the result. The ops backfill route remains the supported repair path for support teams.
+
 This is an ops-only escape hatch and not a client-facing creation endpoint.
 
 ### Ops and reconciliation
@@ -148,6 +152,26 @@ Lists transactions with filters and pagination.
 
 Returns transaction detail, including direction from the caller point of view.
 
+### `POST /wallet/pin/set`
+
+Defines or changes the transaction PIN after OTP verification.
+
+### `POST /wallet/pin/change`
+
+Changes an existing PIN after the current PIN is verified.
+
+### `POST /wallet/pin/reset`
+
+Resets the PIN using a recovery code issued at PIN creation or admin recovery.
+
+### `POST /wallet/transfer/step-up/request`
+
+Creates a short-lived OTP challenge for sensitive transfers.
+
+### `POST /wallet/ops/pin/reset`
+
+Admin-only escape hatch to reset a wallet PIN with audit logging.
+
 ## 5. Deposit Lifecycle
 
 1. Client requests deposit
@@ -211,3 +235,4 @@ Errors follow the standard envelope:
 - Providers are interchangeable adapters.
 - DiddiFreeID is only the central identity provider.
 - Module-specific roles are not stored in DiddiFreeID.
+- DiddiPay is a wallet, not a payment orchestrator: external rails feed or cash out the wallet.

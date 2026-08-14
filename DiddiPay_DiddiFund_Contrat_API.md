@@ -38,6 +38,12 @@ tentative réseau.
 ```json
 { "account_id": "a1b2...", "balance": 45000, "currency": "XOF", "status": "active" }
 ```
+Le frontend ne crée pas le wallet explicitement. Le flux attendu est:
+1. login via DiddiFreeID,
+2. appel de `GET /wallet/balance`,
+3. affichage du solde.
+Si le provisioning événementiel a été manqué, le backend self-heal le wallet au premier accès
+authentifié. La route ops de backfill reste disponible pour corriger un compte en support.
 
 ---
 
@@ -73,7 +79,7 @@ pour connaître l'issue (`completed` ou `failed`).
 
 Transfert P2P.
 
-**Requête** : `{ "recipient_phone": "+2250701111111", "amount": 2000 }`
+**Requête** : `{ "recipient_phone": "+2250701111111", "amount": 2000, "pin": "1234", "otp_code": "482913" }`
 **Réponse `201`**
 ```json
 { "transaction_id": "t9f2...", "status": "completed", "amount": 2000, "currency": "XOF" }
@@ -81,8 +87,9 @@ Transfert P2P.
 Contrairement au dépôt/retrait (dépendant d'un opérateur externe), un transfert P2P interne est
 synchrone — les deux écritures de ledger sont commises dans la même transaction DB.
 
-**Erreurs** : `404` (`RECIPIENT_NOT_FOUND`), `409` (`INSUFFICIENT_BALANCE`), `422`
-(`CANNOT_TRANSFER_TO_SELF`)
+**Erreurs** : `404` (`RECIPIENT_NOT_FOUND`), `409` (`INSUFFICIENT_BALANCE`, `PIN_REQUIRED`,
+`STEP_UP_OTP_REQUIRED`), `403` (`INVALID_PIN`, `INVALID_STEP_UP_OTP`), `410` (`STEP_UP_OTP_EXPIRED`),
+`422` (`CANNOT_TRANSFER_TO_SELF`)
 
 ---
 
@@ -96,6 +103,38 @@ Paiement marchand par QR Code (le frontend scanne, obtient un `merchant_account_
 (UX : "historique filtrable par module d'origine").
 
 **Erreurs** : `404` (`MERCHANT_NOT_FOUND`), `409` (`INSUFFICIENT_BALANCE`)
+
+---
+
+### `POST /wallet/transfer/step-up/request`
+
+Demande un challenge OTP pour un transfert sensible.
+
+**Requête** : `{ "recipient_phone": "+2250701111111", "amount": 60000 }`
+**Réponse `200`** :
+```json
+{ "challenge_id": "c1d2...", "expires_at": "2026-08-14T12:00:00Z", "masked_recipient": "+22***11" }
+```
+Le code réel est livré par le canal configuré côté wallet. En staging, il peut être visible dans les
+logs d'exploitation si le mode de déploiement le permet.
+
+---
+
+### `POST /wallet/pin/reset`
+
+Réinitialise le PIN avec un code de récupération.
+
+**Requête** : `{ "recovery_code": "abc...", "new_pin": "2468", "confirm_new_pin": "2468" }`
+**Réponse `200`** : PIN réinitialisé.
+
+---
+
+### `POST /wallet/ops/pin/reset`
+
+Réinitialisation support/ops avec audit.
+
+**Requête** : `{ "user_id": "u123...", "new_pin": "1111", "confirm_new_pin": "1111", "reason": "support recovery" }`
+**Réponse `200`** : PIN réinitialisé et audité.
 
 ---
 

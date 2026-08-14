@@ -161,4 +161,9 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 ## Sprint 31
 
 - Added transaction PIN security for wallets, including mandatory PIN setup, PIN-protected P2P transfers, recovery codes, recipient lookup, and supporting database migrations/tests.
+- Commit: `5094a4a`
+
+## Sprint 32
+
+- Documented wallet step-up OTP, admin PIN recovery, wallet self-heal provisioning, and the frontend/module usage contract for DiddiPay.
 - Commit: `pending`
