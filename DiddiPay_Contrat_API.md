@@ -40,6 +40,9 @@ returning the result. The ops backfill route remains the supported repair path f
 
 This is an ops-only escape hatch and not a client-facing creation endpoint.
 
+The wallet owner is always DiddiPay. DiddiFreeID only provides identity and
+global platform status; module-specific roles remain inside the owning module.
+
 ### Ops and reconciliation
 
 DiddiPay exposes internal ops views for support and recovery:
@@ -61,6 +64,7 @@ These routes are for internal operations only.
 DiddiPay can link wallet users to external document references for KYC.
 The wallet service stores document metadata, not the file blob itself.
 The intended integration target is DiddiFiles or any equivalent file service.
+The wallet stores only a file reference and a small amount of metadata.
 
 ## 2. Money Model
 
@@ -208,12 +212,21 @@ DiddiPay still owns:
 - transaction state
 - ledger entries
 
+The module that initiates the payment may be DiddiGo, DiddiShop or any future
+consumer, but it does not own the balance. It only contributes business context
+such as an order id, ride id or invoice id.
+
 ## 8. CORS
 
 Allowed origins must include:
 - all `localhost` ports
 - `*.diddifree.com`
 - `*.vercel.com`
+
+Explicit CORS origins can also be configured through `CORS_ORIGINS`.
+When explicit origins are provided, the backend keeps them exact and still
+supports the wildcard development regex for localhost and the main DiddiFree
+domains.
 
 ## 9. Errors
 

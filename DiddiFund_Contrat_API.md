@@ -18,6 +18,9 @@ DiddiFund owns:
 DiddiFreeID only authenticates the user.
 Fund-specific roles stay inside DiddiFund.
 
+The module does not store the wallet balance locally. All money movement is
+delegated to DiddiPay through the wallet service contract.
+
 ### Role boundary
 
 The central identity service does not store fund-specific roles.
@@ -49,6 +52,9 @@ Behavior:
 - credits the campaign pool wallet
 - creates the investment record atomically
 
+The wallet transaction is the source of truth for the money movement. DiddiFund
+keeps campaign state and investment state only.
+
 ### `POST /fund/loans/simulate`
 
 Returns simulated loan terms.
@@ -68,6 +74,9 @@ Returns repayment schedule.
 ### `POST /fund/loans/{loan_id}/repay`
 
 Applies a repayment to the next open installment.
+
+The repayment debits the borrower wallet and credits the campaign pool wallet.
+Loan state stays in DiddiFund, money state stays in DiddiPay.
 
 ## 3. Loan Rules
 
@@ -92,6 +101,10 @@ Money movement remains centralized in DiddiPay:
 The wallet service remains the source of truth for money movement and ledger
 state. DiddiFund consumes the wallet contract; it does not reimplement wallet
 balance logic.
+
+This repository currently uses an in-process adapter so both modules share the
+same transaction boundary. If the modules are split later, only the adapter in
+`fund/infra/wallet_client.py` should change.
 
 ## 5. Identity and Roles
 

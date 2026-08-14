@@ -21,6 +21,10 @@ DiddiPay n'est pas un orchestrateur de paiement générique.
 Les rails externes comme Paystack, Wave, Orange Money ou MTN servent à créditer ou cash out le
 wallet, mais la source de vérité reste toujours la transaction DiddiPay.
 
+Le wallet personnel est provisionné automatiquement à la création du compte
+central. Si un événement de provisioning est manqué, le backend self-heal au
+premier accès authentifié et les ops disposent d'un backfill interne.
+
 ## 2. Ce que chaque module doit retenir
 
 - DiddiFreeID gère l'identité centrale.
@@ -28,6 +32,7 @@ wallet, mais la source de vérité reste toujours la transaction DiddiPay.
 - Chaque module garde ses rôles métier.
 - Un module ne doit jamais lire directement les tables `wallet.*` d'un autre service.
 - Un module backend peut consommer le port `WalletServicePort` si l'intégration est in-process.
+- Les rôles métier restent dans le module propriétaire, pas dans DiddiFreeID.
 
 ## 3. Intégration par module
 
@@ -59,6 +64,7 @@ Règles :
 - le fichier vit dans DiddiFiles ;
 - le wallet garde uniquement la référence du document ;
 - aucune donnée sensible du fichier ne doit être recopiée dans le wallet.
+- le wallet ne stocke qu'une référence KYC, pas le blob du fichier.
 
 ### futurs modules
 
@@ -69,6 +75,18 @@ Tout nouveau module suit le même modèle :
 - il utilise les événements pour rester synchronisé ;
 - il prévoit un rattrapage si un événement a été manqué.
 
+### DiddiPay / DiddiFund
+
+DiddiFund consomme le wallet via le port `WalletServicePort` dans ce dépôt.
+C'est volontairement in-process pour garder les écritures atomiques tant que
+les deux modules vivent dans la même base.
+
+À retenir :
+- investissement = débit investisseur, crédit pool campagne ;
+- remboursement = débit emprunteur, crédit pool campagne ;
+- décaissement prêt = crédit emprunteur, débit pool campagne ;
+- DiddiFund garde ses règles métier, DiddiPay garde le ledger.
+
 ## 4. Flux d'intégration recommandés
 
 ### Lecture du wallet
@@ -78,8 +96,10 @@ Pour afficher un solde ou un historique :
 - appeler ensuite `GET /wallet/transactions`;
 - si besoin, `GET /wallet/transactions/{transaction_id}`.
 
-La création du wallet est automatique au premier accès authentifié.
-Si un cas support est découvert, l'équipe ops peut utiliser le backfill interne.
+Le premier accès authentifié self-heal le wallet s'il manque encore.
+Le chemin normal reste `GET /wallet/balance` après login.
+Si un cas support est découvert, l'équipe ops peut utiliser le backfill interne
+ou la commande CLI associée.
 
 ### Paiement marchand
 
@@ -89,6 +109,8 @@ Quand un module veut encaisser un utilisateur :
 3. DiddiPay écrit la transaction et le ledger ;
 4. le module stocke seulement sa référence métier locale.
 
+Le module appelant ne doit pas stocker un second solde local.
+
 ### Transfert sensible
 
 Quand le montant dépasse le seuil sensible :
@@ -97,6 +119,9 @@ Quand le montant dépasse le seuil sensible :
 3. rejouer le transfert avec `otp_code`.
 
 Le module appelant ne doit pas inventer une logique parallèle de validation.
+
+Le PIN est toujours vérifié côté serveur. Les recovery codes et l'admin reset
+audité existent pour les cas de support.
 
 ## 5. Sécurité
 
@@ -127,6 +152,7 @@ Cas d'usage :
 - ne pas supposer que `DiddiPay` est un simple service de transfert ;
 - ne pas déduire les rôles métier à partir de DiddiFreeID ;
 - ne pas contourner le step-up OTP pour les montants sensibles.
+- ne pas créer un second état de solde local.
 
 ## 8. Erreurs à traiter côté module
 
@@ -161,3 +187,4 @@ La bonne intégration consiste à :
 - garder les rôles métier dans le module propriétaire ;
 - utiliser DiddiFiles pour les preuves documentaires ;
 - utiliser DiddiFreeID seulement pour l'identité centrale.
+- utiliser les backfills et l'ops de reconciliation quand un événement ou un webhook a été manqué.

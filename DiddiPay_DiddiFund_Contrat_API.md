@@ -45,6 +45,10 @@ Le frontend ne crée pas le wallet explicitement. Le flux attendu est:
 Si le provisioning événementiel a été manqué, le backend self-heal le wallet au premier accès
 authentifié. La route ops de backfill reste disponible pour corriger un compte en support.
 
+Le wallet personnel est le compte de l'utilisateur final. Les comptes marchands
+sont distincts et appartiennent au module consommateur qui les utilise
+(`DiddiGo`, `Shop`, ou futurs modules).
+
 ---
 
 ### `POST /wallet/deposit`
@@ -101,6 +105,9 @@ Paiement marchand par QR Code (le frontend scanne, obtient un `merchant_account_
 **Réponse `201`** : même format que transfert.
 `origin_module` permet le filtrage d'historique par module d'origine demandé dans le cahier des charges
 (UX : "historique filtrable par module d'origine").
+
+Le module qui initie le paiement fournit seulement le contexte métier
+(`origin_module`, `business_reference`), pas un solde local.
 
 **Erreurs** : `404` (`MERCHANT_NOT_FOUND`), `409` (`INSUFFICIENT_BALANCE`)
 
@@ -201,6 +208,8 @@ Appelle en interne `WalletServicePort.encaisser()` pour débiter l'investisseur 
 création de l'`investment` (les deux dans la même transaction DB, `fund` et `wallet` étant in-process au
 lancement).
 
+Le wallet reste la source de vérité pour les écritures monétaires.
+
 **Réponse `201`**
 ```json
 { "investment_id": "i7b3...", "campaign_id": "c1a2...", "amount": 10000, "wallet_transaction_id": "t9f3..." }
@@ -270,6 +279,9 @@ préciser avec le produit : prélèvement auto sur solde disponible vs paiement 
 **Requête** : `{ "amount": 35500 }`
 **Réponse `200`** : échéance mise à jour, appelle `WalletServicePort.decaisser()` côté emprunteur puis
 crédite le pool de la campagne correspondante.
+
+Le remboursement débite le wallet emprunteur et crédite le pool, mais le suivi
+de l'échéancier et du statut du prêt reste entièrement dans DiddiFund.
 
 **Erreurs** : `409` (`INSUFFICIENT_BALANCE`, `INSTALLMENT_ALREADY_PAID`)
 
