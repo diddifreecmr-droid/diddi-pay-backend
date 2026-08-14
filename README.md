@@ -111,6 +111,7 @@ des ports hôte configurables via `.env` (voir « Démarrage »).
 | `GET /wallet/balance` | ✅ |
 | `POST /wallet/transfer` | ✅ |
 | `POST /wallet/pay/merchant` | ✅ |
+| `GET /wallet/pin` · `POST /wallet/pin/set` · `POST /wallet/pin/change` · `POST /wallet/pin/reset` | ✅ |
 | `GET /wallet/transactions` | ✅ filtres `origin_module`, `type`, `from_date`, `to_date` |
 | `GET /wallet/transactions/{id}` | ✅ |
 | `POST /fund/campaigns` | ✅ |
@@ -126,7 +127,8 @@ des ports hôte configurables via `.env` (voir « Démarrage »).
 
 Également en place : ledger double entrée avec invariant vérifié à chaque écriture, idempotence
 sur toutes les routes qui déplacent des fonds, abonnements `user.registered` / `user.updated` /
-`user.suspended`, gel des sorties sur compte suspendu, contre-passation d'un retrait échoué.
+`user.suspended`, gel des sorties sur compte suspendu, contre-passation d'un retrait échoué,
+PIN Argon2id obligatoire sur toutes les sorties utilisateur et preuves step-up signées à usage unique.
 
 ### Dépôt et retrait — instant de passage des écritures
 
@@ -155,9 +157,11 @@ Pour le premier provider réel, Paystack :
 - `PAYSTACK_WEBHOOK_SECRET=<secret key ou secret dédié au webhook>`
 - le webhook `POST /payfund/v1/wallet/webhooks/paystack` finalise les dépôts
 
-La politique de step-up OTP est indépendante du provider. Le seuil se configure avec
+La politique de step-up est indépendante du provider. Le seuil se configure avec
 `WALLET_STEP_UP_THRESHOLD_XOF` (défaut : `50000`) et un transfert de ce montant ou plus exige
-le challenge. Le frontend ne doit pas recopier cette valeur : il traite `STEP_UP_OTP_REQUIRED`.
+une preuve JWT DiddiFreeID avec `purpose=wallet.transfer.high_value`. Le frontend ne doit pas
+recopier cette valeur : il traite `STEP_UP_OTP_REQUIRED`, effectue le challenge dans DiddiFreeID,
+puis envoie uniquement `step_up_token` à DiddiPay.
 
 ### Côté frontend: accès au wallet
 

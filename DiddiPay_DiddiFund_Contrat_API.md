@@ -73,7 +73,7 @@ pour connaître l'issue (`completed` ou `failed`).
 
 ### `POST /wallet/withdraw`
 
-**Requête** : `{ "provider": "orange_money", "amount": 3000, "phone": "+2250700000000" }`
+**Requête** : `{ "provider": "paystack", "amount": 3000, "phone": "+2250700000000", "pin": "1234" }`
 **Réponse `202`** : même format que le dépôt.
 **Erreurs** : `409` (`INSUFFICIENT_BALANCE`), `502` (`GATEWAY_UNAVAILABLE`)
 
@@ -83,7 +83,11 @@ pour connaître l'issue (`completed` ou `failed`).
 
 Transfert P2P.
 
-**Requête** : `{ "recipient_phone": "+2250701111111", "amount": 2000, "pin": "1234", "otp_code": "482913" }`
+**Requête normale** : `{ "recipient_phone": "+2250701111111", "amount": 2000, "pin": "1234" }`
+
+Si DiddiPay répond `STEP_UP_OTP_REQUIRED`, le frontend obtient auprès de DiddiFreeID une preuve
+signée avec `purpose=wallet.transfer.high_value`, puis rejoue avec
+`"step_up_token": "<jwt-court-diddifreeid>"`. Le code OTP brut n'est jamais envoyé à DiddiPay.
 **Réponse `201`**
 ```json
 { "transaction_id": "t9f2...", "status": "completed", "amount": 2000, "currency": "XOF" }
@@ -92,7 +96,8 @@ Contrairement au dépôt/retrait (dépendant d'un opérateur externe), un transf
 synchrone — les deux écritures de ledger sont commises dans la même transaction DB.
 
 **Erreurs** : `404` (`RECIPIENT_NOT_FOUND`), `409` (`INSUFFICIENT_BALANCE`, `PIN_REQUIRED`,
-`STEP_UP_OTP_REQUIRED`), `403` (`INVALID_PIN`, `INVALID_STEP_UP_OTP`), `410` (`STEP_UP_OTP_EXPIRED`),
+`STEP_UP_OTP_REQUIRED`, `STEP_UP_PROOF_ALREADY_USED`), `403` (`INVALID_PIN`,
+`STEP_UP_PROOF_INVALID`), `410` (`STEP_UP_PROOF_EXPIRED`),
 `422` (`CANNOT_TRANSFER_TO_SELF`)
 
 ---
@@ -101,7 +106,7 @@ synchrone — les deux écritures de ledger sont commises dans la même transact
 
 Paiement marchand par QR Code (le frontend scanne, obtient un `merchant_account_id` encodé dans le QR).
 
-**Requête** : `{ "merchant_account_id": "m4d5...", "amount": 1500, "origin_module": "shop" }`
+**Requête** : `{ "merchant_account_id": "m4d5...", "amount": 1500, "pin": "1234", "origin_module": "shop" }`
 **Réponse `201`** : même format que transfert.
 `origin_module` permet le filtrage d'historique par module d'origine demandé dans le cahier des charges
 (UX : "historique filtrable par module d'origine").
@@ -113,17 +118,11 @@ Le module qui initie le paiement fournit seulement le contexte métier
 
 ---
 
-### `POST /wallet/transfer/step-up/request`
+### Step-up d'un transfert sensible
 
-Demande un challenge OTP pour un transfert sensible.
-
-**Requête** : `{ "recipient_phone": "+2250701111111", "amount": 60000 }`
-**Réponse `200`** :
-```json
-{ "challenge_id": "c1d2...", "expires_at": "2026-08-14T12:00:00Z", "masked_recipient": "+22***11" }
-```
-Le code réel est livré par le canal configuré côté wallet. En staging, il peut être visible dans les
-logs d'exploitation si le mode de déploiement le permet.
+Il n'existe plus de route OTP locale DiddiPay. Le challenge et sa vérification appartiennent à
+DiddiFreeID. DiddiPay ne reçoit que le JWT court signé dans `step_up_token`, vérifie le JWKS, le
+`sub`, le `purpose`, la durée de vie et le `jti`, puis consomme ce `jti` une seule fois.
 
 ---
 
@@ -203,7 +202,7 @@ individuel au-delà de son nom si l'investisseur a choisi la visibilité publiqu
 
 ### `POST /fund/campaigns/{campaign_id}/invest`
 
-**Requête** : `{ "amount": 10000 }`
+**Requête** : `{ "amount": 10000, "pin": "1234" }`
 Appelle en interne `WalletServicePort.encaisser()` pour débiter l'investisseur — atomique avec la
 création de l'`investment` (les deux dans la même transaction DB, `fund` et `wallet` étant in-process au
 lancement).
@@ -276,7 +275,7 @@ architecture section 6).
 Remboursement manuel d'une échéance (en plus des prélèvements automatiques éventuels — mécanisme à
 préciser avec le produit : prélèvement auto sur solde disponible vs paiement actif par l'emprunteur).
 
-**Requête** : `{ "amount": 35500 }`
+**Requête** : `{ "amount": 35500, "pin": "1234" }`
 **Réponse `200`** : échéance mise à jour, appelle `WalletServicePort.decaisser()` côté emprunteur puis
 crédite le pool de la campagne correspondante.
 

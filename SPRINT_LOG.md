@@ -171,4 +171,33 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 ## Sprint 33
 
 - Added a backend integration brief for DiddiGo, DiddiFiles, and future modules consuming DiddiPay.
-- Commit: `pending`
+- Commit: `3cca329`
+
+## Sprint 34
+
+- Enforced Alembic model parity, migrated PIN hashes to Argon2id, added one-time signed step-up
+  proof storage, and required a DiddiFreeID proof for initial PIN creation.
+- Commits: `ceb3237`, `d7bdc4c`, `8a6d2f2`, `74bf518`, `8daab17`
+
+## Sprint 35
+
+- Required the transaction PIN for every user-initiated debit, including merchant payment,
+  withdrawal, investment, and loan repayment.
+- Commit: `a1c50e8`
+
+## Sprint 36
+
+- Replaced the local logging-only transfer OTP with signed, purpose-bound, one-time DiddiFreeID
+  step-up proofs while preserving idempotent replay.
+- Commit: `34c9901`
+
+## Sprint 37
+
+- Kept localhost, DiddiFree, and Vercel origins available when CORS uses an explicit production
+  allow-list, with literal escaping for configured origins.
+- Commit: `8e5d100`
+
+## Sprint 38
+
+- Aligned the API contracts and integration briefs and added the MVP deployment/closure runbook.
+- Commit: this closure documentation commit

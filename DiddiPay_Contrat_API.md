@@ -120,6 +120,8 @@ Behavior:
 
 Initiates a wallet withdrawal.
 
+Request fields include `provider`, `amount`, `phone`, and the transaction `pin`.
+
 Behavior:
 - reserves funds immediately
 - creates a `pending` transaction
@@ -133,6 +135,13 @@ Behavior:
 - debit sender
 - credit recipient
 - atomically writes balanced ledger entries
+- always verifies the transaction `pin`
+- requires an optional one-time `step_up_token` when the server-side risk policy triggers
+
+For a sensitive transfer, `step_up_token` is a short-lived DiddiFreeID JWT with
+`purpose=wallet.transfer.high_value`. DiddiPay verifies it locally through JWKS and consumes its
+`jti` atomically. The same proof cannot authorize a distinct transfer. An idempotent replay of the
+original successful request does not require a second proof.
 
 ### `POST /wallet/pay/merchant`
 
@@ -143,6 +152,7 @@ Behavior:
 - credit merchant wallet
 - transaction can be initiated by a module on behalf of the user
 - the module supplies business context, but DiddiPay owns the ledger
+- the transaction `pin` is mandatory
 
 ### `POST /wallet/qr/generate`
 
@@ -206,12 +216,14 @@ Resets the PIN using a recovery code issued at PIN creation or admin recovery.
 
 Success response: `{ "status": "ok", "account_id": "uuid" }`.
 
-### `POST /wallet/transfer/step-up/request`
+### Sensitive transfer step-up
 
-Creates a short-lived OTP challenge for sensitive transfers.
+The frontend must not embed the risk threshold. It first attempts the transfer and reacts to
+`STEP_UP_OTP_REQUIRED`. It then requests and verifies a DiddiFreeID challenge for
+`wallet.transfer.high_value`, receives a signed `step_up_token`, and retries the same transfer with
+that token. DiddiPay has no route that accepts the raw OTP.
 
-The frontend must not embed the risk threshold. It attempts the transfer and reacts to
-`STEP_UP_OTP_REQUIRED`; the threshold is a server-side policy configured per environment.
+The threshold is configured per environment with `WALLET_STEP_UP_THRESHOLD_XOF`.
 
 ### `POST /wallet/ops/pin/reset`
 

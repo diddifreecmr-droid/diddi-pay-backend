@@ -45,6 +45,8 @@ Returns campaign detail and recent investments.
 
 Invests in an active campaign.
 
+Request fields: `amount` and transaction `pin`.
+
 Behavior:
 - checks campaign is active
 - checks the caller is not the campaign owner
@@ -74,6 +76,8 @@ Returns repayment schedule.
 ### `POST /fund/loans/{loan_id}/repay`
 
 Applies a repayment to the next open installment.
+
+Request fields: `amount` and transaction `pin`.
 
 The repayment debits the borrower wallet and credits the campaign pool wallet.
 Loan state stays in DiddiFund, money state stays in DiddiPay.

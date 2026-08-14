@@ -15,7 +15,7 @@ Il est responsable de :
 - les dépôts et retraits via des rails de paiement externes ;
 - le ledger double entrée ;
 - la réconciliation des providers ;
-- les contrôles de sécurité transactionnelle comme le PIN et le step-up OTP.
+- les contrôles de sécurité transactionnelle comme le PIN et le step-up signé DiddiFreeID.
 
 DiddiPay n'est pas un orchestrateur de paiement générique.
 Les rails externes comme Paystack, Wave, Orange Money ou MTN servent à créditer ou cash out le
@@ -105,7 +105,8 @@ ou la commande CLI associée.
 
 Quand un module veut encaisser un utilisateur :
 1. le module prépare son contexte métier ;
-2. le backend appelle `POST /wallet/pay/merchant`;
+2. le client authentifié appelle `POST /wallet/pay/merchant` avec son PIN, directement de
+   préférence, ou via un backend qui ne journalise ni ne persiste jamais ce PIN ;
 3. DiddiPay écrit la transaction et le ledger ;
 4. le module stocke seulement sa référence métier locale.
 
@@ -115,9 +116,13 @@ Le module appelant ne doit pas stocker un second solde local.
 
 Le module ne connaît pas le seuil sensible. Il tente le transfert et, sur
 `STEP_UP_OTP_REQUIRED` :
-1. demande le step-up OTP ;
-2. conserve le même destinataire et le même montant ;
-3. rejoue le transfert avec `otp_code`.
+1. demande et vérifie le challenge dans DiddiFreeID avec `purpose=wallet.transfer.high_value` ;
+2. conserve le même destinataire, le même montant et la même clé d'idempotence pour un retry
+   réseau du premier ordre ;
+3. rejoue le transfert avec le JWT court dans `step_up_token`.
+
+Le code OTP brut ne traverse jamais DiddiPay. La preuve signée est vérifiée localement par JWKS et
+son `jti` est consommé une seule fois.
 
 Le seuil est configuré côté DiddiPay avec `WALLET_STEP_UP_THRESHOLD_XOF` et peut varier entre
 staging et production sans redéploiement du frontend.
@@ -126,6 +131,10 @@ Le module appelant ne doit pas inventer une logique parallèle de validation.
 
 Le PIN est toujours vérifié côté serveur. Les recovery codes et l'admin reset
 audité existent pour les cas de support.
+
+Le PIN est requis sur chaque débit initié par l'utilisateur, y compris paiement marchand,
+retrait, investissement et remboursement. Un appel in-process DiddiFund passe par le port wallet
+et ne contourne donc pas cette règle.
 
 La création initiale du PIN exige une preuve JWT DiddiFreeID liée au purpose `wallet.pin.set`.
 DiddiPay vérifie cette preuve localement avec le JWKS et conserve uniquement son `jti` pour empêcher
@@ -136,7 +145,7 @@ un rejeu. Un module ne doit jamais vérifier ni transmettre lui-même le code OT
 - Le JWT DiddiFreeID se vérifie localement via le JWKS.
 - Les rôles métier restent dans le module propriétaire.
 - Le PIN transactionnel est vérifié côté serveur.
-- Les challenges OTP sont éphémères.
+- Les preuves step-up DiddiFreeID sont courtes, liées à un purpose et à usage unique.
 - Les routes ops doivent être protégées par une authentification admin ou service-to-service.
 
 ## 6. Événements à consommer
@@ -159,7 +168,7 @@ Cas d'usage :
 - ne pas lire les tables wallet directement ;
 - ne pas supposer que `DiddiPay` est un simple service de transfert ;
 - ne pas déduire les rôles métier à partir de DiddiFreeID ;
-- ne pas contourner le step-up OTP pour les montants sensibles.
+- ne pas contourner le step-up DiddiFreeID pour les montants sensibles.
 - ne pas créer un second état de solde local.
 
 ## 8. Erreurs à traiter côté module
@@ -168,8 +177,9 @@ Les modules backend doivent remonter les erreurs DiddiPay telles quelles au beso
 - `PIN_REQUIRED`
 - `INVALID_PIN`
 - `STEP_UP_OTP_REQUIRED`
-- `INVALID_STEP_UP_OTP`
-- `STEP_UP_OTP_EXPIRED`
+- `STEP_UP_PROOF_INVALID`
+- `STEP_UP_PROOF_EXPIRED`
+- `STEP_UP_PROOF_ALREADY_USED`
 - `INSUFFICIENT_BALANCE`
 - `RECIPIENT_NOT_FOUND`
 - `MERCHANT_NOT_FOUND`

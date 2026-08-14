@@ -124,8 +124,12 @@ les schémas de requête/réponse exacts.
   2. `GET /wallet/balance`,
   3. affichage du solde.
 - Le frontend ne copie pas le seuil sensible. Il tente `POST /wallet/transfer`; si DiddiPay répond
-  `409 STEP_UP_OTP_REQUIRED`, l'UI appelle `POST /wallet/transfer/step-up/request`, affiche la
-  confirmation OTP, puis rejoue le transfert avec le même contexte et `otp_code`.
+  `409 STEP_UP_OTP_REQUIRED`, l'UI demande puis vérifie auprès de DiddiFreeID un challenge avec
+  `purpose=wallet.transfer.high_value`. Elle rejoue ensuite le transfert avec le même destinataire,
+  le même montant, le même PIN et le JWT court reçu dans `step_up_token`. Le code OTP brut n'est
+  jamais envoyé à DiddiPay.
+- Le `pin` est obligatoire sur toutes les sorties initiées par l'utilisateur: transfert P2P,
+  paiement marchand, retrait, investissement DiddiFund et remboursement de prêt.
 - Le PIN est un vrai secret transactionnel. Il ne doit jamais être remplacé par un simple écran
   "confirmez le montant".
 - Pour le premier PIN, demander puis vérifier le challenge `wallet.pin.set` auprès de DiddiFreeID.
@@ -140,3 +144,5 @@ les schémas de requête/réponse exacts.
 
 - Paystack est le premier provider réel pour les dépôts. Le retrait Paystack n'est pas encore
   implémenté ; Orange Money, Wave et les autres rails restent en sandbox ou en mode `stub`.
+- Le frontend ne doit proposer un retrait provider réel que lorsqu'un adaptateur de payout est
+  explicitement activé côté backend.
