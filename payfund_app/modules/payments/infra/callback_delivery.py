@@ -5,6 +5,7 @@ import hmac
 import json
 import uuid
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -23,9 +24,19 @@ class HttpSignedCallbackSender:
         target: CallbackTarget,
         *,
         event_id: uuid.UUID,
+        event_type: str,
+        occurred_at: datetime,
         payload: Mapping[str, Any],
     ) -> None:
-        body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        envelope = {
+            "id": str(event_id),
+            "type": event_type,
+            "occurred_at": occurred_at.isoformat(),
+            "data": payload,
+        }
+        body = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
         signature = hmac.new(
             target.secret.encode("utf-8"), body, hashlib.sha256
         ).hexdigest()

@@ -10,6 +10,7 @@ from payfund_app.core.database import SessionLocal
 from payfund_app.core.security import CurrentUser
 from payfund_app.ops.maintenance import (
     backfill_wallet,
+    deliver_payment_events,
     run_housekeeping,
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
@@ -50,6 +51,13 @@ def main(argv: list[str] | None = None) -> int:
         "relay-outbox", help="Publish durable outbox events to the runtime bus"
     )
     relay.add_argument("--admin-role", default="admin")
+
+    payment_relay = sub.add_parser(
+        "relay-payment-events",
+        help="Deliver signed PaymentIntent events to module callbacks",
+    )
+    payment_relay.add_argument("--limit", type=int, choices=range(1, 501), default=100)
+    payment_relay.add_argument("--admin-role", default="admin")
 
     housekeeping = sub.add_parser(
         "housekeeping",
@@ -115,6 +123,21 @@ def main(argv: list[str] | None = None) -> int:
                 "ops.cli.relay.done",
                 scanned=result.scanned,
                 published=result.published,
+            )
+            return 0
+        if args.command == "relay-payment-events":
+            result = deliver_payment_events(session, limit=args.limit)
+            print(
+                f"scanned={result.scanned} delivered={result.delivered} "
+                f"retried={result.retried} unavailable={result.unavailable}"
+            )
+            emit(
+                "info",
+                "ops.cli.payment_events.done",
+                scanned=result.scanned,
+                delivered=result.delivered,
+                retried=result.retried,
+                unavailable=result.unavailable,
             )
             return 0
         if args.command == "housekeeping":

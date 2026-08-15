@@ -10,6 +10,18 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from payfund_app.core.security import CurrentUser
+from payfund_app.core.config import get_settings
+from payfund_app.modules.payments.application.deliveries import (
+    DeliverySummary,
+    PaymentEventDeliveryUseCases,
+)
+from payfund_app.modules.payments.application.ports import (
+    CallbackTarget,
+    PaymentEventSenderPort,
+)
+from payfund_app.modules.payments.infra.callback_delivery import HttpSignedCallbackSender
+from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
+from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import TransactionStatus, TransactionType
 from payfund_app.modules.wallet.infra.models import Transaction
@@ -184,6 +196,42 @@ def relay_outbox_events(session: Session, bus) -> RelayResult:
         published=published,
     )
     return RelayResult(scanned=len(pending_events), published=published)
+
+
+def deliver_payment_events(
+    session: Session,
+    *,
+    limit: int = 100,
+    sender: PaymentEventSenderPort | None = None,
+    targets: dict[str, CallbackTarget] | None = None,
+) -> DeliverySummary:
+    """Deliver provider-neutral payment events to their owning modules."""
+    if targets is None:
+        targets = {
+            client_id: CallbackTarget(str(config.url), config.secret)
+            for client_id, config in get_settings().payment_callback_targets.items()
+        }
+    emit(
+        "info",
+        "ops.payment_events.delivery.start",
+        limit=limit,
+        configured_clients=sorted(targets),
+    )
+    result = PaymentEventDeliveryUseCases(
+        PaymentOutboxRepository(session),
+        SqlAlchemyUnitOfWork(session),
+        sender or HttpSignedCallbackSender(),
+        targets,
+    ).run(limit=limit)
+    emit(
+        "info",
+        "ops.payment_events.delivery.done",
+        scanned=result.scanned,
+        delivered=result.delivered,
+        retried=result.retried,
+        unavailable=result.unavailable,
+    )
+    return result
 
 
 def run_housekeeping(session: Session, bus) -> HousekeepingResult:

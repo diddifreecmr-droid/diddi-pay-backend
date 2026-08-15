@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
@@ -169,7 +170,9 @@ class ProviderEventRepositoryPort(Protocol):
 class PaymentOutboxEventPort(Protocol):
     id: uuid.UUID
     client_id: str
+    event_type: str
     payload: dict[str, Any]
+    created_at: datetime
 
 
 class PaymentOutboxRepositoryPort(Protocol):
@@ -188,6 +191,8 @@ class PaymentEventSenderPort(Protocol):
         target: CallbackTarget,
         *,
         event_id: uuid.UUID,
+        event_type: str,
+        occurred_at: datetime,
         payload: Mapping[str, Any],
     ) -> None: ...
 

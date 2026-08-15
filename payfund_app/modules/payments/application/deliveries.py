@@ -43,7 +43,13 @@ class PaymentEventDeliveryUseCases:
                 self.uow.commit()
                 continue
             try:
-                self.sender.send(target, event_id=row.id, payload=row.payload)
+                self.sender.send(
+                    target,
+                    event_id=row.id,
+                    event_type=row.event_type,
+                    occurred_at=row.created_at,
+                    payload=row.payload,
+                )
             except CallbackDeliveryFailed as exc:
                 self.outbox.failed(row, str(exc))
                 retried += 1

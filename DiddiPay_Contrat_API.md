@@ -282,6 +282,56 @@ Invariants :
 - un webhook duplique ne produit pas une seconde transition metier ;
 - la reconciliation couvre les webhooks manquants et les appels provider incertains.
 
+### Callback vers le module proprietaire
+
+Apres une transition financiere a notifier, DiddiPay livre une enveloppe signee a l'URL configuree
+pour le `client_id` :
+
+```json
+{
+  "id": "e3474d21-15fe-43d1-916d-d151bcd78e0a",
+  "type": "payment.succeeded",
+  "occurred_at": "2026-08-15T10:00:04+00:00",
+  "data": {
+    "event_id": "charge.success:dpi_reference:success",
+    "payment_intent_id": "dcd7b1f8-7f28-4a88-a909-e0eae3fa7d84",
+    "business_reference": "ride:42",
+    "amount": 5000,
+    "currency": "XOF",
+    "status": "succeeded"
+  }
+}
+```
+
+Headers :
+
+```http
+Content-Type: application/json
+X-DiddiPay-Event-ID: e3474d21-15fe-43d1-916d-d151bcd78e0a
+X-DiddiPay-Signature: <hmac-sha256-hex-du-corps-brut>
+```
+
+Le secret HMAC est distinct de `X-Service-Key`. Le destinataire doit verifier la signature sur les
+octets bruts avant de parser le JSON, imposer une contrainte unique sur `id`, traiter la mise a jour
+metier et l'insertion de l'evenement dans une meme transaction, puis retourner un code `2xx`.
+
+La livraison est **at least once** : un meme `id` peut etre recu plusieurs fois. Un doublon valide
+et deja traite doit retourner `2xx` sans rejouer les effets metier. Un timeout ou une reponse non
+`2xx` provoque un retry avec backoff exponentiel, puis une dead letter apres le nombre maximal de
+tentatives.
+
+Configuration DiddiPay :
+
+```env
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api.diddifree.com/internal/webhooks/diddipay","secret":"replace-with-a-long-random-secret"}}
+```
+
+Commande de relay a executer dans un worker ou job interne :
+
+```bash
+python -m payfund_app.ops relay-payment-events --limit 100
+```
+
 ## 10. Cycle de vie
 
 1. Le frontend demande au backend du module de payer son objet metier.

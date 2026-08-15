@@ -1,208 +1,238 @@
-# DiddiPay Backend Integration Brief
+# DiddiPay - Brief d'integration backend
 
-Ce document s'adresse aux équipes backend des autres modules DiddiFree.
-Il décrit comment intégrer DiddiPay proprement dans une architecture clean, sans dépendre du
-frontend.
+**Version :** 3.0 - orchestrateur PaymentIntent
 
-## 1. Rôle de DiddiPay
+Ce document s'adresse aux equipes backend DiddiGo, DiddiFund et aux futurs modules DiddiFree. Les
+schemas HTTP exacts restent dans Swagger et dans `DiddiPay_Contrat_API.md`.
 
-DiddiPay est le wallet système de DiddiFree.
+## 1. Responsabilites
 
-Il est responsable de :
-- l'état du wallet utilisateur ;
-- les transferts P2P ;
-- les paiements marchands ;
-- les dépôts et retraits via des rails de paiement externes ;
-- le ledger double entrée ;
-- la réconciliation des providers ;
-- les contrôles de sécurité transactionnelle comme le PIN et le step-up signé DiddiFreeID.
+Le partage correct des responsabilites est le suivant :
 
-DiddiPay n'est pas un orchestrateur de paiement générique.
-Les rails externes comme Paystack, Wave, Orange Money ou MTN servent à créditer ou cash out le
-wallet, mais la source de vérité reste toujours la transaction DiddiPay.
+| Service | Source de verite |
+|---|---|
+| DiddiFreeID | identite globale, authentification, statut du compte |
+| DiddiGo | course, chauffeur/passager, prix final, livraison du trajet |
+| DiddiFund | campagne, investissement, pret, echeancier |
+| DiddiPay | PaymentIntent, tentative, idempotence, provider, webhook, reconciliation |
+| Paystack | execution du rail externe actuel |
 
-Le wallet personnel est provisionné automatiquement à la création du compte
-central. Si un événement de provisioning est manqué, le backend self-heal au
-premier accès authentifié et les ops disposent d'un backfill interne.
+DiddiPay ne doit pas connaitre les transitions internes d'une course ou d'un investissement. Le
+module ne doit pas conclure qu'un paiement a reussi a partir d'une redirection Paystack.
 
-## 2. Ce que chaque module doit retenir
+## 2. Frontiere reseau
 
-- DiddiFreeID gère l'identité centrale.
-- DiddiPay gère l'argent et l'état comptable.
-- Chaque module garde ses rôles métier.
-- Un module ne doit jamais lire directement les tables `wallet.*` d'un autre service.
-- Un module backend peut consommer le port `WalletServicePort` si l'intégration est in-process.
-- Les rôles métier restent dans le module propriétaire, pas dans DiddiFreeID.
+L'appel a DiddiPay est strictement service-to-service :
 
-## 3. Intégration par module
+```text
+application cliente -> backend du module -> DiddiPay -> Paystack
+```
 
-### DiddiGo
+Le backend du module :
 
-DiddiGo peut demander un paiement marchand quand un trajet se termine ou lorsqu'un service annexe
-doit être encaissé.
+1. verifie le JWT DiddiFreeID ;
+2. verifie ses roles locaux et l'etat de son objet metier ;
+3. calcule lui-meme le montant ;
+4. appelle `/payfund/v1/payment-intents` avec `X-Client-ID`, `X-Service-Key` et
+   `Idempotency-Key` ;
+5. ne renvoie au frontend que les donnees utiles, notamment `next_action`.
 
-À utiliser :
-- `POST /wallet/pay/merchant`
-- `GET /wallet/transactions`
-- `GET /wallet/transactions/{transaction_id}`
+`X-Service-Key` ne doit jamais traverser le backend du module vers Flutter ou le navigateur.
 
-Règles :
-- DiddiGo fournit le contexte métier via `origin_module` et `business_reference`.
-- DiddiPay garde la responsabilité du ledger.
-- DiddiGo ne doit pas créer un second état de solde local.
+## 3. Integration DiddiGo
 
-### DiddiFiles
+### Donnees a conserver cote DiddiGo
 
-DiddiFiles ne stocke pas de solde.
-Il peut être utilisé pour KYC documentaire.
+La table ou l'agregat de paiement de course doit au minimum conserver :
 
-À utiliser :
-- liaison de documents via les routes ops de DiddiPay ou les métadonnées KYC du wallet ;
-- références de fichiers, pas blobs, dans DiddiPay.
+- `ride_id` ;
+- `payment_intent_id` avec contrainte unique ;
+- `business_reference`, par exemple `ride:42` ;
+- `idempotency_key` avec contrainte unique ;
+- `payment_status` normalise ;
+- `amount` et `currency` attendus ;
+- `paid_at` nullable ;
+- les timestamps techniques.
 
-Règles :
-- le fichier vit dans DiddiFiles ;
-- le wallet garde uniquement la référence du document ;
-- aucune donnée sensible du fichier ne doit être recopiée dans le wallet.
-- le wallet ne stocke qu'une référence KYC, pas le blob du fichier.
+DiddiGo ne stocke pas la reference interne Paystack et ne lit jamais les tables DiddiPay.
 
-### futurs modules
+### Creation
 
-Tout nouveau module suit le même modèle :
-- il garde ses règles métier ;
-- il consomme le wallet pour encaisser ou débiter ;
-- il ne duplique pas le solde ;
-- il utilise les événements pour rester synchronisé ;
-- il prévoit un rattrapage si un événement a été manqué.
+Exemple de logique :
 
-### DiddiPay / DiddiFund
+```python
+def start_ride_payment(ride, authenticated_user):
+    assert ride.passenger_id == authenticated_user.id
+    assert ride.status == "awaiting_payment"
 
-DiddiFund consomme le wallet via le port `WalletServicePort` dans ce dépôt.
-C'est volontairement in-process pour garder les écritures atomiques tant que
-les deux modules vivent dans la même base.
+    idempotency_key = f"ride:{ride.id}:collection:v1"
+    intent = diddipay.create_payment_intent(
+        business_reference=f"ride:{ride.id}",
+        amount=ride.final_price_xof,
+        currency="XOF",
+        payer_user_id=authenticated_user.id,
+        payee_user_id=ride.driver_id,
+        idempotency_key=idempotency_key,
+        metadata={"ride_id": str(ride.id)},
+    )
+    save_payment_link(ride, intent, idempotency_key)
+    return frontend_payment_view(intent)
+```
 
-À retenir :
-- investissement = débit investisseur, crédit pool campagne ;
-- remboursement = débit emprunteur, crédit pool campagne ;
-- décaissement prêt = crédit emprunteur, débit pool campagne ;
-- DiddiFund garde ses règles métier, DiddiPay garde le ledger.
+Le prix envoye vient de la base DiddiGo. Ne jamais accepter comme autoritaire un montant calcule
+ou modifie par le frontend.
 
-## 4. Flux d'intégration recommandés
+### Reprise apres timeout
 
-### Lecture du wallet
+Si l'appel de creation expire, DiddiGo reutilise exactement la meme cle et le meme payload. Il ne
+cree pas une nouvelle cle. DiddiPay retournera le meme `PaymentIntent` si la premiere requete avait
+reussi.
 
-Pour afficher un solde ou un historique :
-- appeler `GET /wallet/balance`;
-- appeler ensuite `GET /wallet/transactions`;
-- si besoin, `GET /wallet/transactions/{transaction_id}`.
+Si DiddiGo a perdu la reponse avant de conserver l'identifiant, il peut rejouer la creation avec la
+meme cle. C'est la raison pour laquelle la cle doit etre deterministe et stockee avec la course.
 
-Le premier accès authentifié self-heal le wallet s'il manque encore.
-Le chemin normal reste `GET /wallet/balance` après login.
-Si un cas support est découvert, l'équipe ops peut utiliser le backfill interne
-ou la commande CLI associée.
+## 4. Endpoint callback a implementer dans DiddiGo
 
-### Paiement marchand
+Endpoint recommande :
 
-Quand un module veut encaisser un utilisateur :
-1. le module prépare son contexte métier ;
-2. le client authentifié appelle `POST /wallet/pay/merchant` avec son PIN, directement de
-   préférence, ou via un backend qui ne journalise ni ne persiste jamais ce PIN ;
-3. DiddiPay écrit la transaction et le ledger ;
-4. le module stocke seulement sa référence métier locale.
+```text
+POST /internal/webhooks/diddipay
+```
 
-Le module appelant ne doit pas stocker un second solde local.
+Il recoit l'enveloppe documentee dans le contrat DiddiPay et les headers :
 
-### Transfert sensible
+- `X-DiddiPay-Event-ID` ;
+- `X-DiddiPay-Signature`.
 
-Le module ne connaît pas le seuil sensible. Il tente le transfert et, sur
-`STEP_UP_OTP_REQUIRED` :
-1. demande et vérifie le challenge dans DiddiFreeID avec `purpose=wallet.transfer.high_value` ;
-2. conserve le même destinataire, le même montant et la même clé d'idempotence pour un retry
-   réseau du premier ordre ;
-3. rejoue le transfert avec le JWT court dans `step_up_token`.
+Ordre obligatoire :
 
-Le code OTP brut ne traverse jamais DiddiPay. La preuve signée est vérifiée localement par JWKS et
-son `jti` est consommé une seule fois.
+1. lire le corps brut ;
+2. calculer `HMAC-SHA256(secret, raw_body).hexdigest()` ;
+3. comparer en temps constant avec `X-DiddiPay-Signature` ;
+4. parser le JSON uniquement apres verification ;
+5. verifier que le header event id est identique a `body.id` ;
+6. ouvrir une transaction SQL ;
+7. inserer `body.id` dans une inbox avec contrainte unique ;
+8. retrouver le paiement par `payment_intent_id` et `business_reference` ;
+9. verifier `amount` et `currency` ;
+10. marquer le paiement et la course comme payes ;
+11. commit ;
+12. retourner `204` ou un autre `2xx`.
 
-Le seuil est configuré côté DiddiPay avec `WALLET_STEP_UP_THRESHOLD_XOF` et peut varier entre
-staging et production sans redéploiement du frontend.
+Pseudo-code de verification :
 
-Le module appelant ne doit pas inventer une logique parallèle de validation.
+```python
+expected = hmac.new(callback_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+if not hmac.compare_digest(received_signature, expected):
+    raise InvalidSignature()
+```
 
-Le PIN est toujours vérifié côté serveur. Les recovery codes et l'admin reset
-audité existent pour les cas de support.
+Si l'`id` existe deja dans l'inbox, DiddiGo retourne `2xx` sans rejouer la transition. Cette
+deduplication est obligatoire parce que DiddiPay garantit une livraison **at least once**, pas
+exactement une fois.
 
-Le PIN est requis sur chaque débit initié par l'utilisateur, y compris paiement marchand,
-retrait, investissement et remboursement. Un appel in-process DiddiFund passe par le port wallet
-et ne contourne donc pas cette règle.
+## 5. Transaction inbox + metier
 
-La création initiale du PIN exige une preuve JWT DiddiFreeID liée au purpose `wallet.pin.set`.
-DiddiPay vérifie cette preuve localement avec le JWKS et conserve uniquement son `jti` pour empêcher
-un rejeu. Un module ne doit jamais vérifier ni transmettre lui-même le code OTP brut.
+Le bon pattern DiddiGo est :
 
-## 5. Sécurité
+```text
+BEGIN
+  INSERT callback_inbox(event_id) ON CONFLICT -> duplicate
+  UPDATE ride_payments SET status = 'succeeded'
+  UPDATE rides SET status = 'paid'
+  INSERT diddigo_outbox(event='ride.payment_confirmed')
+COMMIT
+```
 
-- Le JWT DiddiFreeID se vérifie localement via le JWKS.
-- Les rôles métier restent dans le module propriétaire.
-- Le PIN transactionnel est vérifié côté serveur.
-- Les preuves step-up DiddiFreeID sont courtes, liées à un purpose et à usage unique.
-- Les routes ops doivent être protégées par une authentification admin ou service-to-service.
+Ainsi, un crash ne peut pas enregistrer l'evenement sans payer la course, ni payer la course sans
+memoriser l'evenement. Si DiddiGo publie ensuite un evenement interne, sa propre outbox lui donne la
+meme garantie.
 
-## 6. Événements à consommer
+## 6. Statuts et decisions DiddiGo
 
-Les modules doivent s'abonner à :
-- `user.registered`
-- `user.updated`
-- `user.role_changed`
-- `user.suspended`
+- `requires_action` : transmettre l'action au frontend.
+- `processing` : attendre le callback ou relire DiddiPay.
+- `succeeded` : autoriser la transition metier payee.
+- `failed` : autoriser une nouvelle tentative explicite selon les regles DiddiGo.
+- `unknown` sur une tentative : ne pas relancer automatiquement un debit.
+- `refunded` : appliquer la politique d'annulation/remboursement de la course.
 
-Cas d'usage :
-- `user.registered` -> provisionner ou préparer l'état local du module ;
-- `user.updated` -> invalider les caches ;
-- `user.role_changed` -> activer une capacité métier ;
-- `user.suspended` -> geler les actions sortantes ou bloquer l'accès.
+Le statut du paiement vient de DiddiPay. Le statut de la course vient de DiddiGo. Ils sont relies,
+mais ce ne sont pas le meme agregat.
 
-## 7. Ce qu'un module ne doit pas faire
+## 7. Reconciliation cote module
 
-- ne pas créer son propre ledger d'argent ;
-- ne pas lire les tables wallet directement ;
-- ne pas supposer que `DiddiPay` est un simple service de transfert ;
-- ne pas déduire les rôles métier à partir de DiddiFreeID ;
-- ne pas contourner le step-up DiddiFreeID pour les montants sensibles.
-- ne pas créer un second état de solde local.
+Les callbacks peuvent etre retardes. DiddiGo doit disposer d'un job qui relit periodiquement les
+paiements locaux non finaux via `GET /payment-intents/{id}`.
 
-## 8. Erreurs à traiter côté module
+Ce job :
 
-Les modules backend doivent remonter les erreurs DiddiPay telles quelles au besoin :
-- `PIN_REQUIRED`
-- `INVALID_PIN`
-- `STEP_UP_OTP_REQUIRED`
-- `STEP_UP_PROOF_INVALID`
-- `STEP_UP_PROOF_EXPIRED`
-- `STEP_UP_PROOF_ALREADY_USED`
-- `INSUFFICIENT_BALANCE`
-- `RECIPIENT_NOT_FOUND`
-- `MERCHANT_NOT_FOUND`
+- cible uniquement les paiements `requires_action`, `processing` ou incertains ;
+- applique les memes validations montant/devise ;
+- reutilise le meme service client ;
+- execute la meme fonction idempotente de transition que le callback ;
+- alerte les ops si un paiement reste incoherent trop longtemps.
 
-Le frontend peut ensuite afficher le message utile, mais la logique métier ne doit pas être
-reconstruite côté client.
+Le callback donne la rapidite. La reconciliation donne la completude.
 
-## 9. Si un module rejoint plus tard
+## 8. Configuration DiddiPay pour DiddiGo
 
-Le module doit :
-- consommer les événements à partir d'un backfill ;
-- relire l'état local de ses objets métier ;
-- traiter les événements de manière idempotente ;
-- ne jamais supposer qu'il a tout reçu en temps réel.
+Credentials d'appel :
 
-## 10. Résumé
+```env
+PAYMENT_SERVICE_KEYS=diddigo:<secret-appel-diddigo>,diddifund:<secret-appel-diddifund>
+```
 
-DiddiPay est la brique financière centrale.
-Les autres modules lui délèguent l'exécution monétaire, mais gardent leur métier.
-La bonne intégration consiste à :
-- appeler DiddiPay pour les mouvements d'argent ;
-- écouter les événements pour la synchronisation ;
-- garder les rôles métier dans le module propriétaire ;
-- utiliser DiddiFiles pour les preuves documentaires ;
-- utiliser DiddiFreeID seulement pour l'identité centrale.
-- utiliser les backfills et l'ops de reconciliation quand un événement ou un webhook a été manqué.
+Destination callback :
+
+```env
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api.diddifree.com/internal/webhooks/diddipay","secret":"<secret-hmac-callback-distinct>"}}
+```
+
+Les deux secrets ont des usages differents :
+
+- service key : DiddiGo s'authentifie lorsqu'il appelle DiddiPay ;
+- callback secret : DiddiGo authentifie les evenements envoyes par DiddiPay.
+
+Ils doivent etre aleatoires, differents par environnement, stockes dans le gestionnaire de secrets
+du deploiement et rotatifs.
+
+Le relay DiddiPay s'execute dans un worker ou un job interne :
+
+```bash
+python -m payfund_app.ops relay-payment-events --limit 100
+```
+
+## 9. DiddiFund et futurs modules
+
+Le meme pattern s'applique :
+
+- DiddiFund utilise une `business_reference` stable liee a l'investissement ou au remboursement ;
+- son backend conserve le `payment_intent_id` ;
+- son callback possede une inbox unique ;
+- ses transitions campagne/pret restent dans DiddiFund ;
+- chaque module a ses propres service key, callback URL et callback secret.
+
+DiddiFiles ne consomme normalement pas un paiement. Il reste le proprietaire des fichiers et peut
+fournir des references KYC a un module financier sans stocker lui-meme un solde.
+
+## 10. Wallet legacy
+
+Les routes `/wallet/*` existent encore pendant la migration. Une nouvelle integration DiddiGo ne
+doit plus utiliser `/wallet/pay/merchant` comme abstraction universelle.
+
+Un futur DiddiWallet pourra etre branche derriere DiddiPay comme moyen de paiement. DiddiGo gardera
+alors exactement le meme contrat `PaymentIntent`.
+
+## 11. Checklist de revue DiddiGo
+
+- Le montant est calcule cote DiddiGo.
+- La cle d'idempotence est stable et unique par operation metier.
+- `payment_intent_id` et l'event `id` ont des contraintes uniques.
+- La signature est verifiee sur le corps brut et en temps constant.
+- La transaction inbox + course + outbox est atomique.
+- Un doublon retourne `2xx` sans second effet.
+- Une redirection frontend ne marque jamais la course payee.
+- `unknown` ne produit jamais un second debit automatique.
+- Une reconciliation des paiements non finaux existe.
+- Les secrets ne sont ni logs, ni commits, ni exposes au frontend.

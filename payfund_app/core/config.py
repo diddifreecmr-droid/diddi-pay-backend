@@ -3,8 +3,13 @@ from decimal import Decimal
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import AnyHttpUrl, BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class PaymentCallbackSettings(BaseModel):
+    url: AnyHttpUrl
+    secret: str = Field(min_length=16)
 
 
 class Settings(BaseSettings):
@@ -38,6 +43,9 @@ class Settings(BaseSettings):
     # the PaymentIntent API until operations configures service credentials.
     payment_service_keys: str = ""
     payment_processor_mode: str = "sandbox"
+    payment_callback_targets: dict[str, PaymentCallbackSettings] = Field(
+        default_factory=dict
+    )
 
     @property
     def payment_service_key_map(self) -> dict[str, str]:
