@@ -22,6 +22,7 @@ from payfund_app.modules.payments.infra.models import (
     PaymentAttemptRecord,
     PaymentIntentRecord,
     ProviderEventRecord,
+    PaymentOutboxRecord,
     RefundRecord,
 )
 
@@ -328,3 +329,24 @@ class RefundRepository:
                 RefundRecord.idempotency_key == key,
             )
         )
+
+
+class PaymentOutboxRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def enqueue(self, *, client_id: str, event_type: str, aggregate_id: uuid.UUID, payload: dict):
+        row = PaymentOutboxRecord(
+            client_id=client_id,
+            event_type=event_type,
+            aggregate_id=aggregate_id,
+            payload=payload,
+            status="pending",
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def pending(self, limit: int = 100):
+        now = datetime.now().astimezone()
+        return list(self.session.scalars(select(PaymentOutboxRecord).where(PaymentOutboxRecord.status == "pending", PaymentOutboxRecord.next_attempt_at <= now).order_by(PaymentOutboxRecord.created_at).limit(limit).with_for_update(skip_locked=True)))

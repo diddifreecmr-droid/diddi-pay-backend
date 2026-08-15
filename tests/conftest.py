@@ -57,6 +57,7 @@ from payfund_app.modules.wallet.presentation.deps import (  # noqa: E402
 from payfund_app.shared_kernel.events.bus import InMemoryEventBus, set_bus  # noqa: E402
 
 TABLES = [
+    "payments.outbox_events",
     "payments.refunds",
     "payments.provider_events",
     "payments.payment_attempts",

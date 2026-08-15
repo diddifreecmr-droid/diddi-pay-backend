@@ -9,6 +9,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
     ProviderEventRepository,
+    PaymentOutboxRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
@@ -32,6 +33,7 @@ async def paystack_webhook(
         PaymentAttemptRepository(session),
         ProviderEventRepository(session),
         SqlAlchemyUnitOfWork(session),
+        PaymentOutboxRepository(session),
     )
     try:
         result = use_cases.process(processor, raw_body, request.headers)

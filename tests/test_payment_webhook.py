@@ -13,7 +13,7 @@ from payfund_app.modules.payments.domain import (
     PaymentIntent,
     PaymentIntentStatus,
 )
-from payfund_app.modules.payments.infra.models import ProviderEventRecord
+from payfund_app.modules.payments.infra.models import ProviderEventRecord, PaymentOutboxRecord
 from payfund_app.modules.payments.infra.paystack_processor import PaystackPaymentProcessor
 from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
@@ -96,6 +96,9 @@ def test_signed_success_webhook_completes_intent_once(client, session):
     assert second.json()["status"] == "duplicate"
     assert PaymentIntentRepository(session).get(intent.id).status == PaymentIntentStatus.SUCCEEDED
     assert PaymentAttemptRepository(session).get(attempt.id).status == AttemptStatus.SUCCEEDED
+    outbox = session.scalar(select(PaymentOutboxRecord))
+    assert outbox.event_type == "payment.succeeded"
+    assert outbox.payload["business_reference"] == "ride:42"
 
 
 def test_invalid_webhook_signature_is_rejected(client, session):

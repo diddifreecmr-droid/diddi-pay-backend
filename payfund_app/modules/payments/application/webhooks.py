@@ -31,11 +31,13 @@ class PaymentWebhookUseCases:
         attempts: PaymentAttemptRepositoryPort,
         events: ProviderEventRepositoryPort,
         uow: UnitOfWorkPort,
+        outbox=None,
     ) -> None:
         self.intents = intents
         self.attempts = attempts
         self.events = events
         self.uow = uow
+        self.outbox = outbox
 
     def process(
         self,
@@ -93,6 +95,7 @@ class PaymentWebhookUseCases:
             self.uow.commit()
             return WebhookOutcome("failed", event.event_key, str(intent.id))
 
+        was_succeeded = intent.status == PaymentIntentStatus.SUCCEEDED
         try:
             self._apply_status(intent, attempt, event.status)
         except InvalidStateTransition as exc:
@@ -109,6 +112,24 @@ class PaymentWebhookUseCases:
         self.attempts.save(attempt)
         self.intents.save(intent)
         self.events.mark(row, status="processed", payment_attempt_id=attempt.id)
+        if (
+            self.outbox is not None
+            and event.status == AttemptStatus.SUCCEEDED
+            and not was_succeeded
+        ):
+            self.outbox.enqueue(
+                client_id=intent.client_id,
+                event_type="payment.succeeded",
+                aggregate_id=intent.id,
+                payload={
+                    "event_id": event.event_key,
+                    "payment_intent_id": str(intent.id),
+                    "business_reference": intent.business_reference,
+                    "amount": intent.money.amount,
+                    "currency": intent.money.currency,
+                    "status": str(intent.status),
+                },
+            )
         self.uow.commit()
         return WebhookOutcome("processed", event.event_key, str(intent.id))
 
