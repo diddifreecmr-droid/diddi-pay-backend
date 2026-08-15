@@ -3,13 +3,23 @@ from decimal import Decimal
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from pydantic import AnyHttpUrl, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PaymentCallbackSettings(BaseModel):
     url: AnyHttpUrl
     secret: str = Field(min_length=16)
+
+    @field_validator("url")
+    @classmethod
+    def require_secure_callback(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        internal_hosts = {"localhost", "127.0.0.1", "app", "payfund-app"}
+        if value.scheme != "https" and value.host not in internal_hosts:
+            raise ValueError("payment callback URL must use HTTPS outside the internal network")
+        if value.username or value.password:
+            raise ValueError("payment callback URL must not contain user information")
+        return value
 
 
 class Settings(BaseSettings):

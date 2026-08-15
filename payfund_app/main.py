@@ -18,6 +18,7 @@ from payfund_app.core.errors import register_exception_handlers
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.payments.presentation.routers import router as payment_router
 from payfund_app.modules.payments.presentation.webhook_router import router as payment_webhook_router
+from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
 from payfund_app.ops.maintenance import relay_outbox_events
@@ -80,6 +81,7 @@ def ready() -> dict[str, str]:
     with SessionLocal() as session:
         try:
             OutboxRepository(session).pending(limit=1)
+            PaymentOutboxRepository(session).status_counts()
         except ProgrammingError:
             session.rollback()
             return {"status": "degraded"}

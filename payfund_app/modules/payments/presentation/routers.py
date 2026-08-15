@@ -46,6 +46,7 @@ from payfund_app.modules.payments.presentation.schemas import (
     RefundResponse,
     PaymentFinancialSummaryResponse,
 )
+from payfund_app.shared_kernel.logging import emit
 
 router = APIRouter(prefix="/payment-intents", tags=["payments"])
 
@@ -139,6 +140,16 @@ def create_payment_intent(
     except Exception as exc:
         _translate_error(exc)
         raise
+    emit(
+        "info",
+        "payment.intent.created",
+        payment_intent_id=str(view.intent.id),
+        client_id=client.client_id,
+        business_reference=view.intent.business_reference,
+        amount=view.intent.money.amount,
+        currency=view.intent.money.currency,
+        status=str(view.intent.status),
+    )
     return _response(view)
 
 
@@ -217,7 +228,7 @@ def create_refund(
     except Exception as exc:
         _translate_error(exc)
         raise
-    return RefundResponse(
+    response = RefundResponse(
         id=refund.id,
         payment_intent_id=refund.payment_intent_id,
         amount=refund.money.amount if hasattr(refund, "money") else refund.amount,
@@ -227,6 +238,17 @@ def create_refund(
         created_at=refund.created_at,
         updated_at=refund.updated_at,
     )
+    emit(
+        "info",
+        "payment.refund.created",
+        refund_id=str(refund.id),
+        payment_intent_id=str(refund.payment_intent_id),
+        client_id=client.client_id,
+        amount=response.amount,
+        currency=response.currency,
+        status=response.status,
+    )
+    return response
 
 
 @router.get(

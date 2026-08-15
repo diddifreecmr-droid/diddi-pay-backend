@@ -15,6 +15,7 @@ from payfund_app.ops.maintenance import (
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
     record_payment_settlement,
+    payment_event_delivery_status,
     relay_outbox_events,
     require_admin,
 )
@@ -68,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
     settlement.add_argument("amount", type=int)
     settlement.add_argument("settlement_reference")
     settlement.add_argument("--admin-role", default="admin")
+
+    event_status = sub.add_parser(
+        "payment-events-status",
+        help="Show payment callback outbox counts, including dead letters",
+    )
+    event_status.add_argument("--admin-role", default="admin")
 
     housekeeping = sub.add_parser(
         "housekeeping",
@@ -162,6 +169,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"outstanding={result['outstanding']}"
             )
             return 0
+        if args.command == "payment-events-status":
+            result = payment_event_delivery_status(session)
+            print(" ".join(f"{key}={value}" for key, value in result.items()))
+            return 2 if result["dead_letter"] else 0
         if args.command == "housekeeping":
             result = run_housekeeping(session, get_bus())
             print(

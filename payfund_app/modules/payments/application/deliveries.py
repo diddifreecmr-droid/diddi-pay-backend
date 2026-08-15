@@ -33,7 +33,9 @@ class PaymentEventDeliveryUseCases:
         self.targets = targets
 
     def run(self, *, limit: int = 100) -> DeliverySummary:
-        rows = self.outbox.pending(limit)
+        rows = self.outbox.claim(limit)
+        # Release row locks after durable claims, before potentially slow network calls.
+        self.uow.commit()
         delivered = retried = unavailable = 0
         for row in rows:
             target = self.targets.get(row.client_id)

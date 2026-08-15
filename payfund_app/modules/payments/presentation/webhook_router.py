@@ -19,6 +19,7 @@ from payfund_app.modules.payments.presentation.deps import (
     SessionDep,
 )
 from payfund_app.modules.payments.presentation.schemas import PaymentWebhookResponse
+from payfund_app.shared_kernel.logging import emit
 
 router = APIRouter(prefix="/payments/webhooks", tags=["payment-webhooks"])
 
@@ -42,6 +43,14 @@ async def paystack_webhook(
         result = use_cases.process(processor, raw_body, request.headers)
     except ProcessorWebhookRejected as exc:
         raise Unauthenticated("Signature webhook Paystack invalide.") from exc
+    emit(
+        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
+        "payment.webhook.processed",
+        processor="paystack",
+        event_key=result.event_key,
+        payment_intent_id=result.payment_intent_id,
+        status=result.status,
+    )
     return PaymentWebhookResponse(
         status=result.status,
         event_key=result.event_key,

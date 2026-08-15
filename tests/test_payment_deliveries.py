@@ -2,8 +2,11 @@ import hashlib
 import hmac
 import json
 import uuid
+from datetime import timedelta
 
 import httpx
+import pytest
+from pydantic import ValidationError
 
 from payfund_app.modules.payments.application.deliveries import (
     PaymentEventDeliveryUseCases,
@@ -132,3 +135,36 @@ def test_payment_callback_targets_are_loaded_from_json_environment(monkeypatch):
     target = settings.payment_callback_targets["diddigo"]
     assert str(target.url) == "https://go.diddifree.com/internal/webhooks/diddipay"
     assert target.secret == "a-secret-with-16-chars"
+
+
+def test_claim_prevents_parallel_delivery_and_recovers_stale_worker(session):
+    repo = PaymentOutboxRepository(session)
+    row = repo.enqueue(
+        client_id="diddigo",
+        event_type="payment.succeeded",
+        aggregate_id=uuid.uuid4(),
+        payload={"status": "succeeded"},
+    )
+    session.commit()
+
+    assert repo.claim(limit=1) == [row]
+    session.commit()
+    assert row.status == "delivering"
+    assert repo.claim(limit=1) == []
+
+    row.locked_at -= timedelta(minutes=10)
+    session.commit()
+    assert repo.claim(limit=1, lease_seconds=300) == [row]
+
+
+def test_callback_configuration_rejects_insecure_external_http():
+    with pytest.raises(ValidationError, match="must use HTTPS"):
+        Settings(
+            _env_file=None,
+            payment_callback_targets={
+                "diddigo": {
+                    "url": "http://example.com/webhooks/diddipay",
+                    "secret": "a-secret-with-16-chars",
+                }
+            },
+        )

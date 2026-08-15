@@ -240,6 +240,18 @@ def deliver_payment_events(
     return result
 
 
+def payment_event_delivery_status(session: Session) -> dict[str, int]:
+    counts = PaymentOutboxRepository(session).status_counts()
+    result = {
+        "pending": counts.get("pending", 0),
+        "delivering": counts.get("delivering", 0),
+        "delivered": counts.get("delivered", 0),
+        "dead_letter": counts.get("dead_letter", 0),
+    }
+    emit("info", "ops.payment_events.status", **result)
+    return result
+
+
 def record_payment_settlement(
     session: Session,
     *,

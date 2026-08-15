@@ -211,9 +211,16 @@ class PaymentOutboxRecord(Base):
     __tablename__ = "outbox_events"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending','delivered','dead_letter')", name="ck_payment_outbox_status"
+            "status IN ('pending','delivering','delivered','dead_letter')",
+            name="ck_payment_outbox_status",
         ),
-        Index("idx_payment_outbox_pending", "status", "next_attempt_at", "created_at"),
+        Index(
+            "idx_payment_outbox_pending",
+            "status",
+            "next_attempt_at",
+            "locked_at",
+            "created_at",
+        ),
         {"schema": "payments"},
     )
 
@@ -229,6 +236,7 @@ class PaymentOutboxRecord(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

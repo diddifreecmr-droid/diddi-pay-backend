@@ -369,6 +369,20 @@ Commande de relay a executer dans un worker ou job interne :
 python -m payfund_app.ops relay-payment-events --limit 100
 ```
 
+Le relay claim chaque evenement en base avant l'appel HTTP. Le statut `delivering` possede une
+lease de cinq minutes : un autre worker ne peut pas livrer simultanement le meme evenement, mais un
+claim abandonne par un processus mort redevient eligible apres expiration. Un event en echec revient
+en `pending` avec backoff ; apres dix echecs il passe en `dead_letter`.
+
+Commande de supervision :
+
+```bash
+python -m payfund_app.ops payment-events-status
+```
+
+Elle retourne les compteurs `pending`, `delivering`, `delivered` et `dead_letter`, avec un code de
+sortie non nul si une dead letter exige une intervention.
+
 ## 10. Cycle de vie
 
 1. Le frontend demande au backend du module de payer son objet metier.
@@ -415,6 +429,10 @@ Erreurs principales :
 - le demarrage Docker execute les migrations Alembic avant Uvicorn ;
 - la cle Paystack reste uniquement dans les secrets backend ;
 - les logs ne doivent contenir ni cle service, ni cle Paystack, ni donnees de carte, ni OTP, ni PIN.
+- les callbacks externes configures doivent utiliser HTTPS ; HTTP n'est permis que pour les noms
+  internes Docker et localhost ;
+- les logs de cycle de vie sont structures en JSON et references par `payment_intent_id`,
+  `business_reference` ou `event_key`, jamais par un secret.
 
 ### Sous-ledger financier et settlement
 

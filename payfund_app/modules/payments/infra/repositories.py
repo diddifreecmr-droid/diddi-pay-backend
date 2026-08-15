@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from payfund_app.modules.payments.domain import (
@@ -369,23 +369,40 @@ class PaymentOutboxRepository:
         self.session.flush()
         return row
 
-    def pending(self, limit: int = 100) -> list[PaymentOutboxRecord]:
+    def claim(
+        self, limit: int = 100, *, lease_seconds: int = 300
+    ) -> list[PaymentOutboxRecord]:
         now = datetime.now().astimezone()
+        stale_before = now - timedelta(seconds=lease_seconds)
         statement = (
             select(PaymentOutboxRecord)
             .where(
-                PaymentOutboxRecord.status == "pending",
-                PaymentOutboxRecord.next_attempt_at <= now,
+                or_(
+                    (
+                        (PaymentOutboxRecord.status == "pending")
+                        & (PaymentOutboxRecord.next_attempt_at <= now)
+                    ),
+                    (
+                        (PaymentOutboxRecord.status == "delivering")
+                        & (PaymentOutboxRecord.locked_at <= stale_before)
+                    ),
+                )
             )
             .order_by(PaymentOutboxRecord.created_at)
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
-        return list(self.session.scalars(statement))
+        rows = list(self.session.scalars(statement))
+        for row in rows:
+            row.status = "delivering"
+            row.locked_at = now
+        self.session.flush()
+        return rows
 
     def delivered(self, row: PaymentOutboxRecord) -> None:
         row.status = "delivered"
         row.delivered_at = datetime.now().astimezone()
+        row.locked_at = None
         row.last_error = None
         self.session.flush()
 
@@ -397,9 +414,19 @@ class PaymentOutboxRepository:
         if row.attempts >= max_attempts:
             row.status = "dead_letter"
         else:
+            row.status = "pending"
             delay = min(3600, 2 ** min(row.attempts, 10))
             row.next_attempt_at = datetime.now().astimezone() + timedelta(seconds=delay)
+        row.locked_at = None
         self.session.flush()
+
+    def status_counts(self) -> dict[str, int]:
+        rows = self.session.execute(
+            select(PaymentOutboxRecord.status, func.count()).group_by(
+                PaymentOutboxRecord.status
+            )
+        )
+        return {status: int(count) for status, count in rows}
 
 
 class FinancialLedgerRepository:
