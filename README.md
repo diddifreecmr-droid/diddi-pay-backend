@@ -1,10 +1,18 @@
-# payfund_app — DiddiPay + DiddiFund
+# payfund_app - DiddiPay + DiddiFund
 
-Monolithe modulaire Python/FastAPI + PostgreSQL implémentant les modules `wallet` (DiddiPay) et
-`fund` (DiddiFund), d'après :
+Monolithe modulaire Python/FastAPI + PostgreSQL. DiddiPay orchestre les paiements externes avec un
+contrat `PaymentIntent` provider-neutral ; DiddiFund possède ses objets d'investissement et de prêt.
+Le module `wallet` historique reste disponible pendant la migration et pourra devenir plus tard un
+moyen de paiement distinct, DiddiWallet.
 
-- `DiddiPay_DiddiFund_Architecture.md`
-- `DiddiPay_DiddiFund_Contrat_API.md`
+Documents de référence :
+
+- `DiddiPay_Contrat_API.md` - contrat DiddiPay courant ;
+- `DiddiPay_Backend_Integration_Brief.md` - intégration des modules ;
+- `BRIEFING_FRONTEND.md` - comportement attendu des clients ;
+- `DiddiFund_Contrat_API.md` - contrat métier DiddiFund ;
+- `DiddiPay_Migration_Runbook.md` - coexistence et migration du wallet legacy ;
+- `DiddiPay_DiddiFund_Architecture.md` et `DiddiPay_DiddiFund_Contrat_API.md` - références legacy ;
 - `DiddiFreeID_Contrat_API.md` (identité, consommée en vérification locale de JWT)
 
 ## Démarrage
@@ -91,6 +99,7 @@ payfund_app/
 │   ├── contracts/     IdentityVerifierPort · WalletServicePort
 │   └── events/        bus interne (Redis Pub/Sub) + adaptateur mémoire pour les tests
 └── modules/
+    ├── payments/      PaymentIntent · processors · webhooks · reconciliation · accounting
     ├── wallet/        presentation · application · domain · infra
     └── fund/          presentation · application · domain · infra
 ```
@@ -108,6 +117,14 @@ des ports hôte configurables via `.env` (voir « Démarrage »).
 
 | Route | État |
 |---|---|
+| `POST /payment-intents` | ✅ création S2S idempotente et provider-neutral |
+| `GET /payment-intents` · `GET /payment-intents/{id}` | ✅ isolation par module |
+| `POST /payment-intents/{id}/cancel` | ✅ annulation locale sûre |
+| `POST /payment-intents/{id}/refunds` | ✅ remboursement Paystack idempotent |
+| `GET /payment-intents/{id}/financial-summary` | ✅ captures, frais, remboursements, settlement |
+| `POST /payments/webhooks/paystack` | ✅ signature, inbox, déduplication et outbox |
+| `POST /fund/campaigns/{id}/invest/payment` | ✅ investissement externe par PaymentIntent |
+| `POST /fund/payments/webhooks/diddipay` | ✅ callback signé et idempotent |
 | `GET /wallet/balance` | ✅ |
 | `POST /wallet/transfer` | ✅ |
 | `POST /wallet/pay/merchant` | ✅ |
@@ -178,15 +195,19 @@ puis envoie uniquement `step_up_token` à DiddiPay.
 - Les comptes marchands, eux, restent des comptes séparés et sont utilisés par les modules qui
   encaissent des paiements (`DiddiGo`, futurs modules marchands, etc.).
 
-### Règle de base pour DiddiPay
+### Règle de base après le pivot
 
-`DiddiPay` est le wallet de l'utilisateur.
+`DiddiPay` est l'orchestrateur de paiement. Il couvre Paystack aujourd'hui et masque ses détails
+derrière `PaymentIntent`, `next_action`, les webhooks, la reconciliation et l'idempotence.
 
-- Les dépôts créditent le wallet.
-- Les paiements marchands débitent le wallet et créditent le compte marchand du module.
-- Les moyens de paiement externes (`Paystack` aujourd'hui, `Wave`/`Orange Money`/autres ensuite)
-  servent à alimenter ou débiter ce wallet, mais ne deviennent pas eux-mêmes le compte source de
-  vérité.
+- Les nouveaux paiements DiddiGo/DiddiFund n'exigent pas de wallet utilisateur.
+- Paystack est un adaptateur remplaçable, pas le contrat consommé par les modules.
+- Le wallet historique et son ledger restent opérationnels pendant la migration.
+- Un futur DiddiWallet utilisera le même coeur comme moyen de paiement additionnel.
+
+Le connecteur historique de dépôt wallet utilise `PAYMENT_GATEWAY_MODE`. Le nouvel orchestrateur
+utilise `PAYMENT_PROCESSOR_MODE` et `PAYMENT_SERVICE_KEYS`. Il ne faut pas confondre ces deux
+configurations pendant la période de coexistence.
 
 ### Prêts — crowdlending
 

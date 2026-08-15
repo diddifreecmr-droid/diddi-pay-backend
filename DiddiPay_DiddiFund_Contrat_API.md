@@ -1,5 +1,10 @@
 # DiddiPay / DiddiFund — Contrat API
 
+> **Contrat legacy wallet.** Ce document reste applicable aux routes `/wallet/*` et aux parcours
+> DiddiFund historiques qui utilisent un solde interne. Pour toute nouvelle collecte externe,
+> utiliser `DiddiPay_Contrat_API.md` (PaymentIntent) et `DiddiFund_Contrat_API.md`. DiddiPay ne doit
+> plus être présenté comme synonyme du wallet.
+
 **Destiné à :** Frontend/Mobile, et aux modules backend consommant `WalletServicePort` en interne.
 **Base URL (dev) :** `https://api-dev.diddifree.app/payfund/v1`
 **Format :** JSON exclusivement · `Content-Type: application/json`

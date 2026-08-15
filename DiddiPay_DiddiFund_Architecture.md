@@ -1,15 +1,36 @@
 # DiddiPay / DiddiFund — Architecture applicative & Conception
 
 **Stack retenue :** Python / FastAPI · PostgreSQL
-**Périmètre :** APP BASE (monolithe modulaire) hébergeant le module `wallet` (DiddiPay) et le module
-`fund` (DiddiFund), consommant DiddiFreeID pour l'identité.
-**Statut :** Document de design, à valider avant implémentation
+**Périmètre historique :** APP BASE hébergeant `wallet` et `fund`, consommant DiddiFreeID.
+**Statut :** architecture wallet historique conservée pour la compatibilité et l'audit
 **Document miroir :** `DiddiPay_DiddiFund_Contrat_API.md`
 **Dépendances externes** : DiddiFreeID (identité, voir `DiddiFreeID_Contrat_API.md`)
+
+> **Pivot MVP 2026 :** DiddiPay est désormais l'orchestrateur `PaymentIntent`, pas le nom du wallet.
+> Le nouveau contrat de référence est `DiddiPay_Contrat_API.md`. Le module `wallet` décrit dans ce
+> document reste une capacité legacy du monolithe. Les nouvelles intégrations DiddiGo, DiddiFund et
+> futurs modules suivent `DiddiPay_Backend_Integration_Brief.md`.
 
 ---
 
 ## 0. Rôle dans l'écosystème et contraintes de charge
+
+### Architecture cible après pivot
+
+```text
+Frontend -> module métier -> DiddiPay PaymentIntent -> adaptateur PSP -> Paystack
+                         <- événements signés + reconciliation <- webhook PSP
+```
+
+- le module métier possède la course, l'investissement, le prêt ou la commande ;
+- DiddiPay possède l'intention, les tentatives, l'idempotence et le statut de paiement normalisé ;
+- Paystack est le rail externe du MVP et peut être remplacé par un adaptateur direct ;
+- le sous-ledger `payments.*` explique captures, frais, remboursements et settlements ;
+- `wallet.*` reste isolé et pourra devenir un moyen de paiement `wallet` derrière le même contrat.
+
+Cette cible coexiste volontairement avec l'architecture wallet ci-dessous. Aucune table financière
+legacy n'est supprimée pendant le MVP ; la stratégie détaillée est dans
+`DiddiPay_Migration_Runbook.md`.
 
 Le cahier des charges positionne DiddiPay comme "le moteur de règlement à tous les autres modules" — un
 rôle transverse comparable à DiddiFreeID, mais avec un profil de charge inverse : ici, ce qui compte

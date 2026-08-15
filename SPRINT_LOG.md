@@ -201,3 +201,27 @@ It is intentionally terse so it can serve as an ops-friendly trace.
 
 - Aligned the API contracts and integration briefs and added the MVP deployment/closure runbook.
 - Commit: this closure documentation commit
+
+## Pivot DiddiPay - orchestrateur de paiements
+
+Cette série repart à Sprint 0 pour distinguer clairement le pivot PaymentIntent des 38 sprints
+wallet historiques.
+
+| Sprint | Livraison | Commit |
+|---:|---|---|
+| 0 | domaine PaymentIntent provider-neutral | `63cda57` |
+| 1 | persistance des intentions, tentatives et événements provider | `329f0f5` |
+| 2 | ports processeur et routage multi-provider | `685307a` |
+| 3 | API S2S PaymentIntent | `3889d22` |
+| 4 | adaptateur Paystack | `31bfc3a` |
+| 5 | webhook Paystack durable | `9de188e` |
+| 6 | reconciliation des tentatives incertaines | `50b6efa` |
+| 7 | outbox transactionnelle de paiement | `6f916a0` |
+| 8 | contrat API et briefing frontend PaymentIntent | `68121e0` |
+| 9 | livraison signée, retries et dead letters vers les modules | `4448e90` |
+| 10 | receiver DiddiGo idempotent | `113d89c` |
+| 11 | investissement DiddiFund par PaymentIntent | `36630a8` |
+| 12 | remboursements provider-neutral | `3793d98` |
+| 13 | sous-ledger de capture, frais, remboursement et settlement | `779292f` |
+| 14 | claim/lease concurrent, HTTPS callbacks et observabilité ops | `de99c2b` |
+| 15 | parité Swagger, contrats finaux et migration wallet | `1c792d4` + commit courant |
