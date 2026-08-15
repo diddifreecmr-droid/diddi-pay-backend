@@ -79,6 +79,11 @@ démarre quand même, mais avec les valeurs par défaut de `.env.example` (ports
 `48213`, `QR_SIGNING_SECRET=change-me-in-production`) — à vérifier avant toute mise en
 production réelle.
 
+Le compose transmet aussi les variables du coeur PaymentIntent (`PAYMENT_PROCESSOR_MODE`,
+`PAYMENT_SERVICE_KEYS`, `PAYMENT_CALLBACK_TARGETS`, secrets Paystack et callback DiddiFund). Leurs
+valeurs par défaut gardent le sandbox fermé aux appels S2S : il faut donc les définir explicitement
+dans Portainer pour tester une intégration module.
+
 ## Tests
 
 ```bash

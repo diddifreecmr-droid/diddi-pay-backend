@@ -142,7 +142,7 @@ def create_payment_intent(
         raise
     emit(
         "info",
-        "payment.intent.created",
+        "payment.intent.resolved",
         payment_intent_id=str(view.intent.id),
         client_id=client.client_id,
         business_reference=view.intent.business_reference,

@@ -1,119 +1,156 @@
-# DiddiPay / DiddiFund - Cloture MVP
+# DiddiPay / DiddiFund - Cloture MVP PaymentIntent
 
-Date de validation locale : 2026-08-14
+**Date de validation locale :** 2026-08-15
 
-## 1. Statut
+**Revision Alembic :** `22eb39b4d210 (head)`
 
-Le code du perimetre MVP est termine et valide localement. Son activation complete en staging ou
-production reste conditionnee aux secrets et services externes listes plus bas.
+## 1. Decision
 
-Le MVP livre :
+Le MVP est **code-complete et pret pour validation staging**. Il ne doit pas encore traiter de
+l'argent reel tant que les gates externes de la section 7 ne sont pas tous signes.
 
-- wallet personnel auto-provisionne et self-heal au premier acces ;
-- ledger double entree, idempotence, historique et contre-passations ;
-- depot provider asynchrone, webhook Paystack durable et reconciliation ;
-- transfert P2P et paiement marchand ;
-- PIN Argon2id obligatoire sur chaque debit initie par l'utilisateur ;
-- recovery codes, changement de PIN et reset admin audite ;
-- step-up DiddiFreeID signe, court, lie a un purpose et a usage unique ;
-- campagnes, investissements, prets, echeanciers et remboursements DiddiFund ;
-- hooks KYC vers DiddiFiles sans stockage des fichiers dans DiddiPay ;
-- backfill/provisioning ops, outbox, inbox webhook, logs structures, health et readiness ;
-- contrat OpenAPI executable et briefs frontend/backend.
+Cette distinction est importante : les tests prouvent le comportement de notre code, mais ils ne
+prouvent ni la configuration du compte marchand Paystack, ni la livraison reseau des webhooks, ni
+le rapprochement avec le compte bancaire reel.
 
-## 2. Migrations obligatoires
+## 2. Perimetre livre
 
-La revision attendue est `0012_consumed_step_up_proofs (head)`.
+### Coeur DiddiPay
+
+- `PaymentIntent` provider-neutral et isole par module ;
+- authentification S2S, idempotence et references metier stables ;
+- adaptateurs `sandbox` et Paystack sans fuite du provider dans le contrat ;
+- webhooks Paystack signes, inbox durable, deduplication et validation montant/devise ;
+- reconciliation des tentatives non finales ou incertaines ;
+- outbox transactionnelle, callbacks HMAC, retries, dead letters et claim/lease concurrent ;
+- annulation locale sure et remboursements Paystack idempotents ;
+- sous-ledger double entree pour captures, frais, remboursements et settlements ;
+- statut ops des livraisons et logs JSON structures.
+
+### Modules consommateurs
+
+- receiver DiddiGo de reference avec inbox et transition atomique ;
+- investissement DiddiFund par PaymentIntent et callback signe ;
+- contrat API DiddiPay 3.1, briefing frontend, brief backend et runbook de migration.
+
+### Compatibilite
+
+- wallet personnel auto-provisionne et self-heal ;
+- PIN Argon2id, recovery, step-up DiddiFreeID, P2P et paiement marchand legacy ;
+- campagnes, investissements wallet, prets et remboursements DiddiFund legacy ;
+- references KYC vers DiddiFiles sans stockage des fichiers dans DiddiPay.
+
+Le wallet legacy n'est plus l'identite de DiddiPay. Il reste disponible sans migration destructive
+et pourra devenir DiddiWallet comme moyen de paiement additionnel.
+
+## 3. Chaine de migrations
 
 | Revision | Objet principal |
 |---|---|
-| `0001` | schemas wallet/fund et ledger initial |
-| `0002` | depots et prets |
-| `0003` | structures multi-devise |
-| `0004` | unicite des comptes par type |
-| `0005` | reference metier des transactions |
-| `0006` | outbox durable |
-| `0007` | journaux de reconciliation |
-| `0008` | inbox durable des webhooks |
-| `0009` | references KYC/DiddiFiles |
-| `0010` | PIN et recovery codes |
-| `0011` | audit recovery et table OTP historique |
-| `0012` | registre des preuves step-up consommees |
+| `0001` a `0012` | wallet, fund, securite PIN/step-up, outbox et historique legacy |
+| `0013_payment_orchestration` | intentions, tentatives et evenements provider |
+| `0014_payment_outbox` | livraison durable des evenements de paiement |
+| `0426796797d5` | ordres de paiement et inbox DiddiFund |
+| `a560f55cc5d9` | sous-ledger financier PaymentIntent |
+| `22eb39b4d210` | claim/lease et durcissement de l'outbox paiement |
 
-La table OTP de `0011` est conservee pour compatibilite de schema mais n'est plus utilisee par
-l'API. Sa suppression est une migration post-MVP distincte, apres verification des environnements.
+Le demarrage Docker execute `alembic upgrade head` avant Uvicorn. Sur une future architecture avec
+plusieurs replicas, les migrations devront sortir de l'entrypoint et etre executees par un job
+unique avant le rollout.
 
-## 3. Ordre de deploiement
+## 4. Configuration staging
 
-1. Sauvegarder PostgreSQL et verifier l'espace disque.
-2. Configurer les variables obligatoires et les secrets.
-3. Deployer l'image ; `docker-entrypoint.sh` execute `alembic upgrade head` avant Uvicorn.
-4. Verifier `alembic current` et `alembic check` dans le conteneur.
-5. Verifier `GET /payfund/v1/health`, `GET /payfund/v1/ready` et OpenAPI.
-6. Configurer le webhook Paystack vers `POST /payfund/v1/wallet/webhooks/paystack`.
-7. Executer un depot sandbox de bout en bout puis verifier transaction, ledger, inbox et
-   reconciliation avant d'autoriser du volume reel.
+Variables du nouveau coeur :
 
-Ne jamais executer un downgrade destructif sur une base contenant des transactions sans plan de
-restauration teste. Un rollback applicatif doit conserver les donnees et le ledger.
+```env
+DATABASE_URL=postgresql+psycopg://...
+PAYMENT_PROCESSOR_MODE=paystack
+PAYSTACK_SECRET_KEY=<secret-staging>
+PAYSTACK_WEBHOOK_SECRET=<secret-staging>
+PAYSTACK_BASE_URL=https://api.paystack.co
+PAYMENT_SERVICE_KEYS=diddigo:<secret-1>,diddifund:<secret-2>
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api-staging.diddifree.com/internal/webhooks/diddipay","secret":"<secret-hmac-1>"},"diddifund":{"url":"http://app:8000/payfund/v1/fund/payments/webhooks/diddipay","secret":"<secret-hmac-2>"}}
+DIDDIFUND_DIDDIPAY_CALLBACK_SECRET=<secret-hmac-2>
+```
 
-## 4. Configuration obligatoire
+Le mode `PAYMENT_PROCESSOR_MODE=sandbox` fonctionne sans cle Paystack. Le mode `paystack` exige
+`PAYSTACK_SECRET_KEY`. `PAYSTACK_WEBHOOK_SECRET` peut etre distinct et doit correspondre a la
+configuration du webhook.
 
-- `DATABASE_URL`
-- `REDIS_URL`
-- `DIDDIFREEID_JWKS_URL`
-- `DIDDIFREEID_ISSUER`
-- `DIDDIFREEID_STEP_UP_MAX_TTL_SECONDS`
-- `WALLET_STEP_UP_THRESHOLD_XOF`
-- `QR_SIGNING_SECRET` avec une valeur forte et differente par environnement
-- `CORS_ORIGINS` restreint en production
-- `PAYMENT_GATEWAY_MODE=paystack` pour le depot reel
-- `PAYSTACK_SECRET_KEY`
-- `PAYSTACK_WEBHOOK_SECRET`
+Variables plateforme et legacy encore necessaires selon les parcours actives :
 
-Les secrets ne doivent jamais etre commites, imprimes dans les logs ou inclus dans une image.
+- `DIDDIFREEID_JWKS_URL`, `DIDDIFREEID_ISSUER` et `DIDDIFREEID_STEP_UP_MAX_TTL_SECONDS` ;
+- `REDIS_URL` et `EVENT_BUS_CHANNEL` ;
+- `PAYMENT_GATEWAY_MODE` pour les anciens depots/retraits wallet uniquement ;
+- `WALLET_STEP_UP_THRESHOLD_XOF`, `QR_SIGNING_SECRET` et `CORS_ORIGINS` pour le wallet legacy.
 
-## 5. Dependances externes bloquantes pour le live
+Chaque secret doit etre aleatoire, different par environnement, injecte par Portainer ou un
+gestionnaire de secrets, jamais commite ni logge. Les callbacks externes doivent etre HTTPS.
 
-DiddiFreeID doit fournir les parcours challenge/verification et emettre des JWT RS256 avec :
+## 5. Ordre de deploiement
 
-- `purpose=wallet.pin.set` pour le premier PIN ;
-- `purpose=wallet.transfer.high_value` pour un transfert sensible ;
-- `sub`, `iss`, `purpose`, `jti`, `iat` et `exp` ;
-- une duree de vie maximale compatible avec la configuration DiddiPay.
+1. Sauvegarder PostgreSQL et verifier une restauration sur un environnement isole.
+2. Deployer d'abord les receivers callback DiddiGo/DiddiFund avec leur inbox idempotente.
+3. Configurer les cles service, secrets callback et secrets Paystack.
+4. Deployer DiddiPay ; attendre la fin des migrations et le statut healthy.
+5. Verifier `alembic current`, `alembic check`, `/health`, `/ready` et `/openapi.json`.
+6. Configurer Paystack vers `POST /payfund/v1/payments/webhooks/paystack`.
+7. Planifier `relay-payment-events`, la reconciliation et `payment-events-status`.
+8. Executer les scenarios staging de la section 7 avant d'ouvrir le trafic.
 
-Paystack doit fournir les cles de l'environnement cible et envoyer les webhooks signes. Le MVP
-reel Paystack est limite au depot wallet. Le retrait Paystack reel n'est pas annonce comme livre.
+Ne jamais downgrader ou supprimer une table financiere contenant des transactions. Un rollback
+applicatif doit laisser les PaymentIntent deja envoyes au PSP se terminer ou se reconcilier.
 
-## 6. Validation realisee
+## 6. Validation realisee localement
 
-- suite Python/PostgreSQL complete : `191 passed` ;
-- image Docker reconstruite apres chaque sprint de cloture ;
-- conteneurs API, PostgreSQL et Redis sains ;
-- `alembic current` : `0012 (head)` ;
-- `alembic check` : aucune operation de migration manquante ;
-- health et readiness : HTTP 200 ;
-- OpenAPI : schemas de succes et champs de securite verifies ;
-- preflight CORS verifie pour localhost, DiddiFree et Vercel.
+- compilation Python : succes ;
+- suite Python/PostgreSQL complete : `253 passed`, aucune erreur ;
+- avertissement restant : deprecation `httpx`/Starlette TestClient, non bloquante ;
+- image Docker reconstruite et stack demarree ;
+- conteneurs API, PostgreSQL et Redis : healthy ;
+- `alembic current` : `22eb39b4d210 (head)` ;
+- `alembic check` : aucune operation manquante ;
+- `/health`, `/ready` et `/openapi.json` : HTTP 200 ;
+- endpoint S2S sans credentials : HTTP 401 attendu ;
+- smoke S2S Docker : creation `201`, replay sur le meme intent, lecture/liste/resume `200` ;
+- annulation/remboursement invalides `409` et webhook non signe `401`, comme attendu ;
+- Swagger expose toutes les requetes du coeur, y compris corps et signature du webhook Paystack ;
+- tests d'integration couvrant idempotence, doublons, reconciliation, callbacks, remboursements,
+  comptabilite et isolation entre modules.
 
-## 7. Report explicite apres MVP
+## 7. Gates obligatoires avant argent reel
 
-- migration de Redis Pub/Sub vers Redis Streams avec consumer groups et replay ;
-- suppression de la table OTP historique ;
-- payouts/retraits Paystack reels ;
-- adaptateurs reels Orange Money, Wave, MTN MoMo et Moov ;
-- multi-devise active et conversion en production ;
-- automatisation complete du KYC et decisions de risque avancees ;
-- redistribution du rendement DiddiFund aux investisseurs ;
-- haute disponibilite, tests de charge et plan de reprise apres sinistre formalise.
+- vraies cles **staging** Paystack injectees et testees sans jamais etre partagees au frontend ;
+- compte marchand Paystack active pour XOF et les canaux reellement annonces au produit ;
+- paiement sandbox externe complet : creation, checkout, webhook, callback module et statut metier ;
+- scenario webhook manque repare par reconciliation ;
+- scenario callback module indisponible repare par retry, sans double effet ;
+- remboursement sandbox et settlement verifies contre le dashboard/rapport Paystack ;
+- workers ou jobs planifies avec une seule responsabilite et des timeouts explicites ;
+- alertes sur erreurs provider, `dead_letter > 0`, reconciliation agee et settlement outstanding ;
+- sauvegarde chiffree, restauration chronometree et runbook d'incident partage ;
+- revue securite des secrets, HTTPS, acces ops et journaux ;
+- validation produit/comptable du recu, des frais, remboursements et litiges.
 
-Le Pub/Sub actuel peut perdre un evenement lorsqu'un consommateur est indisponible. Pour le MVP,
-le self-heal wallet, les endpoints de backfill et l'outbox limitent l'impact, mais ne remplacent pas
-un bus durable inter-services. Redis Streams est donc la premiere evolution d'infrastructure apres
-MVP, pas une capacite a annoncer comme deja livree.
+Sans cle et compte Paystack dans ce depot, les tests locaux utilisent un faux serveur HTTP et ne
+peuvent pas certifier le rail externe. Ce n'est pas un defaut du coeur ; c'est une gate de staging.
 
-## 8. Decision de cloture
+## 8. Apres MVP
 
-Le MVP peut etre cloture sur le plan code et contrat. Le passage en argent reel exige une validation
-staging des dependances externes, un backup restaure avec succes et un runbook d'incident partage
-avec l'equipe d'exploitation.
+- adaptateurs directs Orange Money, Wave, MTN MoMo et Moov ;
+- import et rapprochement automatiques des rapports de settlement ;
+- payouts/retraits via le coeur PaymentIntent ;
+- DiddiWallet comme moyen de paiement ;
+- remplacement du Redis Pub/Sub identite par un bus durable avec replay ;
+- multi-devise active, KYC automatise, fraude et limites avancees ;
+- tests de charge, haute disponibilite et plan de reprise apres sinistre formalise.
+
+L'outbox PaymentIntent garantit maintenant la reprise des callbacks financiers. Le Pub/Sub
+DiddiFreeID utilise pour certains evenements de provisioning wallet reste, lui, non durable ; le
+self-heal et le backfill limitent son impact jusqu'a la migration vers Redis Streams ou Kafka.
+
+## 9. Cloture
+
+Le contrat, le code, les migrations, les tests et Docker sont alignes pour le MVP. La prochaine
+decision n'est plus une decision d'implementation locale : c'est l'ouverture d'une validation
+staging avec Paystack et les modules recepteurs deployes.

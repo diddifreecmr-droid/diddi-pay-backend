@@ -1,7 +1,7 @@
 [project]
 name = "payfund-app"
 version = "0.1.0"
-description = "DiddiPay (wallet) + DiddiFund (fund) — monolithe modulaire"
+description = "DiddiPay payment orchestrator, legacy wallet, and DiddiFund modular monolith"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

@@ -49,6 +49,13 @@ services:
       DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json}
       EVENT_BUS_CHANNEL: ${EVENT_BUS_CHANNEL:-diddifree.events}
       PAYMENT_GATEWAY_MODE: ${PAYMENT_GATEWAY_MODE:-stub}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      PAYSTACK_WEBHOOK_SECRET: ${PAYSTACK_WEBHOOK_SECRET:-}
+      PAYSTACK_BASE_URL: ${PAYSTACK_BASE_URL:-https://api.paystack.co}
+      PAYMENT_SERVICE_KEYS: ${PAYMENT_SERVICE_KEYS:-}
+      PAYMENT_PROCESSOR_MODE: ${PAYMENT_PROCESSOR_MODE:-sandbox}
+      PAYMENT_CALLBACK_TARGETS: ${PAYMENT_CALLBACK_TARGETS:-{}}
+      DIDDIFUND_DIDDIPAY_CALLBACK_SECRET: ${DIDDIFUND_DIDDIPAY_CALLBACK_SECRET:-}
       WALLET_STEP_UP_THRESHOLD_XOF: ${WALLET_STEP_UP_THRESHOLD_XOF:-50000}
       # Le déploiement ne se fait pas forcément via `docker compose` en CLI avec un `.env` à
       # côté du fichier (ex. Portainer, qui clone le dépôt et n'a donc jamais accès à un `.env`
