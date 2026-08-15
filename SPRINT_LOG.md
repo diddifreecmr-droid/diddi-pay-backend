@@ -225,4 +225,4 @@ wallet historiques.
 | 13 | sous-ledger de capture, frais, remboursement et settlement | `779292f` |
 | 14 | claim/lease concurrent, HTTPS callbacks et observabilité ops | `de99c2b` |
 | 15 | parité Swagger, contrats finaux et migration wallet | `1c792d4`, `c2a8a4e` |
-| 16 | audit Docker, runbook de production et clôture MVP | commit de clôture |
+| 16 | audit Docker, runbook de production et clôture MVP | `9004023` |
