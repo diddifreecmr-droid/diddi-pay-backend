@@ -1,304 +1,349 @@
 # DiddiPay - Contrat API
 
-**Service:** wallet core for DiddiFree  
-**Base URL:** `/payfund/v1`  
-**Format:** JSON only  
-**Auth:** DiddiFreeID JWT verified locally through JWKS
+**Version du contrat :** 3.0 - pivot orchestrateur de paiements
 
-The generated OpenAPI document at `/payfund/v1/openapi.json` is the executable HTTP contract: every
-route, request body, header and JSON success response must be represented there. This document adds
-business semantics and lifecycle rules that OpenAPI cannot express by itself.
+**Base URL :** `/payfund/v1`
 
-## 1. Scope
+**Format :** JSON
 
-DiddiPay owns wallet state and money movement.
+**Devise MVP :** `XOF`
+**Public cible :** backends DiddiGo, DiddiFund et futurs modules DiddiFree
 
-It manages:
-- wallet balances
-- double-entry ledger
-- deposits
-- withdrawals
-- peer-to-peer transfers
-- merchant payments
-- QR generation and verification
-- transaction history
-- provider callbacks and reconciliation
+Le document OpenAPI expose a `/payfund/v1/openapi.json` est le contrat HTTP executable. Swagger UI
+est disponible a `/payfund/v1/docs`. Toutes les routes, tous les headers, tous les corps de requete
+et toutes les reponses JSON exposees par DiddiPay doivent y apparaitre.
 
-DiddiPay does not own global identity. DiddiFreeID provides authentication only.
-Module-specific roles and profiles stay inside the owning module.
+Ce document complete OpenAPI avec les responsabilites, les invariants financiers et les cycles de
+vie qui ne peuvent pas etre exprimes uniquement par un schema.
 
-### Wallet provisioning
+## 1. Positionnement
 
-The wallet account is provisioned automatically on first access to wallet state.
-In practice, `GET /wallet/balance` is the normal consumer entry point and will
-return the wallet balance once the account exists.
+DiddiPay est l'orchestrateur de paiements de la plateforme DiddiFree.
 
-If an event-driven provisioning step was missed, operators may repair the
-state with an internal backfill route:
+DiddiPay possede :
 
-- `POST /wallet/ops/backfill`
+- le `PaymentIntent` ;
+- les tentatives de paiement et leur statut normalise ;
+- l'idempotence ;
+- le routage vers les processeurs de paiement ;
+- la reception et la deduplication des webhooks ;
+- la reconciliation avec le processeur ;
+- les notifications fiables vers les modules ;
+- les remboursements et le suivi du settlement lorsqu'ils seront actives.
 
-The current implementation also self-heals on first authenticated access inside the wallet use case
-layer: if the provisioning event was missed, the first balance read creates the wallet before
-returning the result. The ops backfill route remains the supported repair path for support teams.
+DiddiPay ne possede pas la course, l'investissement, le pret ou la commande. Le module appelant
+reste la source de verite de son objet metier :
 
-This is an ops-only escape hatch and not a client-facing creation endpoint.
+- DiddiGo possede la course ;
+- DiddiFund possede l'investissement ou le pret ;
+- les futurs modules possedent leurs commandes et prestations.
 
-The wallet owner is always DiddiPay. DiddiFreeID only provides identity and
-global platform status; module-specific roles remain inside the owning module.
+Paystack est le processeur externe actif du MVP. Demain, un adaptateur Orange Money, Wave, MTN MoMo
+ou un autre PSP pourra etre ajoute sans modifier le contrat des modules. Un futur DiddiWallet sera
+un moyen de paiement supplementaire ; il ne redefinit pas DiddiPay.
 
-### Ops and reconciliation
+Les anciennes routes `/wallet/*` restent temporairement disponibles pour compatibilite. Elles ne
+constituent plus le coeur du nouveau contrat DiddiPay et ne doivent pas etre utilisees pour une
+nouvelle integration module-to-module.
 
-DiddiPay exposes internal ops views for support and recovery:
+## 2. Authentification service-to-service
 
-- `GET /wallet/ops/provisioning/{user_id}`
-- `POST /wallet/ops/backfill`
-- `POST /wallet/ops/paystack/reconcile/{transaction_id}`
-- `GET /wallet/ops/paystack/pending`
-- `GET /wallet/ops/paystack/summary`
-- `GET /wallet/ops/paystack/{transaction_id}`
-- `GET /wallet/ops/paystack/{transaction_id}/reconciliations`
-- `GET /wallet/ops/outbox`
-- `POST /wallet/ops/outbox/relay`
+Les routes `/payment-intents` sont appelees par le backend du module, jamais directement par une
+application mobile ou web.
 
-These routes are for internal operations only.
+Headers requis :
 
-### KYC hooks
+| Header | Requis | Description |
+|---|---:|---|
+| `X-Client-ID` | oui | Identifiant stable du module, par exemple `diddigo` ou `diddifund` |
+| `X-Service-Key` | oui | Secret du module configure dans `PAYMENT_SERVICE_KEYS` |
+| `Idempotency-Key` | creation | Cle unique de l'operation metier |
 
-DiddiPay can link wallet users to external document references for KYC.
-The wallet service stores document metadata, not the file blob itself.
-The intended integration target is DiddiFiles or any equivalent file service.
-The wallet stores only a file reference and a small amount of metadata.
+Exemple de configuration backend :
 
-## 2. Money Model
+```env
+PAYMENT_SERVICE_KEYS=diddigo:secret-distinct,diddifund:autre-secret-distinct
+```
 
-- All amounts are integers in minor units.
-- First currency supported: `XOF`
-- A transaction is mono-currency.
-- Ledger entries are immutable.
-- Idempotency is mandatory on all routes that move money.
+Regles de securite :
 
-## 3. Provider Model
+- `X-Service-Key` ne doit jamais etre embarque dans Flutter, JavaScript ou une application cliente ;
+- chaque module possede une cle distincte et rotative ;
+- un module ne peut lire que ses propres `PaymentIntent` ;
+- DiddiFreeID authentifie l'utilisateur aupres du module ; le module autorise l'action metier puis
+  appelle DiddiPay avec son identite de service.
 
-DiddiPay is provider-agnostic.
+## 3. Modele monetaire
 
-Providers are modular adapters in infrastructure, for example:
-- `paystack`
-- `orange_money`
-- `wave`
-- `mtn_momo`
+- `amount` est un entier strictement positif en unite mineure.
+- Pour le MVP XOF, `5000` represente `5 000 XOF`.
+- `currency` vaut actuellement `XOF`.
+- Un `PaymentIntent` est mono-devise et son montant ne change pas apres creation.
+- Le statut DiddiPay est la source de verite normalisee ; le statut Paystack reste un detail
+  d'infrastructure non expose aux clients.
 
-External providers are not the source of truth.
-The source of truth is the DiddiPay transaction state.
+## 4. Creer un PaymentIntent
 
-### Transaction states
+### `POST /payment-intents`
 
-- `pending`
-- `completed`
-- `failed`
-- `reversed`
+Cree une intention et initialise une tentative chez le processeur selectionne.
 
-Provider webhooks update DiddiPay state.
+Headers :
 
-## 4. Public Routes
+```http
+X-Client-ID: diddigo
+X-Service-Key: <secret-backend>
+Idempotency-Key: ride:42:collection:v1
+Content-Type: application/json
+```
 
-### `GET /wallet/balance`
-
-Returns the authenticated user wallet balance.
-
-### `POST /wallet/deposit`
-
-Initiates a wallet deposit.
-
-Behavior:
-- creates a `pending` transaction
-- calls the configured provider adapter
-- returns `202`
-- final completion happens asynchronously via webhook or reconciliation
-
-### `POST /wallet/withdraw`
-
-Initiates a wallet withdrawal.
-
-Request fields include `provider`, `amount`, `phone`, and the transaction `pin`.
-
-Behavior:
-- reserves funds immediately
-- creates a `pending` transaction
-- provider confirmation later closes or reverses the transaction
-
-### `POST /wallet/transfer`
-
-Internal wallet transfer between two users.
-
-Behavior:
-- debit sender
-- credit recipient
-- atomically writes balanced ledger entries
-- always verifies the transaction `pin`
-- requires an optional one-time `step_up_token` when the server-side risk policy triggers
-
-For a sensitive transfer, `step_up_token` is a short-lived DiddiFreeID JWT with
-`purpose=wallet.transfer.high_value`. DiddiPay verifies it locally through JWKS and consumes its
-`jti` atomically. The same proof cannot authorize a distinct transfer. An idempotent replay of the
-original successful request does not require a second proof.
-
-### `POST /wallet/pay/merchant`
-
-Merchant payment from a consumer wallet to a merchant wallet.
-
-Behavior:
-- debit consumer wallet
-- credit merchant wallet
-- transaction can be initiated by a module on behalf of the user
-- the module supplies business context, but DiddiPay owns the ledger
-- the transaction `pin` is mandatory
-
-### `POST /wallet/qr/generate`
-
-Generates a signed QR payload for merchant payment.
-
-### `POST /wallet/qr/verify`
-
-Verifies and decodes a QR payload.
-
-### `GET /wallet/transactions`
-
-Lists transactions with filters and pagination. Every item includes `direction`, whose values are
-`credit`, `debit`, or `null` while a pending provider operation has not produced a ledger entry.
-
-### `GET /wallet/transactions/{transaction_id}`
-
-Returns transaction detail, including direction from the caller point of view.
-
-### `POST /wallet/pin/set`
-
-Defines the first transaction PIN after DiddiFreeID step-up verification. An existing PIN must be
-changed through `/wallet/pin/change` or recovered through `/wallet/pin/reset`.
-
-Request:
+Corps :
 
 ```json
 {
-  "pin": "1234",
-  "confirm_pin": "1234",
-  "step_up_token": "<short-lived-jwt-from-diddifreeid>"
+  "business_reference": "ride:42",
+  "amount": 5000,
+  "currency": "XOF",
+  "payer_user_id": "7c7df66d-7345-4aa7-b818-31cd91955d5b",
+  "payee_user_id": "80ed38ce-1814-4b40-99f8-1ca7e65bea90",
+  "channel": "mobile_money",
+  "network": "orange",
+  "customer_email": "client@example.com",
+  "customer_phone": "+2250700000000",
+  "callback_url": "https://go.diddifree.com/payments/return",
+  "description": "Course DiddiGo 42",
+  "metadata": {
+    "ride_id": "42"
+  }
 }
 ```
 
-The proof must be signed by DiddiFreeID with `purpose=wallet.pin.set`, must belong to the same
-authenticated user, and can be consumed only once.
+Champs :
 
-Success response:
+| Champ | Requis | Regle |
+|---|---:|---|
+| `business_reference` | oui | Reference stable de l'objet dans le module, 1 a 128 caracteres |
+| `amount` | oui | Entier strictement positif |
+| `currency` | oui | `XOF` pour le MVP |
+| `payer_user_id` | non | UUID DiddiFreeID du payeur |
+| `payee_user_id` | non | UUID DiddiFreeID du beneficiaire si connu |
+| `channel` | non | `mobile_money` ou `card` |
+| `network` | non | `orange`, `wave` ou `mtn` ; indication de routage, pas garantie d'affichage PSP |
+| `customer_email` | Paystack | Requis par le checkout Paystack actuel |
+| `customer_phone` | non | Telephone normalise, maximum 32 caracteres |
+| `callback_url` | non | URL de retour navigateur apres le checkout, pas une preuve de paiement |
+| `description` | non | Libelle lisible, maximum 255 caracteres |
+| `metadata` | non | Contexte metier JSON non sensible |
+
+Reponse `201 Created` :
 
 ```json
 {
-  "status": "ok",
-  "account_id": "uuid",
-  "recovery_codes": ["one-time-code-1", "one-time-code-2"]
+  "id": "dcd7b1f8-7f28-4a88-a909-e0eae3fa7d84",
+  "client_id": "diddigo",
+  "business_reference": "ride:42",
+  "amount": 5000,
+  "currency": "XOF",
+  "status": "requires_action",
+  "payer_user_id": "7c7df66d-7345-4aa7-b818-31cd91955d5b",
+  "payee_user_id": "80ed38ce-1814-4b40-99f8-1ca7e65bea90",
+  "description": "Course DiddiGo 42",
+  "metadata": {
+    "ride_id": "42"
+  },
+  "refunded_amount": 0,
+  "attempts": [
+    {
+      "id": "b0198fb9-d36d-4395-9225-76c686739264",
+      "status": "requires_action",
+      "channel": "mobile_money",
+      "network": "orange",
+      "next_action": {
+        "type": "redirect",
+        "url": "https://checkout.paystack.com/example",
+        "instructions": null,
+        "expires_at": null
+      },
+      "failure_code": null,
+      "created_at": "2026-08-15T10:00:00Z",
+      "updated_at": "2026-08-15T10:00:00Z"
+    }
+  ],
+  "created_at": "2026-08-15T10:00:00Z",
+  "updated_at": "2026-08-15T10:00:00Z"
 }
 ```
 
-Recovery codes are returned only when issued and must be shown once to the user.
+### Idempotence
 
-Additional errors: `PIN_ALREADY_SET`, `STEP_UP_PROOF_INVALID`, `STEP_UP_PROOF_EXPIRED`,
-`STEP_UP_PROOF_ALREADY_USED`.
+La cle doit etre derivee de l'action metier et conservee lors d'un retry reseau. Une nouvelle cle ne
+doit pas etre generee tant que l'utilisateur repete exactement la meme tentative metier.
 
-### `POST /wallet/pin/change`
+- meme cle et meme requete : le meme `PaymentIntent` est retourne, sans nouveau debit ;
+- meme cle et requete differente : `409 IDEMPOTENCY_CONFLICT` ;
+- cle absente : `422 IDEMPOTENCY_KEY_REQUIRED`.
 
-Changes an existing PIN after the current PIN is verified.
+Le module doit stocker `payment_intent_id`, `business_reference` et la cle d'idempotence avec son
+objet metier.
 
-Success response: `{ "status": "ok", "account_id": "uuid" }`.
+## 5. Consulter les paiements
 
-### `POST /wallet/pin/reset`
+### `GET /payment-intents/{intent_id}`
 
-Resets the PIN using a recovery code issued at PIN creation or admin recovery.
+Retourne le `PaymentIntent` et ses tentatives. Le `X-Client-ID` appelant doit en etre proprietaire.
+Un identifiant inconnu ou appartenant a un autre module retourne `404 PAYMENT_INTENT_NOT_FOUND`.
 
-Success response: `{ "status": "ok", "account_id": "uuid" }`.
+### `GET /payment-intents?limit=50`
 
-### Sensitive transfer step-up
+Retourne les derniers paiements du module :
 
-The frontend must not embed the risk threshold. It first attempts the transfer and reacts to
-`STEP_UP_OTP_REQUIRED`. It then requests and verifies a DiddiFreeID challenge for
-`wallet.transfer.high_value`, receives a signed `step_up_token`, and retries the same transfer with
-that token. DiddiPay has no route that accepts the raw OTP.
+```json
+{
+  "data": []
+}
+```
 
-The threshold is configured per environment with `WALLET_STEP_UP_THRESHOLD_XOF`.
+`limit` accepte une valeur de `1` a `100`. Cette route sert a l'exploitation et au MVP ; une
+pagination par curseur sera ajoutee avant les volumes de production eleves.
 
-### `POST /wallet/ops/pin/reset`
+## 6. Annuler une intention
 
-Admin-only escape hatch to reset a wallet PIN with audit logging.
+### `POST /payment-intents/{intent_id}/cancel`
 
-## 5. Deposit Lifecycle
+Annule uniquement une tentative locale encore `pending` et jamais envoyee a un processeur. Une
+fois la tentative initialisee chez Paystack, DiddiPay refuse l'annulation locale avec
+`409 PAYMENT_OPERATION_CONFLICT` afin de ne pas afficher un faux etat final.
 
-1. Client requests deposit
-2. DiddiPay creates a `pending` transaction
-3. DiddiPay asks the provider to initiate the payment
-4. Provider webhook arrives later
-5. DiddiPay verifies the webhook signature
-6. DiddiPay marks the transaction `completed` or `failed`
-7. If completed, DiddiPay posts the ledger entries and credits the wallet
+Cette route ne remplace pas un remboursement.
 
-## 6. Withdrawal Lifecycle
+## 7. Statuts normalises
 
-1. Client requests withdrawal
-2. DiddiPay immediately reserves funds
-3. DiddiPay creates a `pending` transaction
-4. Provider webhook arrives later
-5. DiddiPay verifies the webhook signature
-6. DiddiPay marks the transaction `completed`
-7. If provider fails, DiddiPay marks it `reversed`
+### PaymentIntent
 
-## 7. Merchant Payment Lifecycle
+| Statut | Sens |
+|---|---|
+| `requires_action` | Le payeur doit executer `next_action` |
+| `processing` | Paiement en cours ou confirmation provider attendue |
+| `succeeded` | Paiement confirme par DiddiPay |
+| `failed` | Tentative terminee en echec |
+| `cancelled` | Intention annulee avant traitement externe |
+| `partially_refunded` | Une partie du montant a ete remboursee |
+| `refunded` | Le montant capture a ete integralement rembourse |
 
-Merchant payment is a wallet-to-wallet movement.
+### PaymentAttempt
 
-The module that initiated the action supplies context such as:
-- service name
-- order reference
-- ride reference
-- invoice reference
+Une tentative peut etre `pending`, `requires_action`, `processing`, `succeeded`, `failed`,
+`cancelled` ou `unknown`.
 
-DiddiPay still owns:
-- authorization
-- idempotency
-- transaction state
-- ledger entries
+`unknown` est un etat de securite important : DiddiPay ne sait pas encore si le processeur a accepte
+l'operation. Le module ne doit ni conclure a un echec ni relancer un nouveau debit. DiddiPay doit
+reconcilier cette tentative.
 
-The module that initiates the payment may be DiddiGo, DiddiShop or any future
-consumer, but it does not own the balance. It only contributes business context
-such as an order id, ride id or invoice id.
+## 8. NextAction
 
-## 8. CORS
+Le module ne doit jamais coder une logique specifique a Paystack. Il transmet au frontend la
+structure normalisee `next_action` :
 
-Allowed origins must include:
-- all `localhost` ports
-- `*.diddifree.com`
-- `*.vercel.com`
+| Type | Comportement client |
+|---|---|
+| `redirect` | Ouvrir `url` dans un navigateur securise ou une WebView conforme |
+| `mobile_money_prompt` | Informer l'utilisateur de confirmer sur son telephone |
+| `display_instructions` | Afficher `instructions` |
+| `await_confirmation` | Afficher un etat d'attente et rafraichir le statut |
+| `none` | Aucune action utilisateur |
 
-Explicit CORS origins can also be configured through `CORS_ORIGINS`.
-When explicit origins are provided, the backend keeps them exact and still
-supports the wildcard development regex for localhost and the main DiddiFree
-domains.
+L'URL de retour navigateur ne prouve jamais le succes. Seul `status=succeeded`, obtenu depuis le
+backend du module apres confirmation DiddiPay, autorise la livraison du service.
 
-## 9. Errors
+## 9. Webhook Paystack
 
-Errors follow the standard envelope:
+### `POST /payments/webhooks/paystack`
+
+Cette route est appelee uniquement par Paystack. Elle ne requiert pas les headers S2S des modules.
+DiddiPay verifie `X-Paystack-Signature` sur le corps brut avant tout traitement.
+
+Reponse :
+
+```json
+{
+  "status": "processed",
+  "event_key": "charge.success:dpi_reference:success",
+  "payment_intent_id": "dcd7b1f8-7f28-4a88-a909-e0eae3fa7d84"
+}
+```
+
+Valeurs possibles de `status` : `processed`, `duplicate`, `ignored`, `failed`.
+
+Invariants :
+
+- chaque evenement provider est conserve et deduplique ;
+- le montant et la devise sont compares a l'intention avant succes ;
+- les donnees sensibles du payload provider ne sont pas conservees ;
+- un webhook duplique ne produit pas une seconde transition metier ;
+- la reconciliation couvre les webhooks manquants et les appels provider incertains.
+
+## 10. Cycle de vie
+
+1. Le frontend demande au backend du module de payer son objet metier.
+2. Le module verifie le JWT DiddiFreeID, les roles locaux, le montant et l'etat de l'objet.
+3. Le module cree un `PaymentIntent` avec une cle d'idempotence stable.
+4. DiddiPay choisit un processeur et renvoie un `next_action` provider-neutral.
+5. Le frontend execute cette action.
+6. Paystack notifie DiddiPay de maniere asynchrone.
+7. DiddiPay verifie, deduplique et met a jour son statut.
+8. DiddiPay notifie durablement le module ; le module traite l'evenement de maniere idempotente.
+9. Le frontend lit l'etat de la course, de l'investissement ou de la commande depuis le module.
+10. La reconciliation repare un callback absent ou un resultat incertain.
+
+## 11. Erreurs
+
+Envelope standard :
 
 ```json
 {
   "error": {
     "code": "ERROR_CODE",
-    "message": "Human readable message",
+    "message": "Message lisible",
     "details": null
   }
 }
 ```
 
-## 10. Notes
+Erreurs principales :
 
-- DiddiPay remains the wallet system of record.
-- Providers are interchangeable adapters.
-- DiddiFreeID is only the central identity provider.
-- Module-specific roles are not stored in DiddiFreeID.
-- DiddiPay is a wallet, not a payment orchestrator: external rails feed or cash out the wallet.
+| HTTP | Code | Signification |
+|---:|---|---|
+| `401` | `UNAUTHENTICATED` | Identifiants de service invalides |
+| `404` | `PAYMENT_INTENT_NOT_FOUND` | Intention absente ou non visible par ce module |
+| `409` | `IDEMPOTENCY_CONFLICT` | Cle reutilisee avec une autre requete |
+| `409` | `PAYMENT_OPERATION_CONFLICT` | Operation impossible dans l'etat courant |
+| `422` | `IDEMPOTENCY_KEY_REQUIRED` | Header d'idempotence absent |
+| `422` | `PAYMENT_METHOD_UNAVAILABLE` | Aucun adaptateur ne couvre la combinaison demandee |
+| `422` | validation FastAPI | Corps, UUID, enum ou limite invalide |
+
+## 12. Sante et exploitation
+
+- `GET /health` : processus API vivant ;
+- `GET /ready` : dependances necessaires disponibles ;
+- le demarrage Docker execute les migrations Alembic avant Uvicorn ;
+- la cle Paystack reste uniquement dans les secrets backend ;
+- les logs ne doivent contenir ni cle service, ni cle Paystack, ni donnees de carte, ni OTP, ni PIN.
+
+## 13. Capacites MVP et limites actuelles
+
+Disponible :
+
+- collections XOF ;
+- checkout Paystack par carte ou Mobile Money selon disponibilite du compte marchand ;
+- sandbox local sans cle Paystack ;
+- webhooks signes, deduplication et reconciliation ;
+- isolation des paiements par module ;
+- outbox transactionnelle pour les evenements de succes.
+
+Pas encore a considerer comme disponible tant que les sprints correspondants ne sont pas livres :
+
+- remboursement Paystack public ;
+- payout/retrait via le nouveau coeur orchestrateur ;
+- settlement comptable complet ;
+- adaptateurs directs Orange Money, Wave ou MTN MoMo ;
+- wallet comme moyen de paiement du nouvel orchestrateur.

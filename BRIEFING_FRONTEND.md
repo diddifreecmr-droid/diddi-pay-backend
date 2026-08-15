@@ -1,148 +1,219 @@
-# Briefing Frontend (Flutter) — DiddiPay / DiddiFund API
+# Briefing frontend - Integration DiddiPay
 
-Ce document explique comment lancer l'API backend en local pour développer et tester l'app
-Flutter contre elle. Il ne couvre pas le contrat des routes en détail — pour ça, voir
-`DiddiPay_DiddiFund_Contrat_API.md` (métier) et `DiddiFreeID_Contrat_API.md` (authentification).
+**Version :** 3.0 - PaymentIntent
 
-## 1. C'est quoi
+**Public :** equipes Flutter et web des modules DiddiFree
 
-Un monolithe Python/FastAPI qui expose deux modules :
-- **wallet** (DiddiPay) : solde, transferts, paiement marchand, dépôt/retrait, QR de paiement.
-- **fund** (DiddiFund) : campagnes de crowdlending, investissement, prêts.
+Ce brief explique le parcours d'interface. Les schemas exacts des routes, headers, requetes et
+reponses sont visibles dans Swagger :
 
-L'authentification n'est **pas** gérée par cette API : elle vérifie seulement les tokens JWT émis
-par le service **DiddiFreeID** (identité), voir section 4 — c'est le point le plus important pour
-toi.
-
-## 2. Lancer le backend en local
-
-Prérequis : Docker Desktop installé et lancé.
-
-```bash
-git clone <ce dépôt>
-cd diddipay-fund
-cp .env.example .env
-docker compose up -d --build
+```text
+https://<api-host>/payfund/v1/docs
 ```
 
-Ça démarre Postgres, Redis et l'API ensemble, migrations Alembic rejouées automatiquement au
-démarrage. Vérifie que ça tourne :
+Le contrat metier complet est dans `DiddiPay_Contrat_API.md`.
 
-```bash
-docker compose logs -f app
+## 1. La regle la plus importante
+
+Le frontend ne doit pas appeler directement les routes `/payment-intents`.
+
+Ces routes exigent `X-Client-ID` et `X-Service-Key`. La cle service est un secret backend. Si elle
+est integree dans une application Flutter, un bundle web ou un depot frontend, elle doit etre
+consideree compromise.
+
+Le parcours correct est :
+
+```text
+Frontend -> backend DiddiGo/DiddiFund -> DiddiPay -> Paystack
+Frontend <- backend DiddiGo/DiddiFund <- DiddiPay <- webhook Paystack
 ```
 
-**Ports** : par défaut dans `.env.example`, l'API écoute sur `48213` (host). Si ce port est déjà
-pris sur ta machine, change `APP_PORT` dans `.env` avant de relancer.
+Le frontend continue d'utiliser son JWT DiddiFreeID pour parler au backend de son module. C'est ce
+backend qui controle les roles locaux, calcule le montant et appelle DiddiPay.
 
-## 3. URL de base à utiliser dans l'app Flutter
+## 2. Ce que DiddiPay est devenu
 
+DiddiPay n'est plus defini comme un simple wallet. Il orchestre un paiement quel que soit le rail :
+
+- Paystack aujourd'hui ;
+- Orange Money, Wave ou MTN MoMo en direct demain ;
+- eventuellement DiddiWallet plus tard.
+
+L'UI ne doit donc jamais afficher une logique codee en dur du type « si Paystack alors... ». Elle
+recoit un `PaymentIntent` et execute son `next_action` normalise.
+
+## 3. Contrat a demander au backend du module
+
+Chaque module doit exposer au frontend des routes metier adaptees a son produit, par exemple :
+
+```text
+POST /rides/{ride_id}/payment
+GET  /rides/{ride_id}/payment
+
+POST /investments/{investment_id}/payment
+GET  /investments/{investment_id}/payment
 ```
-http://<host>:48213/payfund/v1
+
+Le nom exact appartient a DiddiGo ou DiddiFund. La reponse frontend doit au minimum contenir :
+
+```json
+{
+  "business_status": "awaiting_payment",
+  "payment": {
+    "id": "dcd7b1f8-7f28-4a88-a909-e0eae3fa7d84",
+    "status": "requires_action",
+    "amount": 5000,
+    "currency": "XOF",
+    "next_action": {
+      "type": "redirect",
+      "url": "https://checkout.paystack.com/example",
+      "instructions": null,
+      "expires_at": null
+    }
+  }
+}
 ```
 
-Documentation interactive (Swagger) pour explorer toutes les routes et leurs schémas exacts :
+Le backend du module peut simplifier la reponse DiddiPay, mais il ne doit pas transformer un statut
+incertain en succes ou en echec definitif.
 
-```
-http://<host>:48213/payfund/v1/docs
-```
+## 4. Parcours de paiement frontend
 
-Swagger est le contrat HTTP exécutable : toute route, tout corps de requête et toute réponse
-JSON de succès doivent y être décrits. Ce brief ne remplace pas ces schémas ; il explique les
-enchaînements d'écrans, les responsabilités entre services et les règles métier qui ne doivent pas
-être recopiées dans le frontend.
+1. L'utilisateur confirme la course, l'investissement ou la commande.
+2. Le frontend appelle la route de paiement du module avec le JWT DiddiFreeID.
+3. Le bouton passe immediatement en etat de chargement et empeche les doubles clics.
+4. Le backend renvoie le paiement et son `next_action`.
+5. Le frontend execute le `next_action`.
+6. Au retour du navigateur, l'ecran affiche « Verification du paiement ».
+7. Le frontend interroge le backend du module jusqu'a un etat stable ou jusqu'au delai UX.
+8. Seul `succeeded` affiche le succes et debloque le service.
+9. `failed` permet une nouvelle tentative explicite.
+10. `processing` ou `unknown` reste en attente ; ne jamais creer automatiquement un second debit.
 
-`<host>` dépend de où tourne le backend par rapport à l'app :
+Le retour vers `callback_url` signifie seulement que l'utilisateur est revenu du checkout. Il ne
+prouve pas que l'argent a ete recu.
 
-| Contexte Flutter | Valeur de `<host>` |
+## 5. Gestion de next_action
+
+| `type` | Comportement UI |
 |---|---|
-| Émulateur Android | `10.0.2.2` (pas `localhost` — l'émulateur a son propre réseau) |
-| Simulateur iOS | `localhost` fonctionne |
-| Appareil physique (même Wi-Fi que le backend) | l'IP LAN de la machine qui héberge Docker, ex. `192.168.1.x` |
-| Flutter Web | `localhost` — **mais voir l'avertissement CORS ci-dessous** |
+| `redirect` | Ouvrir `url` dans un navigateur securise ; revenir sur l'ecran de verification |
+| `mobile_money_prompt` | Demander de confirmer la notification sur le telephone |
+| `display_instructions` | Afficher le texte de `instructions` sans l'interpreter |
+| `await_confirmation` | Afficher une attente avec actualisation du statut |
+| `none` | Ne rien ouvrir ; consulter le statut |
 
-**Flutter Web** : CORS accepte les origines `localhost` sur tous les ports ainsi que les sous-domaines
-de `diddifree.com` et `vercel.com`. Les origines de production supplémentaires se configurent avec
-`CORS_ORIGINS`.
+Toujours prevoir qu'un futur provider retourne un autre type d'action que Paystack. Les types
+inconnus doivent produire un message neutre et journalisable, pas un crash de l'application.
 
-## 4. Authentification — le point critique
+## 6. Affichage des statuts
 
-Cette API ne délivre **aucun token elle-même**. Elle vérifie localement les JWT émis par
-**DiddiFreeID**, en environnement de staging :
+| Statut DiddiPay | Texte conseille | Action UI |
+|---|---|---|
+| `requires_action` | Paiement a confirmer | Executer ou reproposer l'action |
+| `processing` | Paiement en cours de verification | Attendre et rafraichir |
+| `succeeded` | Paiement confirme | Afficher le recu / continuer |
+| `failed` | Paiement non abouti | Afficher la raison generique et proposer de reessayer |
+| `cancelled` | Paiement annule | Retour au choix de paiement |
+| `partially_refunded` | Remboursement partiel effectue | Afficher le montant rembourse |
+| `refunded` | Paiement rembourse | Afficher l'etat final |
 
+Une tentative `unknown` veut dire « resultat pas encore determine ». Le texte utilisateur conseille
+est : « Nous verifions votre paiement. Ne relancez pas l'operation pour le moment. »
+
+## 7. Polling raisonnable pour le MVP
+
+Les notifications backend sont asynchrones. Pour offrir un retour rapide apres le checkout, le
+frontend peut interroger la route de statut du module :
+
+- toutes les 2 secondes pendant les 10 premieres secondes ;
+- puis toutes les 5 secondes jusqu'a 60 secondes ;
+- ensuite afficher un etat en attente avec un bouton « Actualiser ».
+
+Arreter le polling lorsque l'ecran est ferme, lorsque l'application passe en arriere-plan ou quand
+le statut devient final. Le backend du module reste responsable de recevoir l'evenement DiddiPay,
+meme si le frontend est ferme.
+
+## 8. Idempotence et doubles clics
+
+Le frontend desactive le bouton pendant la requete, mais cela ne remplace pas l'idempotence backend.
+
+Si la connexion coupe apres un clic :
+
+- le frontend redemande d'abord l'etat de l'objet metier ;
+- le backend reutilise sa cle d'idempotence pour la meme operation ;
+- le frontend ne fabrique pas directement une cle pour appeler DiddiPay ;
+- aucun message « echec » ne doit etre affiche uniquement parce que la requete a expire.
+
+## 9. Donnees et securite UI
+
+- Ne jamais collecter ni stocker les donnees de carte dans l'application DiddiFree.
+- Le paiement carte reste sur la page securisee du processeur.
+- Ne jamais logger une URL complete si elle peut contenir un jeton temporaire.
+- Ne jamais afficher `X-Service-Key`, une cle Paystack ou un payload webhook.
+- Ne placer aucune donnee sensible dans `metadata`.
+- Le montant et le beneficiaire affiches viennent du backend du module, pas d'une valeur locale
+  modifiable.
+- Utiliser le formatage XOF sans decimales, mais conserver `amount` comme entier dans les modeles.
+
+## 10. Gestion des erreurs
+
+Toutes les erreurs backend suivent normalement cette forme :
+
+```json
+{
+  "error": {
+    "code": "PAYMENT_OPERATION_CONFLICT",
+    "message": "Message lisible",
+    "details": null
+  }
+}
 ```
-https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json
-```
 
-Concrètement, pour appeler une route protégée (quasiment toutes), il te faut un vrai
-`access_token` obtenu en appelant le service DiddiFreeID staging lui-même — le backend local ne
-peut pas en fabriquer un valide (il n'a que la clé publique, pas la clé privée de signature) :
+Le frontend doit piloter le comportement par `error.code`, pas en analysant `message`. Le message
+peut etre affiche ou remplace par une traduction UX.
 
-1. `POST /auth/register` — créer un utilisateur (téléphone + nom)
-2. `POST /auth/otp/request` — demander un code OTP
-3. `POST /auth/otp/verify` — récupérer `access_token` + `refresh_token`
+Cas importants :
 
-Base URL DiddiFreeID (dev) : `https://api-dev.diddifree.app/identity/v1` (à confirmer — c'est
-celle du contrat DiddiFreeID, différente de l'URL JWKS staging ci-dessus ; si l'une des deux ne
-répond pas, demande-moi de vérifier laquelle est la bonne actuellement active).
+| Code / situation | Comportement frontend |
+|---|---|
+| `IDEMPOTENCY_CONFLICT` | Rafraichir l'etat ; ne pas retenter avec des donnees differentes |
+| `PAYMENT_METHOD_UNAVAILABLE` | Revenir au choix de moyen de paiement |
+| `PAYMENT_INTENT_NOT_FOUND` | Rafraichir l'objet metier ou contacter le support |
+| timeout reseau | Statut inconnu ; relire avant toute nouvelle tentative |
+| `401` du module | Rafraichir le token DiddiFreeID selon le contrat auth |
 
-Puis sur chaque requête à l'API DiddiPay/DiddiFund :
+## 11. Paystack aujourd'hui, PSP directs demain
 
-```
-Authorization: Bearer <access_token>
-```
+Dans le MVP, `next_action.type` sera le plus souvent `redirect` vers le checkout Paystack. Le compte
+marchand Paystack decide quels canaux sont reellement proposes dans le pays et l'environnement.
 
-Token expiré → l'API répond `401 TOKEN_EXPIRED` ; c'est au frontend d'appeler
-`POST /auth/refresh` sur DiddiFreeID, pas à cette API de le faire.
+L'UI peut proposer « Mobile Money » ou « Carte » selon les capacites retournees par son backend,
+mais elle ne doit pas promettre Orange Money, Wave ou MTN si le backend ne les annonce pas comme
+actifs. La liste des moyens disponibles doit devenir une configuration/capability backend, pas une
+liste codee en dur dans Flutter.
 
-## 5. Conventions à connaître côté client
+## 12. Wallet et anciennes interfaces
 
-- **Toutes les erreurs** ont la même forme :
-  ```json
-  { "error": { "code": "SOME_CODE", "message": "...", "details": null } }
-  ```
-- **Idempotency-Key** : header **obligatoire** sur toute route qui déplace des fonds (transfert,
-  paiement marchand, dépôt, retrait, investissement, remboursement). Génère un UUID côté client à
-  chaque tentative d'action utilisateur ; si tu rejoues la même requête avec la même clé (retry
-  réseau), l'API renvoie la transaction déjà créée au lieu de la dupliquer.
-- **Montants** : toujours des entiers en unité mineure (XOF : pas de décimales, donc `5000` =
-  5000 XOF, pas de centimes à gérer côté UI pour l'instant).
-- **QR code marchand** : le contrat ne fixait pas le format, il est maintenant fixé par le
-  backend (jeton signé HMAC opaque, à traiter comme une chaîne à scanner/afficher telle quelle,
-  pas à parser côté client). Détails dans `README.md` section « QR code de paiement marchand ».
+Les ecrans historiques `/wallet/*` peuvent rester presents pendant la migration. Ils concernent le
+wallet legacy et ses PIN, transferts P2P, depots ou retraits.
 
-## 6. Routes disponibles aujourd'hui
+Pour toute nouvelle fonctionnalite DiddiGo, DiddiFund ou futur module :
 
-Voir le tableau à jour dans `README.md` (« Ce qui est implémenté ») — toutes les routes wallet et
-fund listées y sont fonctionnelles. Swagger (`/payfund/v1/docs`) reste la source de vérité pour
-les schémas de requête/réponse exacts.
+- utiliser le parcours `PaymentIntent` via le backend du module ;
+- ne pas exiger la creation d'un wallet pour payer avec Paystack ;
+- ne pas confondre le PIN wallet avec l'autorisation d'un paiement externe ;
+- traiter un futur DiddiWallet comme un moyen de paiement parmi d'autres.
 
-### Wallet UX now
+## 13. Checklist avant livraison frontend
 
-- Le wallet n'est pas créé par un bouton "Créer mon compte". Le flux normal est:
-  1. login DiddiFreeID,
-  2. `GET /wallet/balance`,
-  3. affichage du solde.
-- Le frontend ne copie pas le seuil sensible. Il tente `POST /wallet/transfer`; si DiddiPay répond
-  `409 STEP_UP_OTP_REQUIRED`, l'UI demande puis vérifie auprès de DiddiFreeID un challenge avec
-  `purpose=wallet.transfer.high_value`. Elle rejoue ensuite le transfert avec le même destinataire,
-  le même montant, le même PIN et le JWT court reçu dans `step_up_token`. Le code OTP brut n'est
-  jamais envoyé à DiddiPay.
-- Le `pin` est obligatoire sur toutes les sorties initiées par l'utilisateur: transfert P2P,
-  paiement marchand, retrait, investissement DiddiFund et remboursement de prêt.
-- Le PIN est un vrai secret transactionnel. Il ne doit jamais être remplacé par un simple écran
-  "confirmez le montant".
-- Pour le premier PIN, demander puis vérifier le challenge `wallet.pin.set` auprès de DiddiFreeID.
-  Envoyer le `step_up_token` reçu à `POST /wallet/pin/set`; ne jamais transmettre le code OTP brut
-  à DiddiPay. Les `recovery_codes` de la réponse doivent être affichés une seule fois.
-- Si un PIN existe déjà, utiliser `/wallet/pin/change`. `/wallet/pin/set` répond
-  `PIN_ALREADY_SET` et ne sert jamais de raccourci pour remplacer un PIN oublié.
-- En cas de perte du PIN, le parcours normal est la récupération par code de secours. Le chemin
-  support/admin n'est qu'un filet d'exploitation.
-
-## 7. Ce qui n'est pas encore branché
-
-- Paystack est le premier provider réel pour les dépôts. Le retrait Paystack n'est pas encore
-  implémenté ; Orange Money, Wave et les autres rails restent en sandbox ou en mode `stub`.
-- Le frontend ne doit proposer un retrait provider réel que lorsqu'un adaptateur de payout est
-  explicitement activé côté backend.
+- Aucun secret service ou Paystack dans le code frontend.
+- Double clic bloque et reprise reseau testee.
+- Tous les statuts DiddiPay ont un rendu.
+- Tous les types de `next_action` ont un fallback.
+- Le retour checkout affiche une verification, jamais un succes immediat.
+- Le polling s'arrete correctement.
+- Un paiement `unknown` ne declenche pas un second debit.
+- Le montant XOF et la reference metier sont affiches avant confirmation.
+- Le parcours fonctionne quand l'application est fermee pendant le webhook.
+- Les anciens ecrans wallet sont clairement separes du nouveau paiement module.
