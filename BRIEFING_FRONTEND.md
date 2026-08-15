@@ -1,6 +1,8 @@
 # Briefing frontend - Integration DiddiPay
 
-**Version :** 3.0 - PaymentIntent
+**Version :** 3.1 - MVP PaymentIntent
+
+**Date :** 2026-08-15
 
 **Public :** equipes Flutter et web des modules DiddiFree
 
@@ -121,6 +123,16 @@ inconnus doivent produire un message neutre et journalisable, pas un crash de l'
 Une tentative `unknown` veut dire « resultat pas encore determine ». Le texte utilisateur conseille
 est : « Nous verifions votre paiement. Ne relancez pas l'operation pour le moment. »
 
+### Paiement, objet metier et settlement sont trois etats differents
+
+- `payment.status=succeeded` signifie que DiddiPay a confirme le paiement du client.
+- `business_status` indique si DiddiGo, DiddiFund ou le module a applique l'effet metier.
+- le settlement indique si le PSP a effectivement verse les fonds a DiddiFree ; il reste un sujet
+  backend/ops et ne doit pas bloquer l'ecran de succes du client.
+
+Le frontend ne doit pas appeler `/financial-summary`. Cette route sert au backend et aux outils
+d'exploitation autorises.
+
 ## 7. Polling raisonnable pour le MVP
 
 Les notifications backend sont asynchrones. Pour offrir un retour rapide apres le checkout, le
@@ -183,7 +195,22 @@ Cas importants :
 | timeout reseau | Statut inconnu ; relire avant toute nouvelle tentative |
 | `401` du module | Rafraichir le token DiddiFreeID selon le contrat auth |
 
-## 11. Paystack aujourd'hui, PSP directs demain
+## 11. Annulation et remboursement
+
+Le frontend demande toujours une annulation ou un remboursement au backend du module, jamais a
+DiddiPay directement.
+
+- `cancelled` concerne une intention qui n'a pas ete envoyee au PSP ;
+- un paiement deja confirme doit passer par un remboursement ;
+- `partially_refunded` affiche le montant rembourse et le montant conserve ;
+- `refunded` est final pour le paiement, mais le module reste responsable du statut de la course,
+  de l'investissement ou de la commande ;
+- un remboursement `processing` ne doit pas etre affiche comme termine.
+
+Le backend doit exposer une route metier adaptee, par exemple
+`POST /rides/{ride_id}/refund`, avec sa propre autorisation et son idempotence.
+
+## 12. Paystack aujourd'hui, PSP directs demain
 
 Dans le MVP, `next_action.type` sera le plus souvent `redirect` vers le checkout Paystack. Le compte
 marchand Paystack decide quels canaux sont reellement proposes dans le pays et l'environnement.
@@ -193,7 +220,7 @@ mais elle ne doit pas promettre Orange Money, Wave ou MTN si le backend ne les a
 actifs. La liste des moyens disponibles doit devenir une configuration/capability backend, pas une
 liste codee en dur dans Flutter.
 
-## 12. Wallet et anciennes interfaces
+## 13. Wallet et anciennes interfaces
 
 Les ecrans historiques `/wallet/*` peuvent rester presents pendant la migration. Ils concernent le
 wallet legacy et ses PIN, transferts P2P, depots ou retraits.
@@ -205,7 +232,7 @@ Pour toute nouvelle fonctionnalite DiddiGo, DiddiFund ou futur module :
 - ne pas confondre le PIN wallet avec l'autorisation d'un paiement externe ;
 - traiter un futur DiddiWallet comme un moyen de paiement parmi d'autres.
 
-## 13. Checklist avant livraison frontend
+## 14. Checklist avant livraison frontend
 
 - Aucun secret service ou Paystack dans le code frontend.
 - Double clic bloque et reprise reseau testee.
@@ -217,3 +244,4 @@ Pour toute nouvelle fonctionnalite DiddiGo, DiddiFund ou futur module :
 - Le montant XOF et la reference metier sont affiches avant confirmation.
 - Le parcours fonctionne quand l'application est fermee pendant le webhook.
 - Les anciens ecrans wallet sont clairement separes du nouveau paiement module.
+- Les remboursements en cours, partiels et complets ont des rendus distincts.

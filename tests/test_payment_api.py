@@ -95,6 +95,18 @@ def test_openapi_documents_all_payment_intent_requests(client):
     assert BASE in paths
     assert f"{BASE}/{{intent_id}}" in paths
     assert f"{BASE}/{{intent_id}}/cancel" in paths
+    assert f"{BASE}/{{intent_id}}/refunds" in paths
+    assert f"{BASE}/{{intent_id}}/financial-summary" in paths
     parameters = paths[BASE]["post"]["parameters"]
     names = {parameter["name"] for parameter in parameters}
     assert {"X-Client-ID", "X-Service-Key", "Idempotency-Key"} <= names
+
+
+def test_openapi_documents_paystack_webhook_request(client):
+    schema = client.get("/payfund/v1/openapi.json").json()
+    operation = schema["paths"]["/payfund/v1/payments/webhooks/paystack"]["post"]
+
+    assert operation["requestBody"]["required"] is True
+    assert "application/json" in operation["requestBody"]["content"]
+    parameter_names = {parameter["name"] for parameter in operation["parameters"]}
+    assert "X-Paystack-Signature" in parameter_names

@@ -1,6 +1,8 @@
 # DiddiPay - Contrat API
 
-**Version du contrat :** 3.0 - pivot orchestrateur de paiements
+**Version du contrat :** 3.1 - MVP orchestrateur de paiements
+
+**Date :** 2026-08-15
 
 **Base URL :** `/payfund/v1`
 
@@ -186,6 +188,23 @@ doit pas etre generee tant que l'utilisateur repete exactement la meme tentative
 Le module doit stocker `payment_intent_id`, `business_reference` et la cle d'idempotence avec son
 objet metier.
 
+### Inventaire HTTP du coeur DiddiPay
+
+Toutes les requetes ci-dessous sont exposees dans Swagger, corps et headers compris :
+
+| Methode | Route | Appelant | Usage |
+|---|---|---|---|
+| `POST` | `/payment-intents` | backend module | creer et initialiser un paiement |
+| `GET` | `/payment-intents` | backend module | lister les paiements du module |
+| `GET` | `/payment-intents/{intent_id}` | backend module | lire un paiement et ses tentatives |
+| `POST` | `/payment-intents/{intent_id}/cancel` | backend module | annuler une intention encore locale |
+| `POST` | `/payment-intents/{intent_id}/refunds` | backend module | demander un remboursement idempotent |
+| `GET` | `/payment-intents/{intent_id}/financial-summary` | backend module | lire capture, frais, settlement et reste attendu |
+| `POST` | `/payments/webhooks/paystack` | Paystack | confirmer un evenement provider signe |
+
+Ces chemins sont relatifs a `/payfund/v1`. Les anciennes routes `/wallet/*` sont documentees dans
+le contrat legacy et ne font pas partie du nouveau coeur PaymentIntent.
+
 ## 5. Consulter les paiements
 
 ### `GET /payment-intents/{intent_id}`
@@ -298,6 +317,9 @@ backend du module apres confirmation DiddiPay, autorise la livraison du service.
 
 Cette route est appelee uniquement par Paystack. Elle ne requiert pas les headers S2S des modules.
 DiddiPay verifie `X-Paystack-Signature` sur le corps brut avant tout traitement.
+
+Swagger documente un corps JSON provider extensible, car Paystack peut ajouter des champs. Le
+backend verifie toujours la signature sur les octets bruts recus et non sur un JSON reserialize.
 
 Reponse :
 
@@ -472,11 +494,14 @@ Disponible :
 - sandbox local sans cle Paystack ;
 - webhooks signes, deduplication et reconciliation ;
 - isolation des paiements par module ;
-- outbox transactionnelle pour les evenements de succes.
+- outbox transactionnelle pour les evenements de succes ;
+- remboursements provider-neutral routes vers Paystack ;
+- sous-ledger double entree pour captures, frais, remboursements et settlements manuels ;
+- vue financiere par paiement et commandes ops de supervision.
 
 Pas encore a considerer comme disponible tant que les sprints correspondants ne sont pas livres :
 
 - payout/retrait via le nouveau coeur orchestrateur ;
-- settlement comptable complet ;
+- import automatique et rapprochement global des rapports de settlement Paystack ;
 - adaptateurs directs Orange Money, Wave ou MTN MoMo ;
 - wallet comme moyen de paiement du nouvel orchestrateur.

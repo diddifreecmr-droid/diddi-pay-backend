@@ -1,6 +1,8 @@
 """Signed provider webhook endpoints for the payment orchestrator."""
 
-from fastapi import APIRouter, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Header, Request
 
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.modules.payments.application.errors import ProcessorWebhookRejected
@@ -24,12 +26,48 @@ from payfund_app.shared_kernel.logging import emit
 router = APIRouter(prefix="/payments/webhooks", tags=["payment-webhooks"])
 
 
-@router.post("/paystack", response_model=PaymentWebhookResponse)
+@router.post(
+    "/paystack",
+    response_model=PaymentWebhookResponse,
+    summary="Receive a signed Paystack event",
+    description=(
+        "Provider-only endpoint. DiddiPay verifies X-Paystack-Signature against the exact "
+        "raw request bytes before parsing or applying the event."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "additionalProperties": True},
+                    "example": {
+                        "event": "charge.success",
+                        "data": {
+                            "reference": "dpi_example",
+                            "amount": 500000,
+                            "currency": "XOF",
+                            "status": "success",
+                        },
+                    },
+                }
+            },
+        }
+    },
+)
 async def paystack_webhook(
     request: Request,
     session: SessionDep,
     processor: PaystackWebhookProcessorDep,
+    x_paystack_signature: Annotated[
+        str | None,
+        Header(
+            alias="X-Paystack-Signature",
+            description="HMAC SHA-512 signature calculated by Paystack over the raw body.",
+        ),
+    ] = None,
 ) -> PaymentWebhookResponse:
+    # The processor reads the header mapping so signature verification always uses raw bytes.
+    del x_paystack_signature
     raw_body = await request.body()
     use_cases = PaymentWebhookUseCases(
         PaymentIntentRepository(session),
