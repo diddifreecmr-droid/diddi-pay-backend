@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import uuid
 
 import httpx
@@ -125,3 +127,37 @@ def test_http_rejection_is_a_definitive_failed_attempt():
     result = processor(handler).initialize_payment(request())
     assert result.status == AttemptStatus.FAILED
     assert result.failure_code == "PAYSTACK_INITIALIZATION_FAILED"
+
+
+def test_webhook_signature_and_payload_are_normalized_and_sanitized():
+    raw = json.dumps(
+        {
+            "event": "charge.success",
+            "data": {
+                "reference": "dpi_reference",
+                "status": "success",
+                "amount": 5_000,
+                "currency": "XOF",
+                "channel": "mobile_money",
+                "customer": {"email": "private@example.com"},
+                "authorization": {"last4": "4081"},
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+    signature = hmac.new(b"sk_test_secret", raw, hashlib.sha512).hexdigest()
+
+    event = processor(lambda _: pytest.fail("HTTP must not be called")).parse_webhook(
+        raw, {"X-Paystack-Signature": signature}
+    )
+
+    assert event.status == AttemptStatus.SUCCEEDED
+    assert event.amount == 5_000
+    assert "customer" not in event.sanitized_payload
+    assert "authorization" not in event.sanitized_payload
+
+
+def test_webhook_rejects_invalid_signature():
+    adapter = processor(lambda _: pytest.fail("HTTP must not be called"))
+    with pytest.raises(Exception, match="invalid Paystack webhook signature"):
+        adapter.parse_webhook(b"{}", {"x-paystack-signature": "invalid"})

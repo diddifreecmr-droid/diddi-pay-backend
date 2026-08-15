@@ -132,7 +132,7 @@ class PaymentAttemptRepositoryPort(Protocol):
     def get(self, attempt_id: uuid.UUID, *, for_update: bool = False) -> PaymentAttempt | None: ...
 
     def get_by_provider_reference(
-        self, processor: str, provider_reference: str
+        self, processor: str, provider_reference: str, *, for_update: bool = False
     ) -> PaymentAttempt | None: ...
 
     def list_for_intent(self, intent_id: uuid.UUID) -> list[PaymentAttempt]: ...
@@ -144,6 +144,29 @@ class PaymentAttemptRepositoryPort(Protocol):
 
 class RefundRepositoryPort(Protocol):
     def add(self, refund: Refund, *, client_id: str, processor: str) -> Refund: ...
+
+
+class ProviderEventRepositoryPort(Protocol):
+    def get(self, processor: str, event_key: str): ...
+
+    def add(
+        self,
+        *,
+        processor: str,
+        event_key: str,
+        event_type: str,
+        payload_hash: str,
+        payload: dict,
+    ): ...
+
+    def mark(
+        self,
+        row,
+        *,
+        status: str,
+        payment_attempt_id: uuid.UUID | None = None,
+        error_message: str | None = None,
+    ): ...
 
 
 class UnitOfWorkPort(Protocol):

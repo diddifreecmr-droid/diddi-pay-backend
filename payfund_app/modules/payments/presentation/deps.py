@@ -47,6 +47,7 @@ def get_processor_registry() -> ProcessorRegistry:
                 PaystackPaymentProcessor(
                     secret_key=settings.paystack_secret_key,
                     base_url=settings.paystack_base_url,
+                    webhook_secret=settings.paystack_webhook_secret or None,
                 )
             )
         else:
@@ -64,3 +65,20 @@ def reset_processor_registry() -> None:
 SessionDep = Annotated[Session, Depends(get_session)]
 PaymentClientDep = Annotated[PaymentClient, Depends(get_payment_client)]
 ProcessorRegistryDep = Annotated[ProcessorRegistry, Depends(get_processor_registry)]
+
+
+def get_paystack_webhook_processor() -> PaystackPaymentProcessor:
+    settings = get_settings()
+    secret = settings.paystack_webhook_secret or settings.paystack_secret_key
+    if not secret:
+        raise Unauthenticated("Webhook Paystack non configure.")
+    return PaystackPaymentProcessor(
+        secret_key=settings.paystack_secret_key or secret,
+        base_url=settings.paystack_base_url,
+        webhook_secret=secret,
+    )
+
+
+PaystackWebhookProcessorDep = Annotated[
+    PaystackPaymentProcessor, Depends(get_paystack_webhook_processor)
+]

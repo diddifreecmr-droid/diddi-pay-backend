@@ -29,3 +29,7 @@ class ProcessorCallUncertain(PaymentApplicationError):
     def __init__(self, provider_reference: str, message: str) -> None:
         super().__init__(message)
         self.provider_reference = provider_reference
+
+
+class ProcessorWebhookRejected(PaymentApplicationError):
+    pass

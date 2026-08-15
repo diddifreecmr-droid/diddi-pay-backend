@@ -168,14 +168,15 @@ class PaymentAttemptRepository:
         return self._to_domain(row) if row else None
 
     def get_by_provider_reference(
-        self, processor: str, provider_reference: str
+        self, processor: str, provider_reference: str, *, for_update: bool = False
     ) -> PaymentAttempt | None:
-        row = self.session.scalar(
-            select(PaymentAttemptRecord).where(
-                PaymentAttemptRecord.processor == processor,
-                PaymentAttemptRecord.provider_reference == provider_reference,
-            )
+        query = select(PaymentAttemptRecord).where(
+            PaymentAttemptRecord.processor == processor,
+            PaymentAttemptRecord.provider_reference == provider_reference,
         )
+        if for_update:
+            query = query.with_for_update()
+        row = self.session.scalar(query)
         return self._to_domain(row) if row else None
 
     def list_for_intent(self, intent_id: uuid.UUID) -> list[PaymentAttempt]:
@@ -255,6 +256,22 @@ class ProviderEventRepository:
             status="received",
         )
         self.session.add(row)
+        self.session.flush()
+        return row
+
+    def mark(
+        self,
+        row: ProviderEventRecord,
+        *,
+        status: str,
+        payment_attempt_id: uuid.UUID | None = None,
+        error_message: str | None = None,
+    ) -> ProviderEventRecord:
+        row.status = status
+        row.payment_attempt_id = payment_attempt_id
+        row.error_message = error_message
+        if status in {"processed", "ignored", "failed"}:
+            row.processed_at = datetime.now().astimezone()
         self.session.flush()
         return row
 

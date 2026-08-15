@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import hashlib
+import hmac
+import json
 from typing import Any
 
 import httpx
@@ -10,6 +13,7 @@ import httpx
 from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
+    ProcessorWebhookRejected,
 )
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
@@ -44,12 +48,14 @@ class PaystackPaymentProcessor:
         secret_key: str,
         base_url: str = "https://api.paystack.co",
         client: httpx.Client | None = None,
+        webhook_secret: str | None = None,
     ) -> None:
         if not secret_key:
             raise ValueError("PAYSTACK_SECRET_KEY is required in paystack processor mode")
         self._secret_key = secret_key
         self._base_url = base_url.rstrip("/")
         self._client = client
+        self._webhook_secret = webhook_secret or secret_key
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -148,7 +154,55 @@ class PaystackPaymentProcessor:
     def parse_webhook(
         self, raw_body: bytes, headers: Mapping[str, str]
     ) -> ProviderEvent:
-        raise NotImplementedError("Paystack webhook parsing is delivered in the webhook sprint")
+        signature = next(
+            (value for key, value in headers.items() if key.lower() == "x-paystack-signature"),
+            "",
+        )
+        expected = hmac.new(
+            self._webhook_secret.encode("utf-8"), raw_body, hashlib.sha512
+        ).hexdigest()
+        if not signature or not hmac.compare_digest(signature, expected):
+            raise ProcessorWebhookRejected("invalid Paystack webhook signature")
+        try:
+            payload = json.loads(raw_body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProcessorWebhookRejected("invalid Paystack webhook JSON") from exc
+        if not isinstance(payload, dict):
+            raise ProcessorWebhookRejected("invalid Paystack webhook payload")
+
+        event_type = str(payload.get("event") or "unknown")
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        reference = str(data.get("reference")) if data.get("reference") else None
+        provider_status = str(data.get("status") or "").lower()
+        status = (
+            AttemptStatus.SUCCEEDED
+            if event_type == "charge.success"
+            else self._normalize_status(provider_status)
+            if provider_status
+            else None
+        )
+        event_key = ":".join(
+            [event_type, reference or "no-reference", provider_status or "no-status"]
+        )
+        sanitized = {
+            "event": event_type,
+            "reference": reference,
+            "status": provider_status or None,
+            "amount": data.get("amount"),
+            "currency": data.get("currency"),
+            "channel": data.get("channel"),
+            "paid_at": data.get("paid_at"),
+            "gateway_response": data.get("gateway_response"),
+        }
+        return ProviderEvent(
+            event_key=event_key,
+            event_type=event_type,
+            provider_reference=reference,
+            status=status,
+            amount=int(data["amount"]) if data.get("amount") is not None else None,
+            currency=str(data["currency"]).upper() if data.get("currency") else None,
+            sanitized_payload=sanitized,
+        )
 
     def refund_payment(self, request: RefundRequest) -> RefundResult:
         return RefundResult(

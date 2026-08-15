@@ -85,3 +85,9 @@ class PaymentIntentResponse(BaseModel):
 
 class PaymentIntentListResponse(BaseModel):
     data: list[PaymentIntentResponse]
+
+
+class PaymentWebhookResponse(BaseModel):
+    status: Literal["processed", "duplicate", "ignored", "failed"]
+    event_key: str
+    payment_intent_id: str | None = None
