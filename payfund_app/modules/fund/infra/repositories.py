@@ -6,12 +6,15 @@ import uuid
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from payfund_app.modules.fund.domain.entities import InstallmentStatus, LoanStatus
 from payfund_app.modules.fund.domain.loan import Installment
 from payfund_app.modules.fund.infra.models import (
     Campaign,
+    FundPaymentEventInbox,
+    FundPaymentOrder,
     Investment,
     Loan,
     LoanStatusHistory,
@@ -83,13 +86,15 @@ class InvestmentRepository:
         campaign_id: uuid.UUID,
         investor_user_id: uuid.UUID,
         amount: int,
-        wallet_transaction_id: uuid.UUID,
+        wallet_transaction_id: uuid.UUID | None = None,
+        payment_intent_id: uuid.UUID | None = None,
     ) -> Investment:
         investment = Investment(
             campaign_id=campaign_id,
             investor_user_id=investor_user_id,
             amount=Decimal(amount),
             wallet_transaction_id=wallet_transaction_id,
+            payment_intent_id=payment_intent_id,
         )
         self.session.add(investment)
         self.session.flush()
@@ -111,6 +116,55 @@ class InvestmentRepository:
                 .limit(limit)
             )
         )
+
+
+class FundPaymentOrderRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, order_id: uuid.UUID, *, for_update: bool = False) -> FundPaymentOrder | None:
+        if not for_update:
+            return self.session.get(FundPaymentOrder, order_id)
+        return self.session.scalar(
+            select(FundPaymentOrder)
+            .where(FundPaymentOrder.id == order_id)
+            .with_for_update()
+        )
+
+    def by_idempotency(self, key: str) -> FundPaymentOrder | None:
+        return self.session.scalar(
+            select(FundPaymentOrder).where(FundPaymentOrder.idempotency_key == key)
+        )
+
+    def by_payment_intent(
+        self, payment_intent_id: uuid.UUID, *, for_update: bool = False
+    ) -> FundPaymentOrder | None:
+        query = select(FundPaymentOrder).where(
+            FundPaymentOrder.payment_intent_id == payment_intent_id
+        )
+        if for_update:
+            query = query.with_for_update()
+        return self.session.scalar(query)
+
+    def create(self, **values) -> FundPaymentOrder:
+        order = FundPaymentOrder(**values)
+        self.session.add(order)
+        self.session.flush()
+        return order
+
+
+class FundPaymentEventInboxRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_once(self, *, event_id: uuid.UUID, event_type: str, payload: dict) -> bool:
+        statement = (
+            insert(FundPaymentEventInbox)
+            .values(event_id=event_id, event_type=event_type, payload=payload)
+            .on_conflict_do_nothing(index_elements=[FundPaymentEventInbox.event_id])
+            .returning(FundPaymentEventInbox.event_id)
+        )
+        return self.session.scalar(statement) is not None
 
 
 class LoanRepository:

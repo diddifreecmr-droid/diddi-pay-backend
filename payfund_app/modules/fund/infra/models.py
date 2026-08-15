@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     CHAR,
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -28,6 +29,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    UniqueConstraint,
     func,
     text,
 )
@@ -77,6 +79,9 @@ class Investment(Base):
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_investments_amount_positive"),
         Index("idx_investments_campaign", "campaign_id", "created_at"),
+        UniqueConstraint(
+            "payment_intent_id", name="uq_fund_investment_payment_intent"
+        ),
         {"schema": "fund"},
     )
 
@@ -89,7 +94,12 @@ class Investment(Base):
     investor_user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     # Trace vers wallet.transactions, obtenue via WalletServicePort (§3.2).
-    wallet_transaction_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    wallet_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    payment_intent_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -184,3 +194,61 @@ class LoanStatusHistory(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+
+
+class FundPaymentOrder(Base):
+    __tablename__ = "payment_orders"
+    __table_args__ = (
+        CheckConstraint(
+            "operation_type IN ('investment','loan_repayment')",
+            name="ck_fund_payment_order_operation",
+        ),
+        CheckConstraint(
+            "status IN ('requires_action','processing','succeeded','failed','cancelled','unknown')",
+            name="ck_fund_payment_order_status",
+        ),
+        CheckConstraint("amount > 0", name="ck_fund_payment_order_amount"),
+        Index("idx_fund_payment_orders_user", "payer_user_id", "created_at"),
+        UniqueConstraint("idempotency_key", name="uq_fund_payment_order_idempotency"),
+        UniqueConstraint("payment_intent_id", name="uq_fund_payment_order_intent"),
+        {"schema": "fund"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
+    operation_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    business_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    payer_user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("fund.campaigns.id"), nullable=True
+    )
+    loan_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("fund.loans.id"), nullable=True
+    )
+    payment_intent_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, default="XOF")
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FundPaymentEventInbox(Base):
+    __tablename__ = "payment_event_inbox"
+    __table_args__ = ({"schema": "fund"},)
+
+    event_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     payment_callback_targets: dict[str, PaymentCallbackSettings] = Field(
         default_factory=dict
     )
+    diddifund_diddipay_callback_secret: str = ""
 
     @property
     def payment_service_key_map(self) -> dict[str, str]:

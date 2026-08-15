@@ -10,9 +10,14 @@ import math
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query, Request
 
+from payfund_app.core.config import get_settings
+from payfund_app.core.errors import Conflict, NotFound, Unauthenticated
+from payfund_app.modules.fund.application.payment_use_cases import FundPaymentUseCases
 from payfund_app.modules.fund.application.use_cases import FundUseCases, LoanUseCases
+from payfund_app.modules.fund.infra.callback_security import verify_diddipay_signature
+from payfund_app.modules.fund.infra.payment_orchestrator import InProcessPaymentOrchestrator
 from payfund_app.modules.fund.infra.scoring import get_scoring
 from payfund_app.modules.fund.infra.wallet_client import get_wallet_service
 from payfund_app.modules.fund.presentation.schemas import (
@@ -22,6 +27,11 @@ from payfund_app.modules.fund.presentation.schemas import (
     CreateCampaignResponse,
     CreateLoanRequest,
     CreateLoanResponse,
+    DiddiPayEventRequest,
+    DiddiPayEventResponse,
+    ExternalInvestmentRequest,
+    FundNextActionResponse,
+    FundPaymentOrderResponse,
     InstallmentItem,
     InvestRequest,
     InvestResponse,
@@ -139,6 +149,98 @@ def invest(
 
 
 # --- Prêts -------------------------------------------------------------------
+
+
+def _payment_response(view) -> FundPaymentOrderResponse:
+    payment = view.payment
+    action = payment.next_action if payment else None
+    return FundPaymentOrderResponse(
+        id=view.order.id,
+        operation_type=view.order.operation_type,
+        business_reference=view.order.business_reference,
+        payment_intent_id=view.order.payment_intent_id,
+        amount=view.order.amount,
+        currency=view.order.currency,
+        status=view.order.status,
+        next_action=FundNextActionResponse(
+            type=action.type, url=action.url, instructions=action.instructions
+        )
+        if action
+        else None,
+    )
+
+
+@router.post(
+    "/campaigns/{campaign_id}/invest/payment",
+    response_model=FundPaymentOrderResponse,
+    status_code=201,
+)
+def start_external_investment(
+    campaign_id: uuid.UUID,
+    payload: ExternalInvestmentRequest,
+    user: CurrentUserDep,
+    session: SessionDep,
+    idempotency_key: IdempotencyKeyDep,
+) -> FundPaymentOrderResponse:
+    try:
+        view = FundPaymentUseCases(
+            session, InProcessPaymentOrchestrator(session)
+        ).start_investment(
+            campaign_id=campaign_id,
+            investor_user_id=user.user_id,
+            idempotency_key=idempotency_key,
+            **payload.model_dump(),
+        )
+    except ValueError as exc:
+        if str(exc) == "IDEMPOTENCY_CONFLICT":
+            raise Conflict(
+                "Cle d'idempotence reutilisee avec une autre demande.",
+                code="IDEMPOTENCY_CONFLICT",
+            ) from exc
+        raise
+    return _payment_response(view)
+
+
+@router.get("/payment-orders/{order_id}", response_model=FundPaymentOrderResponse)
+def get_payment_order(
+    order_id: uuid.UUID, user: CurrentUserDep, session: SessionDep
+) -> FundPaymentOrderResponse:
+    try:
+        view = FundPaymentUseCases(
+            session, InProcessPaymentOrchestrator(session)
+        ).get_order(order_id, user.user_id)
+    except LookupError as exc:
+        raise NotFound(
+            "Ordre de paiement introuvable.", code="PAYMENT_ORDER_NOT_FOUND"
+        ) from exc
+    return _payment_response(view)
+
+
+@router.post(
+    "/payments/webhooks/diddipay",
+    response_model=DiddiPayEventResponse,
+)
+async def diddipay_event(
+    payload: DiddiPayEventRequest,
+    request: Request,
+    session: SessionDep,
+    signature: Annotated[str | None, Header(alias="X-DiddiPay-Signature")] = None,
+    event_header: Annotated[str | None, Header(alias="X-DiddiPay-Event-ID")] = None,
+) -> DiddiPayEventResponse:
+    raw_body = await request.body()
+    if not verify_diddipay_signature(
+        raw_body, signature or "", get_settings().diddifund_diddipay_callback_secret
+    ):
+        raise Unauthenticated("Signature callback DiddiPay invalide.")
+    if event_header != str(payload.id):
+        raise Unauthenticated("Identifiant callback DiddiPay invalide.")
+    try:
+        status = FundPaymentUseCases(session).apply_event(
+            event_id=payload.id, event_type=payload.type, data=payload.data
+        )
+    except ValueError as exc:
+        raise Conflict(str(exc), code=str(exc)) from exc
+    return DiddiPayEventResponse(status=status)
 
 
 def _loans(session) -> LoanUseCases:

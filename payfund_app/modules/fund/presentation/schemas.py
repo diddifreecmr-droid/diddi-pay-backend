@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -59,6 +60,43 @@ class InvestResponse(BaseModel):
     campaign_id: uuid.UUID
     amount: int
     wallet_transaction_id: uuid.UUID
+
+
+class ExternalInvestmentRequest(BaseModel):
+    amount: int = Field(gt=0)
+    channel: Literal["mobile_money", "card"] | None = None
+    network: Literal["orange", "wave", "mtn"] | None = None
+    customer_email: str | None = Field(default=None, max_length=254)
+    customer_phone: str | None = Field(default=None, max_length=32)
+    callback_url: str | None = Field(default=None, max_length=2048)
+
+
+class FundNextActionResponse(BaseModel):
+    type: str
+    url: str | None = None
+    instructions: str | None = None
+
+
+class FundPaymentOrderResponse(BaseModel):
+    id: uuid.UUID
+    operation_type: str
+    business_reference: str
+    payment_intent_id: uuid.UUID
+    amount: int
+    currency: str
+    status: str
+    next_action: FundNextActionResponse | None = None
+
+
+class DiddiPayEventRequest(BaseModel):
+    id: uuid.UUID
+    type: str
+    occurred_at: datetime
+    data: dict[str, Any]
+
+
+class DiddiPayEventResponse(BaseModel):
+    status: Literal["processed", "duplicate"]
 
 
 # --- Prêts -------------------------------------------------------------------
