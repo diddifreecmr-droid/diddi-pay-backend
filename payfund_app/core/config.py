@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
     # the PaymentIntent API until operations configures service credentials.
     payment_service_keys: str = ""
+    payment_processor_mode: str = "sandbox"
 
     @property
     def payment_service_key_map(self) -> dict[str, str]:

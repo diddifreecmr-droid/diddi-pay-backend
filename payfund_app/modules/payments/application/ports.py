@@ -69,6 +69,8 @@ class ProviderResult:
     next_action: NextAction | None = None
     failure_code: str | None = None
     failure_message: str | None = None
+    amount: int | None = None
+    currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -19,3 +19,13 @@ class PaymentOperationConflict(PaymentApplicationError):
 
 class PersistenceConflict(PaymentApplicationError):
     pass
+
+
+class ProcessorRequestRejected(PaymentApplicationError):
+    pass
+
+
+class ProcessorCallUncertain(PaymentApplicationError):
+    def __init__(self, provider_reference: str, message: str) -> None:
+        super().__init__(message)
+        self.provider_reference = provider_reference

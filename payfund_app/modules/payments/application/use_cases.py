@@ -11,6 +11,8 @@ from payfund_app.modules.payments.application.errors import (
     PaymentNotFound,
     PaymentOperationConflict,
     PersistenceConflict,
+    ProcessorCallUncertain,
+    ProcessorRequestRejected,
 )
 from payfund_app.modules.payments.application.fingerprints import request_fingerprint
 from payfund_app.modules.payments.application.ports import (
@@ -187,6 +189,22 @@ class PaymentUseCases:
                     callback_url=command.callback_url,
                     metadata=command.metadata,
                 )
+            )
+        except ProcessorRequestRejected as exc:
+            return ProviderResult(
+                provider_reference=f"rejected-{attempt.id}",
+                status=AttemptStatus.FAILED,
+                provider_status="rejected_before_call",
+                failure_code="PROCESSOR_REQUEST_REJECTED",
+                failure_message=str(exc)[:255],
+            )
+        except ProcessorCallUncertain as exc:
+            return ProviderResult(
+                provider_reference=exc.provider_reference,
+                status=AttemptStatus.UNKNOWN,
+                provider_status="network_error",
+                failure_code="PROCESSOR_UNCERTAIN",
+                failure_message=str(exc)[:255],
             )
         except Exception as exc:
             # The processor may have accepted the request before the connection failed.

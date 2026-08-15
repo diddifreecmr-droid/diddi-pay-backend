@@ -14,6 +14,7 @@ from payfund_app.core.database import get_session
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
 from payfund_app.modules.payments.infra.sandbox_processor import SandboxPaymentProcessor
+from payfund_app.modules.payments.infra.paystack_processor import PaystackPaymentProcessor
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,8 +39,26 @@ def get_processor_registry() -> ProcessorRegistry:
     global _registry
     if _registry is None:
         _registry = ProcessorRegistry()
-        _registry.register(SandboxPaymentProcessor())
+        settings = get_settings()
+        if settings.payment_processor_mode == "sandbox":
+            _registry.register(SandboxPaymentProcessor())
+        elif settings.payment_processor_mode == "paystack":
+            _registry.register(
+                PaystackPaymentProcessor(
+                    secret_key=settings.paystack_secret_key,
+                    base_url=settings.paystack_base_url,
+                )
+            )
+        else:
+            raise ValueError(
+                f"Unsupported PAYMENT_PROCESSOR_MODE={settings.payment_processor_mode!r}"
+            )
     return _registry
+
+
+def reset_processor_registry() -> None:
+    global _registry
+    _registry = None
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
