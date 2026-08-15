@@ -8,6 +8,7 @@ from payfund_app.core.database import Base
 
 # Import des modèles pour peupler Base.metadata (autogenerate).
 from payfund_app.modules.fund.infra import models as fund_models  # noqa: F401
+from payfund_app.modules.payments.infra import models as payment_models  # noqa: F401
 from payfund_app.modules.wallet.infra import models as wallet_models  # noqa: F401
 
 config = context.config
@@ -22,7 +23,7 @@ target_metadata = Base.metadata
 def include_object(obj, name, type_, reflected, compare_to):
     # Ne gérer que nos deux schémas applicatifs.
     if type_ == "table":
-        return obj.schema in ("wallet", "fund")
+        return obj.schema in ("wallet", "fund", "payments")
     return True
 
 

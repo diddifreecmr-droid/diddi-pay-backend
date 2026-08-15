@@ -55,6 +55,10 @@ from payfund_app.modules.wallet.presentation.deps import (  # noqa: E402
 from payfund_app.shared_kernel.events.bus import InMemoryEventBus, set_bus  # noqa: E402
 
 TABLES = [
+    "payments.refunds",
+    "payments.provider_events",
+    "payments.payment_attempts",
+    "payments.payment_intents",
     "fund.loan_status_history",
     "fund.repayment_schedule",
     "fund.loans",
@@ -98,6 +102,7 @@ def engine():
         conn.execute(text("CREATE SCHEMA public"))
         conn.execute(text("DROP SCHEMA IF EXISTS wallet CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS fund CASCADE"))
+        conn.execute(text("DROP SCHEMA IF EXISTS payments CASCADE"))
         conn.execute(text("CREATE SCHEMA wallet"))
         conn.execute(text("CREATE SCHEMA fund"))
         conn.execute(text("DROP TABLE IF EXISTS wallet.alembic_version CASCADE"))
