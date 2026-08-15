@@ -216,6 +216,43 @@ fois la tentative initialisee chez Paystack, DiddiPay refuse l'annulation locale
 
 Cette route ne remplace pas un remboursement.
 
+## 6.1 Rembourser un paiement
+
+### `POST /payment-intents/{intent_id}/refunds`
+
+Headers S2S habituels plus `Idempotency-Key`. Corps :
+
+```json
+{
+  "amount": 2500,
+  "reason": "Service annule"
+}
+```
+
+Le paiement doit appartenir au module appelant et avoir reussi. DiddiPay verrouille l'intention,
+additionne les remboursements `pending`, `processing` et `succeeded`, puis refuse toute demande qui
+depasserait le montant capture. La cle idempotente protege contre un double remboursement lors d'un
+retry reseau.
+
+Reponse `201` :
+
+```json
+{
+  "id": "2e288093-9eb4-4b87-b9e8-01e75631e2ab",
+  "payment_intent_id": "dcd7b1f8-7f28-4a88-a909-e0eae3fa7d84",
+  "amount": 2500,
+  "currency": "XOF",
+  "status": "processing",
+  "provider_status": "processing",
+  "created_at": "2026-08-15T14:00:00Z",
+  "updated_at": "2026-08-15T14:00:00Z"
+}
+```
+
+Paystack accepte `transaction`, `amount`, `currency` et les notes de remboursement. Une reponse
+`processing` n'est pas encore un remboursement final. DiddiPay ne passe l'intention a
+`partially_refunded` ou `refunded` qu'apres un resultat `succeeded`.
+
 ## 7. Statuts normalises
 
 ### PaymentIntent
@@ -392,7 +429,6 @@ Disponible :
 
 Pas encore a considerer comme disponible tant que les sprints correspondants ne sont pas livres :
 
-- remboursement Paystack public ;
 - payout/retrait via le nouveau coeur orchestrateur ;
 - settlement comptable complet ;
 - adaptateurs directs Orange Money, Wave ou MTN MoMo ;

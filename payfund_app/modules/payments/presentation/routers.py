@@ -14,6 +14,10 @@ from payfund_app.modules.payments.application.errors import (
     PaymentOperationConflict,
 )
 from payfund_app.modules.payments.application.processor_router import ProcessorRoutingError
+from payfund_app.modules.payments.application.refunds import (
+    CreateRefundCommand,
+    RefundUseCases,
+)
 from payfund_app.modules.payments.application.use_cases import (
     CreatePaymentIntentCommand,
     PaymentUseCases,
@@ -22,6 +26,7 @@ from payfund_app.modules.payments.application.use_cases import (
 from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
+    RefundRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
@@ -31,10 +36,12 @@ from payfund_app.modules.payments.presentation.deps import (
 )
 from payfund_app.modules.payments.presentation.schemas import (
     CreatePaymentIntentRequest,
+    CreateRefundRequest,
     NextActionResponse,
     PaymentAttemptResponse,
     PaymentIntentListResponse,
     PaymentIntentResponse,
+    RefundResponse,
 )
 
 router = APIRouter(prefix="/payment-intents", tags=["payments"])
@@ -169,3 +176,50 @@ def cancel_payment_intent(
     except Exception as exc:
         _translate_error(exc)
         raise
+
+
+@router.post(
+    "/{intent_id}/refunds", response_model=RefundResponse, status_code=201
+)
+def create_refund(
+    intent_id: uuid.UUID,
+    payload: CreateRefundRequest,
+    client: PaymentClientDep,
+    session: SessionDep,
+    processors: ProcessorRegistryDep,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> RefundResponse:
+    if not idempotency_key or not idempotency_key.strip():
+        raise UnprocessableEntity(
+            "L'en-tete Idempotency-Key est obligatoire.",
+            code="IDEMPOTENCY_KEY_REQUIRED",
+        )
+    try:
+        refund = RefundUseCases(
+            PaymentIntentRepository(session),
+            PaymentAttemptRepository(session),
+            RefundRepository(session),
+            processors,
+            SqlAlchemyUnitOfWork(session),
+        ).create(
+            CreateRefundCommand(
+                client_id=client.client_id,
+                payment_intent_id=intent_id,
+                amount=payload.amount,
+                reason=payload.reason,
+                idempotency_key=idempotency_key.strip(),
+            )
+        )
+    except Exception as exc:
+        _translate_error(exc)
+        raise
+    return RefundResponse(
+        id=refund.id,
+        payment_intent_id=refund.payment_intent_id,
+        amount=refund.money.amount if hasattr(refund, "money") else refund.amount,
+        currency=refund.money.currency if hasattr(refund, "money") else refund.currency,
+        status=str(refund.status),
+        provider_status=refund.provider_status,
+        created_at=refund.created_at,
+        updated_at=refund.updated_at,
+    )

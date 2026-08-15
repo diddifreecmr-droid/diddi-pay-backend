@@ -10,8 +10,16 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
 )
-from payfund_app.modules.payments.application.ports import InitializePaymentRequest
-from payfund_app.modules.payments.domain import AttemptStatus, Money, NextActionType
+from payfund_app.modules.payments.application.ports import (
+    InitializePaymentRequest,
+    RefundRequest,
+)
+from payfund_app.modules.payments.domain import (
+    AttemptStatus,
+    Money,
+    NextActionType,
+    RefundStatus,
+)
 from payfund_app.modules.payments.infra.paystack_processor import PaystackPaymentProcessor
 
 
@@ -78,6 +86,38 @@ def test_initialize_requires_email_before_calling_paystack():
     adapter = processor(lambda _: pytest.fail("HTTP must not be called"))
     with pytest.raises(ProcessorRequestRejected, match="customer_email"):
         adapter.initialize_payment(request(customer_email=None))
+
+
+def test_refund_maps_paystack_processing_response():
+    captured = {}
+
+    def handler(http_request):
+        captured["request"] = http_request
+        return httpx.Response(
+            200,
+            json={
+                "status": True,
+                "message": "Refund has been queued for processing",
+                "data": {"id": 12345, "status": "processing"},
+            },
+        )
+
+    result = processor(handler).refund_payment(
+        RefundRequest(
+            refund_id=uuid.uuid4(),
+            provider_reference="dpi_reference",
+            money=Money(2_000),
+            reason="Ride cancelled",
+        )
+    )
+    sent = json.loads(captured["request"].content)
+
+    assert captured["request"].url.path == "/refund"
+    assert sent["transaction"] == "dpi_reference"
+    assert sent["amount"] == 2_000
+    assert sent["currency"] == "XOF"
+    assert result.status == RefundStatus.PROCESSING
+    assert result.provider_reference == "12345"
 
 
 def test_initialize_timeout_is_ambiguous_not_failed():

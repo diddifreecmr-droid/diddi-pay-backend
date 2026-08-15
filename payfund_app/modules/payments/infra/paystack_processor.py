@@ -205,11 +205,42 @@ class PaystackPaymentProcessor:
         )
 
     def refund_payment(self, request: RefundRequest) -> RefundResult:
+        payload = {
+            "transaction": request.provider_reference,
+            "amount": request.money.amount,
+            "currency": request.money.currency,
+            "merchant_note": f"DiddiPay refund {request.refund_id}",
+        }
+        if request.reason:
+            payload["customer_note"] = request.reason
+        try:
+            response = self._request("POST", "/refund", json=payload)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProcessorCallUncertain(
+                str(request.refund_id), "Paystack refund outcome is unknown"
+            ) from exc
+        body = self._json(response)
+        if response.status_code >= 400 or not body.get("status"):
+            return RefundResult(
+                provider_reference=None,
+                status=RefundStatus.FAILED,
+                provider_status=f"http_{response.status_code}",
+                failure_code="PAYSTACK_REFUND_FAILED",
+                failure_message=str(body.get("message") or "Paystack rejected the refund")[:255],
+            )
+        data = body.get("data") or {}
+        provider_status = str(data.get("status") or "processing").lower()
+        status = (
+            RefundStatus.SUCCEEDED
+            if provider_status in {"processed", "success", "succeeded"}
+            else RefundStatus.FAILED
+            if provider_status in {"failed", "cancelled"}
+            else RefundStatus.PROCESSING
+        )
         return RefundResult(
-            provider_reference=None,
-            status=RefundStatus.FAILED,
-            provider_status="not_implemented",
-            failure_code="PAYSTACK_REFUND_NOT_IMPLEMENTED",
+            provider_reference=str(data.get("id")) if data.get("id") is not None else None,
+            status=status,
+            provider_status=provider_status,
         )
 
     @staticmethod

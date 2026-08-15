@@ -91,3 +91,21 @@ class PaymentWebhookResponse(BaseModel):
     status: Literal["processed", "duplicate", "ignored", "failed"]
     event_key: str
     payment_intent_id: str | None = None
+
+
+class CreateRefundRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: int = Field(gt=0, description="Amount to refund in minor units")
+    reason: str | None = Field(default=None, max_length=255)
+
+
+class RefundResponse(BaseModel):
+    id: uuid.UUID
+    payment_intent_id: uuid.UUID
+    amount: int
+    currency: str
+    status: Literal["pending", "processing", "succeeded", "failed"]
+    provider_status: str | None = None
+    created_at: datetime
+    updated_at: datetime

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from payfund_app.modules.payments.domain import (
@@ -329,6 +329,26 @@ class RefundRepository:
                 RefundRecord.idempotency_key == key,
             )
         )
+
+    def total_active_for_intent(self, payment_intent_id: uuid.UUID) -> int:
+        value = self.session.scalar(
+            select(func.coalesce(func.sum(RefundRecord.amount), 0)).where(
+                RefundRecord.payment_intent_id == payment_intent_id,
+                RefundRecord.status.in_(("pending", "processing", "succeeded")),
+            )
+        )
+        return int(value or 0)
+
+    def save(self, refund: Refund) -> Refund:
+        row = self.session.get(RefundRecord, refund.id)
+        if row is None:
+            raise LookupError(f"refund not found: {refund.id}")
+        row.status = str(refund.status)
+        row.provider_reference = refund.provider_reference
+        row.provider_status = refund.provider_status
+        row.updated_at = refund.updated_at
+        self.session.flush()
+        return refund
 
 
 class PaymentOutboxRepository:
