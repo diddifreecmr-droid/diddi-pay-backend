@@ -186,6 +186,10 @@ class PaymentAttemptRepository:
         )
         return [self._to_domain(row) for row in rows]
 
+    def next_attempt_number(self, intent_id: uuid.UUID) -> int:
+        attempts = self.list_for_intent(intent_id)
+        return attempts[-1].attempt_number + 1 if attempts else 1
+
     def save(self, attempt: PaymentAttempt) -> PaymentAttempt:
         row = self.session.get(PaymentAttemptRecord, attempt.id)
         if row is None:

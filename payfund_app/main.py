@@ -16,6 +16,7 @@ from payfund_app.core.config import get_settings
 from payfund_app.core.database import SessionLocal
 from payfund_app.core.errors import register_exception_handlers
 from payfund_app.modules.fund.presentation.routers import router as fund_router
+from payfund_app.modules.payments.presentation.routers import router as payment_router
 from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
 from payfund_app.ops.maintenance import relay_outbox_events
@@ -63,6 +64,7 @@ app.add_middleware(
 
 app.include_router(wallet_router, prefix=API_PREFIX)
 app.include_router(fund_router, prefix=API_PREFIX)
+app.include_router(payment_router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health", tags=["ops"])

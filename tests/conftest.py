@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 load_dotenv()
 os.environ["PAYMENT_GATEWAY_MODE"] = "stub"
 os.environ.pop("PAYSTACK_SECRET_KEY", None)
+os.environ["PAYMENT_SERVICE_KEYS"] = "diddigo:test-service-key,diddifund:fund-service-key"
 
 from payfund_app.core.config import get_settings  # noqa: E402
 

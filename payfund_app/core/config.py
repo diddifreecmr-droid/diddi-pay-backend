@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     paystack_base_url: str = "https://api.paystack.co"
     paystack_webhook_secret: str = ""
 
+    # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
+    # the PaymentIntent API until operations configures service credentials.
+    payment_service_keys: str = ""
+
+    @property
+    def payment_service_key_map(self) -> dict[str, str]:
+        entries: dict[str, str] = {}
+        for item in self.payment_service_keys.split(","):
+            client_id, separator, key = item.strip().partition(":")
+            if separator and client_id and key:
+                entries[client_id] = key
+        return entries
+
     # Politique de risque DiddiPay. Le seuil reste une decision serveur et peut etre ajuste par
     # environnement sans modifier le code ni demander au frontend de connaitre la regle.
     wallet_step_up_threshold_xof: int = Field(default=50_000, ge=1)
