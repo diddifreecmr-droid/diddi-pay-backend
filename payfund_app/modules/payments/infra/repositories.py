@@ -191,6 +191,24 @@ class PaymentAttemptRepository:
         attempts = self.list_for_intent(intent_id)
         return attempts[-1].attempt_number + 1 if attempts else 1
 
+    def pending_for_reconciliation(
+        self, *, older_than: datetime, limit: int = 100
+    ) -> list[PaymentAttempt]:
+        rows = self.session.scalars(
+            select(PaymentAttemptRecord)
+            .where(
+                PaymentAttemptRecord.status.in_(
+                    ["requires_action", "processing", "unknown"]
+                ),
+                PaymentAttemptRecord.provider_reference.is_not(None),
+                PaymentAttemptRecord.updated_at <= older_than,
+            )
+            .order_by(PaymentAttemptRecord.updated_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return [self._to_domain(row) for row in rows]
+
     def save(self, attempt: PaymentAttempt) -> PaymentAttempt:
         row = self.session.get(PaymentAttemptRecord, attempt.id)
         if row is None:
