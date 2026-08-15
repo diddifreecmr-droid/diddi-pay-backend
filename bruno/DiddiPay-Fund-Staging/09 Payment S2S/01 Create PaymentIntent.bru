@@ -1,0 +1,73 @@
+meta {
+  name: Create PaymentIntent
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{payfundBaseUrl}}/payment-intents
+  body: json
+  auth: none
+}
+
+headers {
+  X-Client-ID: {{paymentClientId}}
+  X-Service-Key: {{paymentServiceKey}}
+  Idempotency-Key: {{paymentIdempotencyKey}}
+}
+
+body:json {
+  {
+    "business_reference": "{{paymentBusinessReference}}",
+    "amount": 2500,
+    "currency": "XOF",
+    "channel": "mobile_money",
+    "network": "orange",
+    "customer_email": "{{paymentCustomerEmail}}",
+    "description": "Bruno staging PaymentIntent",
+    "metadata": {
+      "test_run_id": "{{paymentTestRunId}}"
+    }
+  }
+}
+
+script:pre-request {
+  const serviceKey = bru.getProcessEnv("BRUNO_DIDDIPAY_SERVICE_KEY");
+  if (!serviceKey) {
+    throw new Error("BRUNO_DIDDIPAY_SERVICE_KEY is required for the S2S suite");
+  }
+  const runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  bru.setVar("paymentServiceKey", serviceKey);
+  bru.setVar("paymentCustomerEmail", bru.getProcessEnv("BRUNO_PAYMENT_CUSTOMER_EMAIL") || "staging-payments@example.com");
+  bru.setVar("paymentTestRunId", runId);
+  bru.setVar("paymentIdempotencyKey", "bruno:payment:" + runId);
+  bru.setVar("paymentBusinessReference", "bruno:payment:" + runId);
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("paymentIntentId", res.getBody().id);
+  }
+}
+
+tests {
+  test("intent is created", function() {
+    expect(res.getStatus()).to.equal(201);
+  });
+  test("response is provider-neutral", function() {
+    const body = res.getBody();
+    expect(body.client_id).to.equal(bru.getEnvVar("paymentClientId"));
+    expect(body.business_reference).to.equal(bru.getVar("paymentBusinessReference"));
+    expect(body.amount).to.equal(2500);
+    expect(body.currency).to.equal("XOF");
+    expect(body.status).to.be.oneOf(["requires_action", "processing"]);
+    expect(body.attempts).to.have.length(1);
+    expect(body.attempts[0]).not.to.have.property("provider_reference");
+    expect(body.attempts[0].next_action).to.exist;
+  });
+}
+
+docs {
+  This initializes a provider transaction but does not submit a card or approve Mobile Money. In
+  Paystack mode, use the returned redirect URL only in a controlled staging account.
+}

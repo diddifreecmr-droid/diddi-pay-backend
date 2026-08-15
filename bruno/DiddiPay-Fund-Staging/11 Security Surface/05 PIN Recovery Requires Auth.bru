@@ -1,0 +1,25 @@
+meta {
+  name: PIN Recovery Requires Auth
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/pin/reset
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "recovery_code": "unused-route-test-code",
+    "new_pin": "1234",
+    "confirm_new_pin": "1234"
+  }
+}
+
+tests {
+  test("PIN recovery is protected", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

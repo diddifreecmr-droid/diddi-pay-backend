@@ -1,0 +1,21 @@
+meta {
+  name: Malformed UUID Path Param
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{payfundBaseUrl}}/fund/campaigns/not-a-uuid
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+tests {
+  test("rejected", function() {
+    expect(res.getStatus()).to.equal(422);
+  });
+}

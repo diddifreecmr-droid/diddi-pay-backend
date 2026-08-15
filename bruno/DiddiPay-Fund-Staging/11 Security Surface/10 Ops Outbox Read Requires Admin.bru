@@ -1,0 +1,17 @@
+meta {
+  name: Ops Outbox Read Requires Admin
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{payfundBaseUrl}}/wallet/ops/outbox
+  body: none
+  auth: none
+}
+
+tests {
+  test("outbox inspection requires authentication", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

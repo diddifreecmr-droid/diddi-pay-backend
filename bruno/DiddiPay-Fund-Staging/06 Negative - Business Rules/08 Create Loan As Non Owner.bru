@@ -1,0 +1,36 @@
+meta {
+  name: Create Loan As Non Owner
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/loans
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenB}}
+}
+
+body:json {
+  {
+    "amount": 50000,
+    "duration_months": 6,
+    "campaign_id": "{{campaignId}}"
+  }
+}
+
+tests {
+  test("returns 403 NOT_CAMPAIGN_OWNER", function() {
+    expect(res.getStatus()).to.equal(403);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("NOT_CAMPAIGN_OWNER");
+  });
+}
+
+docs {
+  Needs `campaignId` (owned by A) — run `03 Fund/01 Create Campaign` first.
+}

@@ -1,0 +1,23 @@
+meta {
+  name: List With Invalid Service Key
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{payfundBaseUrl}}/payment-intents
+  body: none
+  auth: none
+}
+
+headers {
+  X-Client-ID: diddigo
+  X-Service-Key: deliberately-invalid-key
+}
+
+tests {
+  test("invalid service key is rejected", function() {
+    expect(res.getStatus()).to.equal(401);
+    expect(res.getBody().error.code).to.equal("UNAUTHENTICATED");
+  });
+}

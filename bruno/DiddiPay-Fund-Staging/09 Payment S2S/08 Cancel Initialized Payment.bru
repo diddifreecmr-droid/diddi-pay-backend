@@ -1,0 +1,23 @@
+meta {
+  name: Cancel Initialized Payment
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{payfundBaseUrl}}/payment-intents/{{paymentIntentId}}/cancel
+  body: none
+  auth: none
+}
+
+headers {
+  X-Client-ID: {{paymentClientId}}
+  X-Service-Key: {{paymentServiceKey}}
+}
+
+tests {
+  test("initialized provider payment is not cancelled locally", function() {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getBody().error.code).to.equal("PAYMENT_OPERATION_CONFLICT");
+  });
+}

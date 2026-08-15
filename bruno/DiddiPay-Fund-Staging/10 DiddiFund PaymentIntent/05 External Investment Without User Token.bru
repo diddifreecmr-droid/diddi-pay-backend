@@ -1,0 +1,31 @@
+meta {
+  name: External Investment Without User Token
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/campaigns/41e2ba56-6a82-4fba-9634-6fb30753a91c/invest/payment
+  body: json
+  auth: none
+}
+
+headers {
+  Idempotency-Key: unauthenticated-fund-payment
+}
+
+body:json {
+  {
+    "amount": 5000,
+    "channel": "mobile_money",
+    "network": "orange",
+    "customer_email": "staging-payments@example.com"
+  }
+}
+
+tests {
+  test("DiddiFreeID token remains mandatory at the module boundary", function() {
+    expect(res.getStatus()).to.equal(401);
+    expect(res.getBody().error.code).to.equal("UNAUTHENTICATED");
+  });
+}

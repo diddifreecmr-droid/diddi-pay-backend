@@ -1,0 +1,24 @@
+meta {
+  name: Get Campaign Not Found
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{payfundBaseUrl}}/fund/campaigns/41e2ba56-6a82-4fba-9634-6fb30753a91c
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+tests {
+  test("returns 404 CAMPAIGN_NOT_FOUND", function() {
+    expect(res.getStatus()).to.equal(404);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("CAMPAIGN_NOT_FOUND");
+  });
+}

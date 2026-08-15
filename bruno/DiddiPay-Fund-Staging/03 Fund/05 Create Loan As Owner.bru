@@ -1,0 +1,42 @@
+meta {
+  name: Create Loan As Owner
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/loans
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+body:json {
+  {
+    "amount": 50000,
+    "duration_months": 6,
+    "campaign_id": "{{campaignId}}"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("loanId", res.getBody().loan_id);
+  }
+}
+
+tests {
+  test("created", function() {
+    expect(res.getStatus()).to.equal(201);
+  });
+  test("starts pending", function() {
+    expect(res.getBody().status).to.equal("pending");
+  });
+}
+
+docs {
+  Crowdlending: only the campaign's own owner can borrow against its pool — user A created the campaign, so A borrows.
+}

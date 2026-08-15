@@ -1,0 +1,37 @@
+meta {
+  name: Transfer Unknown Recipient
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/transfer
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+  Idempotency-Key: {{idemKey}}
+}
+
+body:json {
+  {
+    "recipient_phone": "+2250799999999",
+    "amount": 1000,
+    "pin": "{{walletPinA}}"
+  }
+}
+
+script:pre-request {
+  bru.setVar("idemKey", Date.now() + "-" + Math.random().toString(36).slice(2));
+}
+
+tests {
+  test("returns 404 RECIPIENT_NOT_FOUND", function() {
+    expect(res.getStatus()).to.equal(404);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("RECIPIENT_NOT_FOUND");
+  });
+}

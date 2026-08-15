@@ -1,0 +1,24 @@
+meta {
+  name: List PaymentIntents
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{payfundBaseUrl}}/payment-intents?limit=50
+  body: none
+  auth: none
+}
+
+headers {
+  X-Client-ID: {{paymentClientId}}
+  X-Service-Key: {{paymentServiceKey}}
+}
+
+tests {
+  test("list is scoped and contains the new intent", function() {
+    expect(res.getStatus()).to.equal(200);
+    const ids = res.getBody().data.map((item) => item.id);
+    expect(ids).to.include(bru.getVar("paymentIntentId"));
+  });
+}

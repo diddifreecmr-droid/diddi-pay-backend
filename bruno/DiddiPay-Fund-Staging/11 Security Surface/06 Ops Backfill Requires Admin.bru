@@ -1,0 +1,24 @@
+meta {
+  name: Ops Backfill Requires Admin
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/ops/backfill
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "user_id": "00000000-0000-4000-8000-000000000001",
+    "account_type": "user"
+  }
+}
+
+tests {
+  test("wallet backfill requires authentication", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Ops KYC Link Requires Admin
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/ops/kyc/link
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "user_id": "00000000-0000-4000-8000-000000000001",
+    "file_id": "route-test-file",
+    "document_type": "identity_card",
+    "status": "pending",
+    "source_module": "bruno"
+  }
+}
+
+tests {
+  test("KYC mutation requires authentication", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

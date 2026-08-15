@@ -1,0 +1,28 @@
+meta {
+  name: User B Cannot See User A Loan
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{payfundBaseUrl}}/fund/loans/{{loanId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenB}}
+}
+
+tests {
+  test("returns 404 LOAN_NOT_FOUND", function() {
+    expect(res.getStatus()).to.equal(404);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("LOAN_NOT_FOUND");
+  });
+}
+
+docs {
+  Needs `loanId` — run `03 Fund/05 Create Loan As Owner` (as A) first. Same reasoning: 404, not 403.
+}

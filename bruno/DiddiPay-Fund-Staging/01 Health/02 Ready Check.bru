@@ -1,0 +1,18 @@
+meta {
+  name: Ready Check
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{payfundBaseUrl}}/ready
+  body: none
+  auth: none
+}
+
+tests {
+  test("database and payment outbox are ready", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody()).to.have.property("status", "ready");
+  });
+}

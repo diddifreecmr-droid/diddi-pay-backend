@@ -1,0 +1,28 @@
+meta {
+  name: Get Loan Schedule
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{payfundBaseUrl}}/fund/loans/{{loanId}}/schedule
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("empty before disbursement", function() {
+    expect(res.getBody().data).to.deep.equal([]);
+  });
+}
+
+docs {
+  The repayment schedule is only populated at disbursement, which has no public route — always empty from here, by design.
+}

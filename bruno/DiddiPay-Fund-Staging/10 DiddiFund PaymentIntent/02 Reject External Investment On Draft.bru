@@ -1,0 +1,41 @@
+meta {
+  name: Reject External Investment On Draft
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/campaigns/{{fundPaymentCampaignId}}/invest/payment
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+  Idempotency-Key: fund-payment:{{paymentTestRunId}}
+}
+
+body:json {
+  {
+    "amount": 5000,
+    "channel": "mobile_money",
+    "network": "orange",
+    "customer_email": "{{paymentCustomerEmail}}"
+  }
+}
+
+script:pre-request {
+  bru.setVar("paymentCustomerEmail", bru.getProcessEnv("BRUNO_PAYMENT_CUSTOMER_EMAIL") || "staging-payments@example.com");
+}
+
+tests {
+  test("draft campaign cannot collect money", function() {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getBody().error.code).to.equal("CAMPAIGN_NOT_ACTIVE");
+  });
+}
+
+docs {
+  Campaign activation is back-office only. This verifies that the new PaymentIntent route does not
+  bypass DiddiFund business rules.
+}

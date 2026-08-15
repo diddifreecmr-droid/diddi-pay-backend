@@ -1,0 +1,17 @@
+meta {
+  name: Recipient Lookup Requires Auth
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{payfundBaseUrl}}/wallet/recipient/lookup?phone=%2B237600000001
+  body: none
+  auth: none
+}
+
+tests {
+  test("recipient data is protected", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

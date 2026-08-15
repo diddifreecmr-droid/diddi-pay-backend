@@ -1,0 +1,27 @@
+meta {
+  name: Garbage Token - Invest
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/campaigns/41e2ba56-6a82-4fba-9634-6fb30753a91c/invest
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer not-a-real-jwt
+}
+
+body:json {
+  {
+    "amount": 1000
+  }
+}
+
+tests {
+  test("rejected before any idempotency/body check", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

@@ -1,0 +1,32 @@
+meta {
+  name: Deposit Missing Idempotency Key
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/deposit
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+body:json {
+  {
+    "provider": "orange_money",
+    "amount": 1000,
+    "phone": "+2250700000000"
+  }
+}
+
+tests {
+  test("returns 400 IDEMPOTENCY_KEY_REQUIRED", function() {
+    expect(res.getStatus()).to.equal(400);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("IDEMPOTENCY_KEY_REQUIRED");
+  });
+}

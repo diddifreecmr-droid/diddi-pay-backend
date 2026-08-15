@@ -1,0 +1,27 @@
+meta {
+  name: Get Balance
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{payfundBaseUrl}}/wallet/balance
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+tests {
+  test("returns balance", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("has expected fields", function() {
+    const body = res.getBody();
+    expect(body).to.have.property("account_id");
+    expect(body).to.have.property("balance");
+    expect(body).to.have.property("currency", "XOF");
+  });
+}

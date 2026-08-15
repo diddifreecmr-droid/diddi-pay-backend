@@ -1,0 +1,43 @@
+meta {
+  name: Register User A
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{identityBaseUrl}}/auth/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "{{userAPhone}}",
+    "email": "{{userAEmail}}",
+    "full_name": "Payfund Bruno User A"
+  }
+}
+
+script:pre-request {
+  if (!bru.getVar("userAEmail") && !bru.getEnvVar("userAEmail")) {
+    const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    bru.setVar("userAEmail", "payfund.bruno.user_a." + suffix + "@example.com");
+    bru.setVar("userAPhone", "+22507" + Math.floor(10000000 + Math.random() * 89999999));
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("userAId", res.getBody().user_id);
+  }
+}
+
+tests {
+  test("registered (or already registered from a previous run)", function() {
+    expect(res.getStatus()).to.be.oneOf([201, 409]);
+  });
+}
+
+docs {
+  Generates a random phone+email once per environment (cached in `userAEmail`/`userAPhone`) so re-running this folder doesn't spawn a new account every time. 409 just means that identity already exists — harmless, carry on to the next request.
+}

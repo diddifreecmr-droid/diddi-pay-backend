@@ -1,0 +1,21 @@
+meta {
+  name: Garbage Token - Get Balance
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{payfundBaseUrl}}/wallet/balance
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer not-a-real-jwt
+}
+
+tests {
+  test("rejected", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

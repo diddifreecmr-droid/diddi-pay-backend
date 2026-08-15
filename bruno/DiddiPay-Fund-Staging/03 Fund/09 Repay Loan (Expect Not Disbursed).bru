@@ -1,0 +1,40 @@
+meta {
+  name: Repay Loan (Expect Not Disbursed)
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/loans/{{loanId}}/repay
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+  Idempotency-Key: {{idemKey}}
+}
+
+body:json {
+  {
+    "amount": 1000,
+    "pin": "{{walletPinA}}"
+  }
+}
+
+script:pre-request {
+  bru.setVar("idemKey", Date.now() + "-" + Math.random().toString(36).slice(2));
+}
+
+tests {
+  test("returns 409 LOAN_NOT_DISBURSED", function() {
+    expect(res.getStatus()).to.equal(409);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("LOAN_NOT_DISBURSED");
+  });
+}
+
+docs {
+  Disbursement has no public route either — a loan created here stays `pending` forever, so this 409 is the correct, permanent answer.
+}

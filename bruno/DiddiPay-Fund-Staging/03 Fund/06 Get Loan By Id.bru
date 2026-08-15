@@ -1,0 +1,21 @@
+meta {
+  name: Get Loan By Id
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{payfundBaseUrl}}/fund/loans/{{loanId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+}
+
+tests {
+  test("found", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

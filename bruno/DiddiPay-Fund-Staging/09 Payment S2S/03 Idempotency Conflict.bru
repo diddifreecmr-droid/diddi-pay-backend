@@ -1,0 +1,38 @@
+meta {
+  name: Idempotency Conflict
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{payfundBaseUrl}}/payment-intents
+  body: json
+  auth: none
+}
+
+headers {
+  X-Client-ID: {{paymentClientId}}
+  X-Service-Key: {{paymentServiceKey}}
+  Idempotency-Key: {{paymentIdempotencyKey}}
+}
+
+body:json {
+  {
+    "business_reference": "{{paymentBusinessReference}}",
+    "amount": 2501,
+    "currency": "XOF",
+    "channel": "mobile_money",
+    "network": "orange",
+    "customer_email": "{{paymentCustomerEmail}}",
+    "metadata": {
+      "test_run_id": "{{paymentTestRunId}}"
+    }
+  }
+}
+
+tests {
+  test("same key with different payload is rejected", function() {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getBody().error.code).to.equal("IDEMPOTENCY_CONFLICT");
+  });
+}

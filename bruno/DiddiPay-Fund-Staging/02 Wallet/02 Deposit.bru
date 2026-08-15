@@ -1,0 +1,43 @@
+meta {
+  name: Deposit
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/deposit
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+  Idempotency-Key: {{idemKey}}
+}
+
+body:json {
+  {
+    "provider": "orange_money",
+    "amount": 1000,
+    "phone": "+2250700000000"
+  }
+}
+
+script:pre-request {
+  bru.setVar("idemKey", Date.now() + "-" + Math.random().toString(36).slice(2));
+}
+
+script:post-response {
+  if (res.getStatus() === 202) {
+    bru.setVar("transactionId", res.getBody().transaction_id);
+  }
+}
+
+tests {
+  test("accepted", function() {
+    expect(res.getStatus()).to.equal(202);
+  });
+  test("status is pending or completed", function() {
+    expect(res.getBody().status).to.be.oneOf(["pending", "completed"]);
+  });
+}

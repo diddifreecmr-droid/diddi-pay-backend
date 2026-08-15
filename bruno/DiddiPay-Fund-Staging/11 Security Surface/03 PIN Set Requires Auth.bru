@@ -1,0 +1,25 @@
+meta {
+  name: PIN Set Requires Auth
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/pin/set
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "pin": "1234",
+    "confirm_pin": "1234",
+    "step_up_token": "unsigned-step-up-token-for-route-test"
+  }
+}
+
+tests {
+  test("PIN enrollment is protected", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

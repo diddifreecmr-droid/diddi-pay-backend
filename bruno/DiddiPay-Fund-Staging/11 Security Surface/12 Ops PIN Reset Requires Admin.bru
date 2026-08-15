@@ -1,0 +1,26 @@
+meta {
+  name: Ops PIN Reset Requires Admin
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/ops/pin/reset
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "user_id": "00000000-0000-4000-8000-000000000001",
+    "new_pin": "1234",
+    "confirm_new_pin": "1234",
+    "reason": "Bruno route security test"
+  }
+}
+
+tests {
+  test("admin PIN recovery requires authentication", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

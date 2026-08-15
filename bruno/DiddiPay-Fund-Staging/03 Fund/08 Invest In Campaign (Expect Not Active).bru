@@ -1,0 +1,40 @@
+meta {
+  name: Invest In Campaign (Expect Not Active)
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{payfundBaseUrl}}/fund/campaigns/{{campaignId}}/invest
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenB}}
+  Idempotency-Key: {{idemKey}}
+}
+
+body:json {
+  {
+    "amount": 1000,
+    "pin": "{{walletPinB}}"
+  }
+}
+
+script:pre-request {
+  bru.setVar("idemKey", Date.now() + "-" + Math.random().toString(36).slice(2));
+}
+
+tests {
+  test("returns 409 CAMPAIGN_NOT_ACTIVE", function() {
+    expect(res.getStatus()).to.equal(409);
+    const body = res.getBody();
+    expect(body.error).to.exist;
+    expect(body.error.code).to.equal("CAMPAIGN_NOT_ACTIVE");
+  });
+}
+
+docs {
+  Campaigns never leave `draft` through the public API — activation is back-office-only. This 409 is the correct, permanent answer for any campaign created here.
+}

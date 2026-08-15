@@ -1,0 +1,17 @@
+meta {
+  name: Ops Outbox Relay Requires Admin
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/ops/outbox/relay
+  body: none
+  auth: none
+}
+
+tests {
+  test("outbox relay requires authentication", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

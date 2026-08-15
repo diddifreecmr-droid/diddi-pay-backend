@@ -1,0 +1,35 @@
+meta {
+  name: Refresh Token User A
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{identityBaseUrl}}/auth/refresh
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "refresh_token": "{{refreshTokenA}}"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    const body = res.getBody();
+    bru.setVar("accessTokenA", body.access_token);
+    bru.setVar("refreshTokenA", body.refresh_token);
+  }
+}
+
+tests {
+  test("refreshed", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+}
+
+docs {
+  Run this instead of the full register/OTP flow when `accessTokenA` has simply expired but `refreshTokenA` is still valid — no OTP needed.
+}

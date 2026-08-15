@@ -1,0 +1,33 @@
+meta {
+  name: Unsigned Legacy Paystack Webhook
+  type: http
+  seq: 18
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/webhooks/paystack
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "event": "charge.success",
+    "data": {
+      "reference": "bruno-unsigned-route-test",
+      "status": "success"
+    }
+  }
+}
+
+tests {
+  test("unsigned legacy webhook is rejected", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("invalid_signature");
+  });
+}
+
+docs {
+  The legacy wallet webhook returns a neutral 200 to stop provider retries, but must never apply an
+  unsigned event. A missing provider secret returns `ignored` and deliberately fails this test.
+}

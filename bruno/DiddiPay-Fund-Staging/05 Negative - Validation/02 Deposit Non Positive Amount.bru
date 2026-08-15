@@ -1,0 +1,34 @@
+meta {
+  name: Deposit Non Positive Amount
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{payfundBaseUrl}}/wallet/deposit
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{accessTokenA}}
+  Idempotency-Key: {{idemKey}}
+}
+
+body:json {
+  {
+    "provider": "orange_money",
+    "amount": 0,
+    "phone": "+2250700000000"
+  }
+}
+
+script:pre-request {
+  bru.setVar("idemKey", Date.now() + "-" + Math.random().toString(36).slice(2));
+}
+
+tests {
+  test("rejected", function() {
+    expect(res.getStatus()).to.equal(422);
+  });
+}

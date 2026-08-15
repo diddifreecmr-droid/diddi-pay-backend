@@ -1,0 +1,17 @@
+meta {
+  name: Health Check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{payfundBaseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("deployment is up", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

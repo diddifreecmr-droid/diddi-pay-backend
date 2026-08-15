@@ -1,0 +1,17 @@
+meta {
+  name: Ops Transaction Inspection Requires Admin
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{payfundBaseUrl}}/wallet/ops/paystack/00000000-0000-4000-8000-000000000001
+  body: none
+  auth: none
+}
+
+tests {
+  test("provider transaction inspection requires authentication", function() {
+    expect(res.getStatus()).to.equal(401);
+  });
+}
