@@ -33,3 +33,7 @@ class ProcessorCallUncertain(PaymentApplicationError):
 
 class ProcessorWebhookRejected(PaymentApplicationError):
     pass
+
+
+class CallbackDeliveryFailed(PaymentApplicationError):
+    """The receiving module did not durably accept an outbox event."""

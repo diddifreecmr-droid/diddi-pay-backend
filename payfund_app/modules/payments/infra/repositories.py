@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -347,6 +347,34 @@ class PaymentOutboxRepository:
         self.session.flush()
         return row
 
-    def pending(self, limit: int = 100):
+    def pending(self, limit: int = 100) -> list[PaymentOutboxRecord]:
         now = datetime.now().astimezone()
-        return list(self.session.scalars(select(PaymentOutboxRecord).where(PaymentOutboxRecord.status == "pending", PaymentOutboxRecord.next_attempt_at <= now).order_by(PaymentOutboxRecord.created_at).limit(limit).with_for_update(skip_locked=True)))
+        statement = (
+            select(PaymentOutboxRecord)
+            .where(
+                PaymentOutboxRecord.status == "pending",
+                PaymentOutboxRecord.next_attempt_at <= now,
+            )
+            .order_by(PaymentOutboxRecord.created_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return list(self.session.scalars(statement))
+
+    def delivered(self, row: PaymentOutboxRecord) -> None:
+        row.status = "delivered"
+        row.delivered_at = datetime.now().astimezone()
+        row.last_error = None
+        self.session.flush()
+
+    def failed(
+        self, row: PaymentOutboxRecord, error: str, *, max_attempts: int = 10
+    ) -> None:
+        row.attempts += 1
+        row.last_error = error[:255]
+        if row.attempts >= max_attempts:
+            row.status = "dead_letter"
+        else:
+            delay = min(3600, 2 ** min(row.attempts, 10))
+            row.next_attempt_at = datetime.now().astimezone() + timedelta(seconds=delay)
+        self.session.flush()

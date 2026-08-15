@@ -85,6 +85,12 @@ class ProviderEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CallbackTarget:
+    url: str
+    secret: str
+
+
+@dataclass(frozen=True, slots=True)
 class RefundRequest:
     refund_id: uuid.UUID
     provider_reference: str
@@ -158,6 +164,32 @@ class ProviderEventRepositoryPort(Protocol):
         payload_hash: str,
         payload: dict,
     ): ...
+
+
+class PaymentOutboxEventPort(Protocol):
+    id: uuid.UUID
+    client_id: str
+    payload: dict[str, Any]
+
+
+class PaymentOutboxRepositoryPort(Protocol):
+    def pending(self, limit: int = 100) -> list[PaymentOutboxEventPort]: ...
+
+    def delivered(self, row: PaymentOutboxEventPort) -> None: ...
+
+    def failed(
+        self, row: PaymentOutboxEventPort, error: str, *, max_attempts: int = 10
+    ) -> None: ...
+
+
+class PaymentEventSenderPort(Protocol):
+    def send(
+        self,
+        target: CallbackTarget,
+        *,
+        event_id: uuid.UUID,
+        payload: Mapping[str, Any],
+    ) -> None: ...
 
     def mark(
         self,
