@@ -40,12 +40,13 @@ class CreateRefundCommand:
 
 
 class RefundUseCases:
-    def __init__(self, intents, attempts, refunds, processors, uow) -> None:
+    def __init__(self, intents, attempts, refunds, processors, uow, accounting=None) -> None:
         self.intents = intents
         self.attempts = attempts
         self.refunds = refunds
         self.processors = processors
         self.uow = uow
+        self.accounting = accounting
 
     def create(self, command: CreateRefundCommand):
         fingerprint = command.fingerprint()
@@ -107,6 +108,8 @@ class RefundUseCases:
         if refund.status == RefundStatus.SUCCEEDED:
             intent.apply_refund(refund.money.amount)
             self.intents.save(intent)
+            if self.accounting is not None:
+                self.accounting.record_refund(intent, attempt, refund)
         self.refunds.save(refund)
         self.uow.commit()
         return refund

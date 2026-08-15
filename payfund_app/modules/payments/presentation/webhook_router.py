@@ -5,11 +5,13 @@ from fastapi import APIRouter, Request
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.modules.payments.application.errors import ProcessorWebhookRejected
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
+from payfund_app.modules.payments.application.accounting import PaymentAccountingService
 from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
     ProviderEventRepository,
     PaymentOutboxRepository,
+    FinancialLedgerRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
@@ -34,6 +36,7 @@ async def paystack_webhook(
         ProviderEventRepository(session),
         SqlAlchemyUnitOfWork(session),
         PaymentOutboxRepository(session),
+        PaymentAccountingService(FinancialLedgerRepository(session)),
     )
     try:
         result = use_cases.process(processor, raw_body, request.headers)

@@ -109,3 +109,14 @@ class RefundResponse(BaseModel):
     provider_status: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PaymentFinancialSummaryResponse(BaseModel):
+    payment_intent_id: uuid.UUID
+    currency: str
+    gross_captured: int
+    refunded: int
+    processor_fees: int
+    net_expected: int
+    settled: int
+    outstanding: int

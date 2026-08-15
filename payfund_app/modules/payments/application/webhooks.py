@@ -32,12 +32,14 @@ class PaymentWebhookUseCases:
         events: ProviderEventRepositoryPort,
         uow: UnitOfWorkPort,
         outbox=None,
+        accounting=None,
     ) -> None:
         self.intents = intents
         self.attempts = attempts
         self.events = events
         self.uow = uow
         self.outbox = outbox
+        self.accounting = accounting
 
     def process(
         self,
@@ -129,6 +131,17 @@ class PaymentWebhookUseCases:
                     "currency": intent.money.currency,
                     "status": str(intent.status),
                 },
+            )
+        if (
+            self.accounting is not None
+            and event.status == AttemptStatus.SUCCEEDED
+            and not was_succeeded
+        ):
+            self.accounting.record_capture(
+                intent,
+                attempt,
+                event_reference=event.event_key,
+                fee=event.fee or 0,
             )
         self.uow.commit()
         return WebhookOutcome("processed", event.event_key, str(intent.id))

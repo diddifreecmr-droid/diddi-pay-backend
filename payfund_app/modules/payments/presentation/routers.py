@@ -18,6 +18,7 @@ from payfund_app.modules.payments.application.refunds import (
     CreateRefundCommand,
     RefundUseCases,
 )
+from payfund_app.modules.payments.application.accounting import PaymentAccountingService
 from payfund_app.modules.payments.application.use_cases import (
     CreatePaymentIntentCommand,
     PaymentUseCases,
@@ -27,6 +28,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
     RefundRepository,
+    FinancialLedgerRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
@@ -42,6 +44,7 @@ from payfund_app.modules.payments.presentation.schemas import (
     PaymentIntentListResponse,
     PaymentIntentResponse,
     RefundResponse,
+    PaymentFinancialSummaryResponse,
 )
 
 router = APIRouter(prefix="/payment-intents", tags=["payments"])
@@ -201,6 +204,7 @@ def create_refund(
             RefundRepository(session),
             processors,
             SqlAlchemyUnitOfWork(session),
+            PaymentAccountingService(FinancialLedgerRepository(session)),
         ).create(
             CreateRefundCommand(
                 client_id=client.client_id,
@@ -222,4 +226,27 @@ def create_refund(
         provider_status=refund.provider_status,
         created_at=refund.created_at,
         updated_at=refund.updated_at,
+    )
+
+
+@router.get(
+    "/{intent_id}/financial-summary",
+    response_model=PaymentFinancialSummaryResponse,
+)
+def get_financial_summary(
+    intent_id: uuid.UUID,
+    client: PaymentClientDep,
+    session: SessionDep,
+    processors: ProcessorRegistryDep,
+) -> PaymentFinancialSummaryResponse:
+    try:
+        view = _use_cases(session, processors).get(client.client_id, intent_id)
+    except Exception as exc:
+        _translate_error(exc)
+        raise
+    totals = FinancialLedgerRepository(session).summary(intent_id)
+    return PaymentFinancialSummaryResponse(
+        payment_intent_id=intent_id,
+        currency=view.intent.money.currency,
+        **totals,
     )

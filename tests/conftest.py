@@ -59,6 +59,8 @@ from payfund_app.shared_kernel.events.bus import InMemoryEventBus, set_bus  # no
 TABLES = [
     "fund.payment_event_inbox",
     "fund.payment_orders",
+    "payments.financial_entries",
+    "payments.financial_journals",
     "payments.outbox_events",
     "payments.refunds",
     "payments.provider_events",

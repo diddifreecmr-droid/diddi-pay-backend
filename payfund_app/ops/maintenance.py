@@ -21,6 +21,12 @@ from payfund_app.modules.payments.application.ports import (
 )
 from payfund_app.modules.payments.infra.callback_delivery import HttpSignedCallbackSender
 from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
+from payfund_app.modules.payments.application.accounting import PaymentAccountingService
+from payfund_app.modules.payments.infra.repositories import (
+    FinancialLedgerRepository,
+    PaymentAttemptRepository,
+    PaymentIntentRepository,
+)
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import TransactionStatus, TransactionType
@@ -232,6 +238,41 @@ def deliver_payment_events(
         unavailable=result.unavailable,
     )
     return result
+
+
+def record_payment_settlement(
+    session: Session,
+    *,
+    payment_intent_id: uuid.UUID,
+    amount: int,
+    settlement_reference: str,
+) -> dict[str, int]:
+    intents = PaymentIntentRepository(session)
+    intent = intents.get(payment_intent_id, for_update=True)
+    if intent is None:
+        raise ValueError("PAYMENT_INTENT_NOT_FOUND")
+    attempts = PaymentAttemptRepository(session).list_for_intent(payment_intent_id)
+    successful = next((row for row in reversed(attempts) if str(row.status) == "succeeded"), None)
+    if successful is None:
+        raise ValueError("SUCCESSFUL_PAYMENT_ATTEMPT_NOT_FOUND")
+    ledger = FinancialLedgerRepository(session)
+    PaymentAccountingService(ledger).record_settlement(
+        intent,
+        processor=successful.processor,
+        amount=amount,
+        settlement_reference=settlement_reference,
+    )
+    session.commit()
+    summary = ledger.summary(payment_intent_id)
+    emit(
+        "info",
+        "ops.payment_settlement.recorded",
+        payment_intent_id=str(payment_intent_id),
+        amount=amount,
+        settlement_reference=settlement_reference,
+        outstanding=summary["outstanding"],
+    )
+    return summary
 
 
 def run_housekeeping(session: Session, bus) -> HousekeepingResult:

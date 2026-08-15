@@ -23,6 +23,8 @@ from payfund_app.modules.payments.infra.models import (
     PaymentIntentRecord,
     ProviderEventRecord,
     PaymentOutboxRecord,
+    FinancialEntryRecord,
+    FinancialJournalRecord,
     RefundRecord,
 )
 
@@ -398,3 +400,80 @@ class PaymentOutboxRepository:
             delay = min(3600, 2 ** min(row.attempts, 10))
             row.next_attempt_at = datetime.now().astimezone() + timedelta(seconds=delay)
         self.session.flush()
+
+
+class FinancialLedgerRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def post(
+        self,
+        *,
+        payment_intent_id: uuid.UUID,
+        event_type: str,
+        event_reference: str,
+        amount: int,
+        currency: str,
+        debit_account: str,
+        credit_account: str,
+    ) -> FinancialJournalRecord:
+        existing = self.session.scalar(
+            select(FinancialJournalRecord).where(
+                FinancialJournalRecord.event_type == event_type,
+                FinancialJournalRecord.event_reference == event_reference,
+            )
+        )
+        if existing is not None:
+            return existing
+        journal = FinancialJournalRecord(
+            payment_intent_id=payment_intent_id,
+            event_type=event_type,
+            event_reference=event_reference,
+            amount=amount,
+            currency=currency,
+        )
+        self.session.add(journal)
+        self.session.flush()
+        self.session.add_all(
+            [
+                FinancialEntryRecord(
+                    journal_id=journal.id,
+                    account=debit_account,
+                    direction="debit",
+                    amount=amount,
+                    currency=currency,
+                ),
+                FinancialEntryRecord(
+                    journal_id=journal.id,
+                    account=credit_account,
+                    direction="credit",
+                    amount=amount,
+                    currency=currency,
+                ),
+            ]
+        )
+        self.session.flush()
+        return journal
+
+    def summary(self, payment_intent_id: uuid.UUID) -> dict[str, int]:
+        rows = self.session.execute(
+            select(
+                FinancialJournalRecord.event_type,
+                func.coalesce(func.sum(FinancialJournalRecord.amount), 0),
+            )
+            .where(FinancialJournalRecord.payment_intent_id == payment_intent_id)
+            .group_by(FinancialJournalRecord.event_type)
+        )
+        totals = {event_type: int(amount) for event_type, amount in rows}
+        gross = totals.get("capture", 0)
+        refunds = totals.get("refund", 0)
+        fees = totals.get("processor_fee", 0)
+        settlements = totals.get("settlement", 0)
+        return {
+            "gross_captured": gross,
+            "refunded": refunds,
+            "processor_fees": fees,
+            "net_expected": gross - refunds - fees,
+            "settled": settlements,
+            "outstanding": gross - refunds - fees - settlements,
+        }

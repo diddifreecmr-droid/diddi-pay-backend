@@ -416,6 +416,35 @@ Erreurs principales :
 - la cle Paystack reste uniquement dans les secrets backend ;
 - les logs ne doivent contenir ni cle service, ni cle Paystack, ni donnees de carte, ni OTP, ni PIN.
 
+### Sous-ledger financier et settlement
+
+Chaque capture confirmee produit un journal double entree immuable : debit de
+`processor_receivable:<provider>` et credit de `module_payable:<client_id>`. Les frais PSP, les
+remboursements et les settlements ont leurs propres journaux idempotents. Chaque journal contient
+exactement un debit et un credit du meme montant et de la meme devise.
+
+Le module proprietaire peut consulter :
+
+```http
+GET /payment-intents/{intent_id}/financial-summary
+X-Client-ID: diddigo
+X-Service-Key: <secret>
+```
+
+La reponse distingue `gross_captured`, `refunded`, `processor_fees`, `net_expected`, `settled` et
+`outstanding`. Un paiement `succeeded` signifie que le client a paye ; `outstanding > 0` signifie
+que le rapprochement vers le compte bancaire DiddiFree n'est pas encore complet.
+
+En attendant l'import automatique des rapports de settlement Paystack, les ops peuvent enregistrer
+un versement rapproche avec :
+
+```bash
+python -m payfund_app.ops record-payment-settlement \
+  <payment_intent_id> <amount> <settlement_reference>
+```
+
+La commande refuse tout montant superieur au net encore attendu et journalise l'operation.
+
 ## 13. Capacites MVP et limites actuelles
 
 Disponible :

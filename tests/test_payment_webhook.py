@@ -13,7 +13,12 @@ from payfund_app.modules.payments.domain import (
     PaymentIntent,
     PaymentIntentStatus,
 )
-from payfund_app.modules.payments.infra.models import ProviderEventRecord, PaymentOutboxRecord
+from payfund_app.modules.payments.infra.models import (
+    FinancialEntryRecord,
+    FinancialJournalRecord,
+    PaymentOutboxRecord,
+    ProviderEventRecord,
+)
 from payfund_app.modules.payments.infra.paystack_processor import PaystackPaymentProcessor
 from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
@@ -49,7 +54,7 @@ def seed_payment(session):
     return intent, attempt
 
 
-def signed_payload(attempt, *, amount=5_000, currency="XOF"):
+def signed_payload(attempt, *, amount=5_000, currency="XOF", fees=100):
     raw = json.dumps(
         {
             "event": "charge.success",
@@ -58,6 +63,7 @@ def signed_payload(attempt, *, amount=5_000, currency="XOF"):
                 "status": "success",
                 "amount": amount,
                 "currency": currency,
+                "fees": fees,
                 "channel": "mobile_money",
                 "customer": {"email": "must-not-be-stored@example.com"},
                 "authorization": {"last4": "4081"},
@@ -99,6 +105,18 @@ def test_signed_success_webhook_completes_intent_once(client, session):
     outbox = session.scalar(select(PaymentOutboxRecord))
     assert outbox.event_type == "payment.succeeded"
     assert outbox.payload["business_reference"] == "ride:42"
+    journals = list(
+        session.scalars(
+            select(FinancialJournalRecord).order_by(FinancialJournalRecord.event_type)
+        )
+    )
+    assert {row.event_type: row.amount for row in journals} == {
+        "capture": 5_000,
+        "processor_fee": 100,
+    }
+    entries = list(session.scalars(select(FinancialEntryRecord)))
+    assert sum(row.amount for row in entries if row.direction == "debit") == 5_100
+    assert sum(row.amount for row in entries if row.direction == "credit") == 5_100
 
 
 def test_invalid_webhook_signature_is_rejected(client, session):

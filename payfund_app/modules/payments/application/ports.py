@@ -82,6 +82,7 @@ class ProviderEvent:
     status: AttemptStatus | None
     amount: int | None = None
     currency: str | None = None
+    fee: int | None = None
     sanitized_payload: Mapping[str, Any] = field(default_factory=dict)
 
 

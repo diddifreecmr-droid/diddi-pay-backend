@@ -232,3 +232,50 @@ class PaymentOutboxRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class FinancialJournalRecord(Base):
+    __tablename__ = "financial_journals"
+    __table_args__ = (
+        UniqueConstraint("event_type", "event_reference", name="uq_financial_journal_event"),
+        CheckConstraint("amount > 0", name="ck_financial_journal_amount"),
+        Index("idx_financial_journal_intent", "payment_intent_id", "created_at"),
+        {"schema": "payments"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    payment_intent_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("payments.payment_intents.id"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    event_reference: Mapped[str] = mapped_column(String(180), nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class FinancialEntryRecord(Base):
+    __tablename__ = "financial_entries"
+    __table_args__ = (
+        CheckConstraint("direction IN ('debit','credit')", name="ck_financial_entry_direction"),
+        CheckConstraint("amount > 0", name="ck_financial_entry_amount"),
+        Index("idx_financial_entry_journal", "journal_id"),
+        Index("idx_financial_entry_account", "account", "created_at"),
+        {"schema": "payments"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    journal_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("payments.financial_journals.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account: Mapped[str] = mapped_column(String(128), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

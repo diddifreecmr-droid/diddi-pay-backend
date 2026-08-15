@@ -190,6 +190,7 @@ class PaystackPaymentProcessor:
             "status": provider_status or None,
             "amount": data.get("amount"),
             "currency": data.get("currency"),
+            "fees": data.get("fees"),
             "channel": data.get("channel"),
             "paid_at": data.get("paid_at"),
             "gateway_response": data.get("gateway_response"),
@@ -201,6 +202,7 @@ class PaystackPaymentProcessor:
             status=status,
             amount=int(data["amount"]) if data.get("amount") is not None else None,
             currency=str(data["currency"]).upper() if data.get("currency") else None,
+            fee=int(data["fees"]) if data.get("fees") is not None else None,
             sanitized_payload=sanitized,
         )
 

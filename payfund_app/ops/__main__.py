@@ -14,6 +14,7 @@ from payfund_app.ops.maintenance import (
     run_housekeeping,
     reconcile_pending_paystack_deposits,
     reconcile_paystack_deposit,
+    record_payment_settlement,
     relay_outbox_events,
     require_admin,
 )
@@ -58,6 +59,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     payment_relay.add_argument("--limit", type=int, choices=range(1, 501), default=100)
     payment_relay.add_argument("--admin-role", default="admin")
+
+    settlement = sub.add_parser(
+        "record-payment-settlement",
+        help="Record a provider settlement against a PaymentIntent receivable",
+    )
+    settlement.add_argument("payment_intent_id", type=_parse_uuid)
+    settlement.add_argument("amount", type=int)
+    settlement.add_argument("settlement_reference")
+    settlement.add_argument("--admin-role", default="admin")
 
     housekeeping = sub.add_parser(
         "housekeeping",
@@ -138,6 +148,18 @@ def main(argv: list[str] | None = None) -> int:
                 delivered=result.delivered,
                 retried=result.retried,
                 unavailable=result.unavailable,
+            )
+            return 0
+        if args.command == "record-payment-settlement":
+            result = record_payment_settlement(
+                session,
+                payment_intent_id=args.payment_intent_id,
+                amount=args.amount,
+                settlement_reference=args.settlement_reference,
+            )
+            print(
+                f"net_expected={result['net_expected']} settled={result['settled']} "
+                f"outstanding={result['outstanding']}"
             )
             return 0
         if args.command == "housekeeping":
