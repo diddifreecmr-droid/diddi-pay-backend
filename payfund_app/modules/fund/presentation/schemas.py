@@ -126,6 +126,18 @@ class CreateLoanResponse(BaseModel):
     status: str
 
 
+class LoanItem(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    status: str
+    principal_amount: int
+    currency: str
+    duration_months: int
+    total_repayable: int
+    disbursed_at: datetime | None
+    created_at: datetime
+
+
 class NextInstallment(BaseModel):
     due_date: date
     amount_due: int

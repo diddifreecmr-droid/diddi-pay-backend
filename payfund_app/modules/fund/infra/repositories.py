@@ -205,6 +205,22 @@ class LoanRepository:
         self.tracer_statut(loan, None, str(LoanStatus.PENDING))
         return loan
 
+    def list_by_borrower(
+        self, borrower_user_id: uuid.UUID, status: str | None, page: int, page_size: int
+    ) -> tuple[list[Loan], int]:
+        query = select(Loan).where(Loan.borrower_user_id == borrower_user_id)
+        if status:
+            query = query.where(Loan.status == status)
+        total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        rows = list(
+            self.session.scalars(
+                query.order_by(Loan.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+        return rows, total
+
     def tracer_statut(
         self,
         loan: Loan,

@@ -138,6 +138,10 @@ Cette route reste disponible pendant la migration et pourra devenir demain l'ada
 
 - `POST /fund/loans/simulate` : simulation sans mouvement d'argent.
 - `POST /fund/loans` : creation d'une demande pour le proprietaire de campagne.
+- `GET /fund/loans` : liste paginee des prets de l'utilisateur courant (`user_id` du token),
+  filtre optionnel `status`. Absent du contrat d'origine ; ajoute car un pret est une donnee
+  privee de l'emprunteur (pas de decouverte possible sans connaitre deja `loan_id`), contrairement
+  aux campagnes qui sont publiques via `GET /fund/campaigns`.
 - `GET /fund/loans/{loan_id}` : detail du pret.
 - `GET /fund/loans/{loan_id}/schedule` : echeancier.
 - `POST /fund/loans/{loan_id}/repay` : remboursement wallet legacy avec PIN.

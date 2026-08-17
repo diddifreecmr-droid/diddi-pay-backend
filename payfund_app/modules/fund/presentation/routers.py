@@ -37,6 +37,7 @@ from payfund_app.modules.fund.presentation.schemas import (
     InvestResponse,
     InvestmentSummary,
     LoanDetail,
+    LoanItem,
     NextInstallment,
     RepayRequest,
     RepayResponse,
@@ -289,6 +290,43 @@ def create_loan(
         duration_months=payload.duration_months,
     )
     return CreateLoanResponse(loan_id=loan.id, status=loan.status)
+
+
+@router.get("/loans", response_model=Page[LoanItem])
+def list_loans(
+    user: CurrentUserDep,
+    session: SessionDep,
+    status: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> Page[LoanItem]:
+    """Prêts de l'utilisateur courant (`user_id` du token) — pas de filtre par tiers : un prêt
+    est une donnée privée de son emprunteur, contrairement aux campagnes qui sont publiques."""
+    loans, total = _loans(session).lister_prets(
+        borrower_user_id=user.user_id, status=status, page=page, page_size=page_size
+    )
+    return Page[LoanItem](
+        data=[
+            LoanItem(
+                id=loan.id,
+                campaign_id=loan.campaign_id,
+                status=loan.status,
+                principal_amount=int(loan.principal_amount),
+                currency=loan.currency,
+                duration_months=loan.duration_months,
+                total_repayable=int(loan.total_repayable),
+                disbursed_at=loan.disbursed_at,
+                created_at=loan.created_at,
+            )
+            for loan in loans
+        ],
+        pagination=Pagination(
+            page=page,
+            page_size=page_size,
+            total_items=total,
+            total_pages=math.ceil(total / page_size) if total else 0,
+        ),
+    )
 
 
 @router.get("/loans/{loan_id}", response_model=LoanDetail)

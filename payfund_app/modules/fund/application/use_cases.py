@@ -295,6 +295,13 @@ class LoanUseCases:
 
     # --- Lecture -------------------------------------------------------------
 
+    def lister_prets(
+        self, *, borrower_user_id: uuid.UUID, status: str | None, page: int, page_size: int
+    ) -> tuple[list[Loan], int]:
+        """Prêts de l'utilisateur courant (token), pas de route publique équivalente pour un
+        tiers : contrairement aux campagnes, un prêt est une donnée privée de l'emprunteur."""
+        return self.loans.list_by_borrower(borrower_user_id, status, page, page_size)
+
     def detail(self, loan_id: uuid.UUID, *, user_id: uuid.UUID) -> tuple[Loan, RepaymentSchedule | None]:
         loan = self.loans.get(loan_id)
         if loan is None or loan.borrower_user_id != user_id:

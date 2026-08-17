@@ -250,6 +250,31 @@ architecture section 6).
 
 ---
 
+### `GET /fund/loans`
+
+Liste paginée des prêts de l'utilisateur courant (`user_id` déduit du token) — pas de route pour
+lister les prêts d'un tiers, un prêt est une donnée privée de son emprunteur, contrairement aux
+campagnes (`GET /fund/campaigns`) qui sont publiques. Absente du contrat d'origine ; ajoutée pour
+éviter que le frontend n'ait à stocker les `loan_id` localement pour reconstituer un historique.
+
+**Paramètres query** (optionnels) : `status`, `page` (défaut `1`), `page_size` (défaut `20`, max `100`)
+**Réponse `200`**
+```json
+{
+  "data": [
+    {
+      "id": "l8c4...", "campaign_id": "c1a2...", "status": "repaying",
+      "principal_amount": 200000, "currency": "XOF", "duration_months": 6,
+      "total_repayable": 213000, "disbursed_at": "2026-07-20T09:00:00Z",
+      "created_at": "2026-07-18T14:32:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total_items": 1, "total_pages": 1 }
+}
+```
+
+---
+
 ### `GET /fund/loans/{loan_id}`
 
 ```json

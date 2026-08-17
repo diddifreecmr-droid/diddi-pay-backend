@@ -504,3 +504,34 @@ def test_pret_d_un_tiers_est_invisible(client, auth, session, make_user, fund_ac
     auth.as_user(tiers)
     assert client.get(f"{BASE}/loans/{loan_id}").status_code == 404
     assert client.get(f"{BASE}/loans/{loan_id}/schedule").status_code == 404
+
+
+# --- Liste des prêts -----------------------------------------------------
+
+
+def test_liste_uniquement_les_prets_de_l_utilisateur_courant(
+    client, auth, session, make_user, fund_account
+):
+    owner, _, loan_id = _pret_decaisse(client, auth, session, make_user, fund_account)
+    _, _, autre_loan_id = _pret_decaisse(client, auth, session, make_user, fund_account)
+
+    auth.as_user(owner)
+    response = client.get(f"{BASE}/loans")
+
+    assert response.status_code == 200
+    body = response.json()
+    loan_ids = {item["id"] for item in body["data"]}
+    assert loan_ids == {str(loan_id)}
+    assert str(autre_loan_id) not in loan_ids
+    assert body["pagination"]["total_items"] == 1
+
+
+def test_liste_les_prets_filtree_par_statut(client, auth, session, make_user, fund_account):
+    owner, _, loan_id = _pret_decaisse(client, auth, session, make_user, fund_account)
+
+    auth.as_user(owner)
+    disbursed = client.get(f"{BASE}/loans", params={"status": "disbursed"}).json()["data"]
+    pending = client.get(f"{BASE}/loans", params={"status": "pending"}).json()["data"]
+
+    assert {item["id"] for item in disbursed} == {str(loan_id)}
+    assert pending == []
