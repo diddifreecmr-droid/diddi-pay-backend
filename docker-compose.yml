@@ -65,6 +65,7 @@ services:
       # à écraser explicitement en production, via l'UI de variables d'environnement de l'outil
       # de déploiement (README section « Déploiement via Portainer »), jamais dans ce fichier.
       QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:-change-me-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
     ports:
       # Port hôte configurable — même remarque que pour db/redis ci-dessus.
       - "${APP_PORT:-48213}:8000"
