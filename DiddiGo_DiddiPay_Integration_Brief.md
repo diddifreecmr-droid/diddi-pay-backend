@@ -1,5 +1,8 @@
 # DiddiGo - Brief d'integration DiddiPay
 
+Pour savoir exactement quelle variable placer dans quel stack et quelle route appartient a quel
+service, commencer par `DiddiPay_DiddiGo_Env_Routes_Matrix.md`.
+
 **Version :** 1.0  
 **Public :** equipe backend DiddiGo, equipe mobile/web DiddiGo, DevOps et QA  
 **Contrat executable DiddiPay :** `/payfund/v1/openapi.json`  
