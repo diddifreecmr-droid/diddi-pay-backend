@@ -65,6 +65,9 @@ Plus pratique pour itérer (`--reload`), au prix d'un redémarrage manuel après
 
 ### Déploiement via Portainer (stack Git)
 
+Le runbook exécutable de sauvegarde, déploiement, tests Paystack, décision GO/NO-GO et rollback est
+dans [`VPS_STAGING_LAUNCH_PROTOCOL.md`](VPS_STAGING_LAUNCH_PROTOCOL.md).
+
 Portainer clone le dépôt et lit `docker-compose.yml`, mais **n'a jamais accès à un `.env`** —
 celui-ci n'est pas versionné (`.gitignore`) et n'existe que sur les postes qui l'ont créé. Toute
 variable rendue obligatoire dans `docker-compose.yml` (`${VAR:?...}`) ferait donc échouer le
