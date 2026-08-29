@@ -79,6 +79,11 @@ démarre quand même, mais avec les valeurs par défaut de `.env.example` (ports
 `48213`, `QR_SIGNING_SECRET=change-me-in-production`) — à vérifier avant toute mise en
 production réelle.
 
+Portainer permet aussi de charger ces variables depuis le fichier `.env` préparé localement.
+Ce fichier contient les secrets Paystack et interservices : l'importer dans la configuration du
+stack, mais ne jamais l'ajouter au dépôt ni le joindre à un ticket. Git ignore `.env` et tous les
+fichiers `.env.*`, à l'exception du modèle public `.env.example`.
+
 Le compose transmet aussi les variables du coeur PaymentIntent (`PAYMENT_PROCESSOR_MODE`,
 `PAYMENT_SERVICE_KEYS`, `PAYMENT_CALLBACK_TARGETS`, secrets Paystack et callback DiddiFund). Leurs
 valeurs par défaut gardent le sandbox fermé aux appels S2S : il faut donc les définir explicitement
