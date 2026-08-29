@@ -69,7 +69,7 @@ PAYSTACK_SECRET_KEY=<secret-staging>
 PAYSTACK_WEBHOOK_SECRET=<secret-staging>
 PAYSTACK_BASE_URL=https://api.paystack.co
 PAYMENT_SERVICE_KEYS=diddigo:<secret-1>,diddifund:<secret-2>
-PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api-staging.diddifree.com/internal/webhooks/diddipay","secret":"<secret-hmac-1>"},"diddifund":{"url":"http://app:8000/payfund/v1/fund/payments/webhooks/diddipay","secret":"<secret-hmac-2>"}}
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-staging.diddifree.com/internal/webhooks/diddipay","secret":"<secret-hmac-1>"},"diddifund":{"url":"http://app:8000/payfund/v1/fund/payments/webhooks/diddipay","secret":"<secret-hmac-2>"}}
 DIDDIFUND_DIDDIPAY_CALLBACK_SECRET=<secret-hmac-2>
 ```
 

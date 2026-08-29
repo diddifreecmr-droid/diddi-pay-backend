@@ -382,7 +382,7 @@ tentatives.
 Configuration DiddiPay :
 
 ```env
-PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api.diddifree.com/internal/webhooks/diddipay","secret":"replace-with-a-long-random-secret"}}
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-staging.diddifree.com/internal/webhooks/diddipay","secret":"replace-with-a-long-random-secret"}}
 ```
 
 Commande de relay a executer dans un worker ou job interne :

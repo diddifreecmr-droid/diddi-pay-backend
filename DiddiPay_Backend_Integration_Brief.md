@@ -186,7 +186,7 @@ PAYMENT_SERVICE_KEYS=diddigo:<secret-appel-diddigo>,diddifund:<secret-appel-didd
 Destination callback :
 
 ```env
-PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api.diddifree.com/internal/webhooks/diddipay","secret":"<secret-hmac-callback-distinct>"}}
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-staging.diddifree.com/internal/webhooks/diddipay","secret":"<secret-hmac-callback-distinct>"}}
 ```
 
 Les deux secrets ont des usages differents :

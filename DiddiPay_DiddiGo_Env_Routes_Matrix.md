@@ -46,7 +46,7 @@ PAYSTACK_WEBHOOK_SECRET=
 PAYSTACK_BASE_URL=https://api.paystack.co
 
 PAYMENT_SERVICE_KEYS=diddigo:<SECRET_A>,diddifund:<AUTRE_SECRET>
-PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api-staging.diddifree.com/internal/webhooks/diddipay","secret":"<SECRET_B>"},"diddifund":{"url":"http://app:8000/payfund/v1/fund/payments/webhooks/diddipay","secret":"<SECRET_DIDDIFUND>"}}
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-staging.diddifree.com/internal/webhooks/diddipay","secret":"<SECRET_B>"},"diddifund":{"url":"http://app:8000/payfund/v1/fund/payments/webhooks/diddipay","secret":"<SECRET_DIDDIFUND>"}}
 ```
 
 | Variable DiddiPay | Role | Qui doit connaitre la valeur |
@@ -193,7 +193,7 @@ l'evenement et met a jour le `PaymentIntent`. Cette route n'est pas appelee par 
 DiddiGo doit implementer et publier :
 
 ```text
-POST https://go-api-staging.diddifree.com/internal/webhooks/diddipay
+POST https://go-staging.diddifree.com/internal/webhooks/diddipay
 ```
 
 DiddiPay envoie :
@@ -284,7 +284,7 @@ Sans signature, la route doit refuser la requete avec `401` ou `403` :
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' \
-  -X POST https://go-api-staging.diddifree.com/internal/webhooks/diddipay \
+  -X POST https://go-staging.diddifree.com/internal/webhooks/diddipay \
   -H 'Content-Type: application/json' \
   --data '{}'
 ```
@@ -333,4 +333,3 @@ retarde ou temporairement impossible.
 | navigateur revient sur une page success mais course pending | normal avant confirmation serveur | relire DiddiGo, ne pas faire confiance au retour navigateur |
 | Paystack affiche webhook `401` | secret/signature Paystack incorrect | verifier le secret charge uniquement cote DiddiPay |
 | deux paiements sont crees pour une course | idempotency key regeneree pendant un retry | stocker et reutiliser la meme cle et le meme corps |
-

@@ -49,7 +49,7 @@ Invariants :
 
 ```env
 PAYMENT_SERVICE_KEYS=diddigo:<service-key-diddigo>,diddifund:<service-key-diddifund>
-PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-api-staging.diddifree.com/internal/webhooks/diddipay","secret":"<callback-secret-diddigo>"}}
+PAYMENT_CALLBACK_TARGETS={"diddigo":{"url":"https://go-staging.diddifree.com/internal/webhooks/diddipay","secret":"<callback-secret-diddigo>"}}
 PAYMENT_PROCESSOR_MODE=paystack
 PAYSTACK_SECRET_KEY=<cle-secrete-paystack-de-l-environnement>
 PAYSTACK_WEBHOOK_SECRET=<secret-utilise-pour-verifier-la-signature-paystack>

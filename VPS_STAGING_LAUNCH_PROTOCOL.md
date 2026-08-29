@@ -68,7 +68,7 @@ Resultat attendu : aucune publication publique de PostgreSQL ou Redis.
 - Le fichier `.env` staging a ete transfere par un canal prive et importe dans Portainer.
 - Aucun secret n'est colle dans Git, un ticket, Slack, WhatsApp ou une capture d'ecran.
 - Le receiver DiddiGo existe a
-  `https://go-api-staging.diddifree.com/internal/webhooks/diddipay` avant d'activer ses paiements.
+  `https://go-staging.diddifree.com/internal/webhooks/diddipay` avant d'activer ses paiements.
 - Le compte Paystack test accepte XOF et les canaux que l'equipe veut tester.
 - Le webhook Paystack est configure vers :
 
