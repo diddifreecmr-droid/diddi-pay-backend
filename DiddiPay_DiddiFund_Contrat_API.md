@@ -58,7 +58,8 @@ sont distincts et appartiennent au module consommateur qui les utilise
 
 ### `POST /wallet/deposit`
 
-Initie un dépôt via un opérateur Mobile Money.
+Initie un dépôt via un opérateur Mobile Money, ou via Paystack (`provider: "paystack"`, `email`
+requis).
 
 **Requête**
 ```json
@@ -71,6 +72,20 @@ Initie un dépôt via un opérateur Mobile Money.
 ```
 Le front doit interroger `GET /wallet/transactions/{transaction_id}` ou écouter une notification push
 pour connaître l'issue (`completed` ou `failed`).
+
+**Cas Paystack** : la réponse contient en plus `authorization_url` et `access_code`, tels que
+renvoyés par `POST /transaction/initialize` chez Paystack.
+```json
+{
+  "transaction_id": "t9f1...", "status": "pending", "provider_reference": "ref-xyz",
+  "authorization_url": "https://checkout.paystack.com/xyz", "access_code": "xyz"
+}
+```
+`authorization_url` est le lien de checkout hébergé à ouvrir (redirection web, ou webview côté
+mobile) pour que l'utilisateur complète le paiement. Il est persisté côté serveur : si la réponse
+initiale est perdue (retry réseau, app relancée), il reste récupérable sans relancer un dépôt via
+`GET /wallet/transactions/{transaction_id}` (champs `authorization_url`/`access_code`), ou via un
+rejeu de la même `Idempotency-Key` sur `POST /wallet/deposit`.
 
 **Erreurs** : `422` (`INVALID_AMOUNT`), `502` (`GATEWAY_UNAVAILABLE`)
 
@@ -245,7 +260,13 @@ utilisateurs peuvent obtenir des simulations différentes pour le même montant.
 Demande de prêt réelle. Ne décaisse pas immédiatement — passe par une étape d'évaluation (scoring, voir
 architecture section 6).
 
-**Requête** : `{ "amount": 200000, "duration_months": 6 }`
+**Requête** : `{ "campaign_id": "c1a2...", "amount": 200000, "duration_months": 6 }`
+
+`campaign_id` est obligatoire (`422` sinon) — DiddiFund est du crowdlending : un prêt est décaissé
+depuis le pool d'une campagne précise, pas d'un pool générique. L'appelant doit être le
+propriétaire de cette campagne (`403 NOT_CAMPAIGN_OWNER` sinon). Contrairement à
+`POST /fund/loans/simulate`, qui reste un calcul pur sans `campaign_id`.
+
 **Réponse `201`** : `{ "loan_id": "l8c4...", "status": "pending" }`
 
 ---
