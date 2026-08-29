@@ -9,3 +9,9 @@ build/
 dist/
 .venv/
 /bruno/DiddiPay-Fund-Staging/
+tests_live/.auth_cache.json
+/.npm-cache/
+/debug.log
+/docs git ignore this folder/
+/graphify-out/
+/tmp/
