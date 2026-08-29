@@ -414,6 +414,8 @@ def get_transaction(
         created_at=transaction.created_at,
         completed_at=transaction.completed_at,
         direction=entry.direction if entry else None,
+        authorization_url=transaction.authorization_url,
+        access_code=transaction.access_code,
     )
 
 

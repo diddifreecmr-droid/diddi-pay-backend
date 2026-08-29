@@ -156,6 +156,10 @@ class TransactionDetail(TransactionItem):
     # `direction` lève l'ambiguïté entre un envoi et une réception. `None` tant qu'une opération
     # n'a pas produit d'écriture (dépôt en attente de l'opérateur).
     completed_at: datetime | None
+    # Dépôt Paystack uniquement : lien de checkout et code d'accès, persistés pour rester
+    # récupérables ici si la réponse `202` initiale de `POST /wallet/deposit` a été perdue.
+    authorization_url: str | None = None
+    access_code: str | None = None
 
 
 # --- QR code de paiement marchand (Contrat §1, format fixé en §3) -----------

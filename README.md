@@ -264,6 +264,7 @@ du code concerné.
 | 13 | Contrat §3 | Format du QR de paiement fixé (voir plus haut) : jeton signé HMAC, encodant `merchant_account_id` et, en extension, un montant fixe optionnel. Explicitement laissé ouvert par le contrat. |
 | 14 | Archi §3.1 | Unicité de compte étendue à `(user_id, currency, account_type)`, plus seulement `(user_id, currency)` : un même utilisateur doit pouvoir posséder un wallet personnel et un compte marchand dans la même devise — nécessaire dès qu'un propriétaire de compte marchand (QR) est aussi client. |
 | 15 | Contrat §2 | `GET /fund/loans` ajouté (absent du contrat). Sans lui, aucun moyen de retrouver ses prêts sans en connaître déjà l'id — le frontend devrait stocker les `loan_id` côté client, fragile au changement d'appareil. Filtré sur le `user_id` du token, comme `GET /fund/campaigns` mais scopé à l'emprunteur : un prêt est une donnée privée, contrairement aux campagnes. |
+| 16 | Contrat §1 | `authorization_url`/`access_code` (dépôt Paystack) désormais persistés sur `transactions` et exposés par `GET /wallet/transactions/{id}`. Avant : ni stockés ni redonnés au rejeu d'une même `Idempotency-Key` (`null`), l'utilisateur restait bloqué sans lien de paiement à ouvrir. |
 
 ### Points déduits, non inventés
 

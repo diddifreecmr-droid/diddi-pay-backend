@@ -568,7 +568,7 @@ class WalletUseCases:
         """Initie un dépôt. **Aucune écriture** tant que l'opérateur n'a pas confirmé."""
         rejeu = self.transactions.get_by_idempotency_key(idempotency_key)
         if rejeu is not None:
-            return DepositResult(rejeu, None, None)
+            return DepositResult(rejeu, rejeu.authorization_url, rejeu.access_code)
 
         compte = self.compte_de(user_id)
         # Le montant reçu est exprimé dans l'unité mineure de la devise du compte.
@@ -600,6 +600,8 @@ class WalletUseCases:
             raise GatewayUnavailable() from exc
 
         transaction.provider_reference = operation.provider_reference
+        transaction.authorization_url = operation.authorization_url
+        transaction.access_code = operation.access_code
         self.session.flush()
 
         if operation.status is GatewayStatus.COMPLETED:

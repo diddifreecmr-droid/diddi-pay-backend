@@ -155,6 +155,11 @@ class Transaction(Base):
     currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
     # Identifiant de l'opération chez l'opérateur, pour le support et la réconciliation.
     provider_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Lien de checkout Paystack (dépôt uniquement) — persisté pour rester récupérable après le
+    # `202` initial : un rejeu de la même Idempotency-Key, ou un `GET /transactions/{id}` plus
+    # tard, doivent pouvoir le retrouver au lieu de renvoyer `null`.
+    authorization_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    access_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Transaction d'origine, sur une contre-passation.
     reverses_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), nullable=True

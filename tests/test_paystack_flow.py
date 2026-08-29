@@ -249,3 +249,66 @@ def test_paystack_webhook_reports_unknown_reference(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"] == "unknown_reference"
     assert response.json()["reason"] == "no_local_transaction"
+
+
+def test_depot_paystack_persiste_le_lien_de_checkout(client, auth, make_user, monkeypatch):
+    """Le lien de checkout ne doit plus disparaître au rejeu ni redevenir introuvable."""
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": True,
+                "data": {
+                    "authorization_url": "https://checkout.paystack.com/xyz",
+                    "access_code": "xyz",
+                    "reference": "ref-xyz",
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            return FakeResponse()
+
+    monkeypatch.setattr("payfund_app.modules.wallet.infra.gateways.httpx.Client", FakeClient)
+
+    user_id, _ = make_user()
+    auth.as_user(user_id)
+    headers = {"Idempotency-Key": str(uuid.uuid4())}
+    payload = {
+        "provider": "paystack",
+        "amount": 5000,
+        "phone": "+2250700000000",
+        "email": "buyer@example.com",
+    }
+
+    premiere = client.post(f"{BASE}/deposit", json=payload, headers=headers)
+    assert premiere.status_code == 202
+    body = premiere.json()
+    assert body["authorization_url"] == "https://checkout.paystack.com/xyz"
+    assert body["access_code"] == "xyz"
+
+    # Rejeu de la même Idempotency-Key (retry réseau côté client, par exemple) : le lien ne doit
+    # plus revenir à `null`.
+    seconde = client.post(f"{BASE}/deposit", json=payload, headers=headers)
+    assert seconde.json()["transaction_id"] == body["transaction_id"]
+    assert seconde.json()["authorization_url"] == "https://checkout.paystack.com/xyz"
+
+    # Récupérable aussi via GET, même sans avoir gardé la réponse `202` initiale.
+    detail = client.get(f"{BASE}/transactions/{body['transaction_id']}").json()
+    assert detail["authorization_url"] == "https://checkout.paystack.com/xyz"
+    assert detail["access_code"] == "xyz"
