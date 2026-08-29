@@ -328,7 +328,7 @@ retarde ou temporairement impossible.
 |---|---|---|
 | DiddiGo recoit `401` de DiddiPay | service key ou client id differents | comparer les deux cotes sans logger le secret |
 | DiddiGo retourne `401` au callback | callback secret different ou corps transforme | verifier le HMAC sur le corps brut |
-| DiddiGo retourne `404` au callback | route absente ou proxy incorrect | verifier le routeur et le domaine `go-api-staging` |
+| DiddiGo retourne `404` au callback | route absente ou proxy incorrect | verifier le routeur et le domaine `go-staging.diddifree.com` |
 | DiddiPay reussit mais DiddiGo reste pending | relay non planifie ou callback en retry | lancer `payment-events-status` et `relay-payment-events` |
 | navigateur revient sur une page success mais course pending | normal avant confirmation serveur | relire DiddiGo, ne pas faire confiance au retour navigateur |
 | Paystack affiche webhook `401` | secret/signature Paystack incorrect | verifier le secret charge uniquement cote DiddiPay |
