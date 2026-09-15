@@ -1,6 +1,7 @@
 import re
 from decimal import Decimal
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
@@ -26,6 +27,22 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://payfund:payfund@localhost:5432/payfund"
+
+    # Observabilite runtime. `release_sha` permet de relier une erreur au commit deploye.
+    observability_enabled: bool = True
+    observability_environment: str = "local"
+    observability_service_name: str = "diddipay"
+    observability_release_sha: str = "unknown"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    metrics_enabled: bool = False
+    metrics_token: str = ""
+
+    @field_validator("metrics_token")
+    @classmethod
+    def require_strong_metrics_token(cls, value: str) -> str:
+        if value and len(value) < 32:
+            raise ValueError("metrics token must contain at least 32 characters")
+        return value
 
     # DiddiFreeID : on ne récupère que le JWKS. Aucun appel HTTP pour vérifier un token
     # (DiddiFreeID_Contrat_API.md §0 : « Ne jamais appeler DiddiFreeID en HTTP pour

@@ -5,7 +5,6 @@ Base URL : `/payfund/v1` (Contrat API, en-tête du document).
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,6 +14,8 @@ from sqlalchemy.exc import ProgrammingError
 from payfund_app.core.config import get_settings
 from payfund_app.core.database import SessionLocal
 from payfund_app.core.errors import register_exception_handlers
+from payfund_app.core.observability.metrics import router as metrics_router
+from payfund_app.core.observability.middleware import ObservabilityMiddleware
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.payments.presentation.routers import router as payment_router
 from payfund_app.modules.payments.presentation.webhook_router import router as payment_webhook_router
@@ -24,8 +25,9 @@ from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
 from payfund_app.ops.maintenance import relay_outbox_events
 from payfund_app.modules.wallet.presentation.routers import router as wallet_router
 from payfund_app.shared_kernel.events.bus import RedisEventBus, get_bus
+from payfund_app.shared_kernel.logging import configure_logging
 
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 
 API_PREFIX = "/payfund/v1"
 
@@ -63,7 +65,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ObservabilityMiddleware)
 
+app.include_router(metrics_router)
 app.include_router(wallet_router, prefix=API_PREFIX)
 app.include_router(fund_router, prefix=API_PREFIX)
 app.include_router(payment_router, prefix=API_PREFIX)

@@ -312,6 +312,37 @@ Reste à décider avec le produit et les partenaires : détenir ou non des solde
 BCEAO (agrément change, déclarations transfrontalières, seuils AML). `ConvertirDevise` n'a
 volontairement pas de route HTTP — aucune n'est spécifiée au contrat.
 
+## Observabilite OBS-1
+
+Le socle d'observabilite reste hors du domaine metier et n'influence jamais le resultat d'un
+paiement. Il fournit trois garanties operationnelles des le MVP :
+
+- Chaque requete accepte un `X-Request-ID` valide ou en genere un, puis le renvoie dans la
+  reponse. DiddiGo et les futurs modules doivent reutiliser le meme identifiant dans leurs appels
+  afin de suivre un parcours entre services.
+- Les evenements applicatifs et HTTP sont emis en JSON avec `service`, `environment`, `release`,
+  `request_id`, route, statut et duree. Le filtre central masque notamment les tokens, cles API,
+  secrets, PIN, OTP, numeros de telephone et emails avant emission.
+- `GET /internal/metrics` expose les compteurs et latences Prometheus. La route est volontairement
+  absente de Swagger, desactivee par defaut et protegee par `Authorization: Bearer <METRICS_TOKEN>`.
+
+Configuration de staging minimale :
+
+```dotenv
+OBSERVABILITY_ENABLED=true
+OBSERVABILITY_ENVIRONMENT=staging
+OBSERVABILITY_SERVICE_NAME=diddipay
+OBSERVABILITY_RELEASE_SHA=<sha-git-de-l-image>
+LOG_LEVEL=INFO
+METRICS_ENABLED=true
+METRICS_TOKEN=<secret-aleatoire-de-32-caracteres-minimum>
+```
+
+Le token doit etre stocke dans Portainer ou le gestionnaire de secrets, jamais dans Git. Le
+reverse proxy doit limiter `/internal/metrics` au reseau de supervision, en plus du Bearer token.
+Prometheus peut alors collecter la route et Grafana construire les premiers tableaux de bord :
+debit HTTP, taux d'erreur par route/statut et latences p50/p95/p99.
+
 ## Conventions
 
 - Montants : entiers d'unités mineures. Garanti par le value object `Money`.

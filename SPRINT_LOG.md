@@ -226,3 +226,12 @@ wallet historiques.
 | 14 | claim/lease concurrent, HTTPS callbacks et observabilité ops | `de99c2b` |
 | 15 | parité Swagger, contrats finaux et migration wallet | `1c792d4`, `c2a8a4e` |
 | 16 | audit Docker, runbook de production et clôture MVP | `9004023` |
+
+## Observabilite
+
+Cette serie ajoute progressivement la supervision sans coupler le domaine paiement a un outil
+particulier.
+
+| Sprint | Livraison | Commit |
+|---:|---|---|
+| OBS-1 | correlation `X-Request-ID`, logs JSON expurges et metriques Prometheus protegees | ce commit |
