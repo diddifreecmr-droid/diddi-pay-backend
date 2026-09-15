@@ -424,6 +424,7 @@ course sur la seule reponse `processing`.
 
 Chaque log DiddiGo lie au paiement doit permettre une correlation avec :
 
+- `request_id`, transmis a DiddiPay dans `X-Request-ID` puis repris depuis la reponse ;
 - `ride_id` ;
 - `business_reference` ;
 - `payment_intent_id` ;

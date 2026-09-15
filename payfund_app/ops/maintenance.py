@@ -9,6 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
+from payfund_app.core.observability.business_metrics import (
+    observe_delivery_summary,
+    observe_reconciliation_summary,
+    set_outbox_status_counts,
+)
 from payfund_app.core.security import CurrentUser
 from payfund_app.core.config import get_settings
 from payfund_app.modules.payments.application.deliveries import (
@@ -172,12 +177,19 @@ def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult
             failed += 1
         else:
             pending += 1
-    return BulkReconcileResult(
+    summary = BulkReconcileResult(
         scanned=len(pending_deposits),
         completed=completed,
         failed=failed,
         pending=pending,
     )
+    observe_reconciliation_summary(
+        provider="paystack",
+        succeeded=summary.completed,
+        failed=summary.failed,
+        pending=summary.pending,
+    )
+    return summary
 
 
 def relay_outbox_events(session: Session, bus) -> RelayResult:
@@ -237,6 +249,11 @@ def deliver_payment_events(
         retried=result.retried,
         unavailable=result.unavailable,
     )
+    observe_delivery_summary(
+        delivered=result.delivered,
+        retried=result.retried,
+        unavailable=result.unavailable,
+    )
     return result
 
 
@@ -248,6 +265,7 @@ def payment_event_delivery_status(session: Session) -> dict[str, int]:
         "delivered": counts.get("delivered", 0),
         "dead_letter": counts.get("dead_letter", 0),
     }
+    set_outbox_status_counts(result)
     emit("info", "ops.payment_events.status", **result)
     return result
 

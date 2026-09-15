@@ -343,6 +343,27 @@ reverse proxy doit limiter `/internal/metrics` au reseau de supervision, en plus
 Prometheus peut alors collecter la route et Grafana construire les premiers tableaux de bord :
 debit HTTP, taux d'erreur par route/statut et latences p50/p95/p99.
 
+### Metriques paiement OBS-2
+
+Les series metier utilisent uniquement des labels enumeres et bornes. Aucun `user_id`, montant,
+numero, email, `business_reference`, `payment_intent_id` ou identifiant de course ne devient un
+label Prometheus : ces valeurs rendraient la cardinalite et le cout de supervision incontrôlables.
+
+| Serie | Usage operationnel |
+|---|---|
+| `diddipay_payment_intents_created_total` | intentions reellement creees, hors rejeu idempotent |
+| `diddipay_provider_calls_total` | appels provider par operation et resultat transport/HTTP |
+| `diddipay_provider_call_duration_seconds` | latence Paystack et futurs PSP |
+| `diddipay_webhook_events_total` | webhooks traites, dupliques, ignores, echoues ou rejetes |
+| `diddipay_reconciliation_results_total` | verdicts des balayages de reconciliation |
+| `diddipay_outbox_deliveries_total` | callbacks livres, replanifies ou sans cible |
+| `diddipay_outbox_events` | etat courant du backlog, dont les dead letters |
+
+Les compteurs memorisent des evenements depuis le dernier demarrage du processus. Prometheus les
+collecte regulierement et gere leurs remises a zero lors d'un redeploiement. La gauge d'outbox est
+rafraichie par la commande ops de statut; OBS-3 automatisera la collecte et les alertes autour de
+ces series.
+
 ## Conventions
 
 - Montants : entiers d'unités mineures. Garanti par le value object `Money`.

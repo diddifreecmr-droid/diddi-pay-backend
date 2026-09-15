@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query
 
 from payfund_app.core.errors import Conflict, NotFound, UnprocessableEntity
+from payfund_app.core.observability.business_metrics import observe_payment_intent_created
 from payfund_app.modules.payments.application.errors import (
     IdempotencyConflict,
     PaymentNotFound,
@@ -150,6 +151,13 @@ def create_payment_intent(
         currency=view.intent.money.currency,
         status=str(view.intent.status),
     )
+    if view.created:
+        attempt = view.attempts[-1]
+        observe_payment_intent_created(
+            processor=attempt.processor,
+            status=str(view.intent.status),
+            currency=view.intent.money.currency,
+        )
     return _response(view)
 
 

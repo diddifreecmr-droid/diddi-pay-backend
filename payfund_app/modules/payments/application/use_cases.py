@@ -71,6 +71,7 @@ class CreatePaymentIntentCommand:
 class PaymentView:
     intent: PaymentIntent
     attempts: tuple[PaymentAttempt, ...]
+    created: bool = False
 
 
 class PaymentUseCases:
@@ -135,7 +136,7 @@ class PaymentUseCases:
         self.intents.save(intent)
         self.attempts.save(attempt)
         self.uow.commit()
-        return PaymentView(intent, (attempt,))
+        return PaymentView(intent, (attempt,), created=True)
 
     def get(self, client_id: str, intent_id: uuid.UUID) -> PaymentView:
         intent = self.intents.get(intent_id)

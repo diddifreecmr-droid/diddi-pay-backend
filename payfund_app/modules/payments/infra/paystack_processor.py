@@ -6,10 +6,12 @@ from collections.abc import Mapping
 import hashlib
 import hmac
 import json
+import time
 from typing import Any
 
 import httpx
 
+from payfund_app.core.observability.business_metrics import observe_provider_call
 from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
@@ -65,10 +67,37 @@ class PaystackPaymentProcessor:
         }
 
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        if self._client is not None:
-            return self._client.request(method, path, headers=self._headers, **kwargs)
-        with httpx.Client(base_url=self._base_url, timeout=15.0) as client:
-            return client.request(method, path, headers=self._headers, **kwargs)
+        operation = (
+            "initialize"
+            if path == "/transaction/initialize"
+            else "verify"
+            if path.startswith("/transaction/verify/")
+            else "refund"
+            if path == "/refund"
+            else "unknown"
+        )
+        started_at = time.perf_counter()
+        try:
+            if self._client is not None:
+                response = self._client.request(method, path, headers=self._headers, **kwargs)
+            else:
+                with httpx.Client(base_url=self._base_url, timeout=15.0) as client:
+                    response = client.request(method, path, headers=self._headers, **kwargs)
+        except (httpx.TimeoutException, httpx.TransportError):
+            observe_provider_call(
+                provider=self.name,
+                operation=operation,
+                outcome="transport_error",
+                duration_seconds=time.perf_counter() - started_at,
+            )
+            raise
+        observe_provider_call(
+            provider=self.name,
+            operation=operation,
+            outcome="http_error" if response.status_code >= 400 else "returned",
+            duration_seconds=time.perf_counter() - started_at,
+        )
+        return response
 
     def initialize_payment(self, request: InitializePaymentRequest) -> ProviderResult:
         if not request.customer_email:

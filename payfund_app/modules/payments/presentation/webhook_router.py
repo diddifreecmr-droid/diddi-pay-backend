@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Request
 
 from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.observability.business_metrics import observe_webhook
 from payfund_app.modules.payments.application.errors import ProcessorWebhookRejected
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
 from payfund_app.modules.payments.application.accounting import PaymentAccountingService
@@ -80,7 +81,9 @@ async def paystack_webhook(
     try:
         result = use_cases.process(processor, raw_body, request.headers)
     except ProcessorWebhookRejected as exc:
+        observe_webhook(provider="paystack", outcome="rejected")
         raise Unauthenticated("Signature webhook Paystack invalide.") from exc
+    observe_webhook(provider="paystack", outcome=result.status)
     emit(
         "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
         "payment.webhook.processed",

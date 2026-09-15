@@ -235,3 +235,4 @@ particulier.
 | Sprint | Livraison | Commit |
 |---:|---|---|
 | OBS-1 | correlation `X-Request-ID`, logs JSON expurges et metriques Prometheus protegees | ce commit |
+| OBS-2 | metriques PaymentIntent, provider, webhook, reconciliation et outbox a cardinalite bornee | ce commit |
