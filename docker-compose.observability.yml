@@ -16,6 +16,7 @@ services:
     volumes:
       - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./deploy/observability/prometheus/slo-rules.yml:/etc/prometheus/slo-rules.yml:ro
       - ${METRICS_TOKEN_FILE:-./.secrets/metrics_token}:/run/secrets/diddipay_metrics_token:ro
       - payfund_prometheus_data:/prometheus
     ports:

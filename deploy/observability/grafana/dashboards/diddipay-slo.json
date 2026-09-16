@@ -1,0 +1,84 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "diddipay-prometheus"},
+      "fieldConfig": {"defaults": {"max": 1, "min": 0, "unit": "percentunit"}},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "1 - diddipay:http_5xx_ratio:rate5m", "refId": "A"}],
+      "title": "Availability (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "diddipay-prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "diddipay:http_latency_p95_seconds:rate5m", "refId": "A"}],
+      "title": "API p95 latency (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "diddipay-prometheus"},
+      "fieldConfig": {"defaults": {"max": 1, "min": 0, "unit": "percentunit"}},
+      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "diddipay:webhook_failure_ratio:rate15m", "refId": "A"}],
+      "title": "Webhook failures (15m)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "diddipay-prometheus"},
+      "fieldConfig": {"defaults": {"max": 1, "min": 0, "unit": "percentunit"}},
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "diddipay:callback_failure_ratio:rate15m", "refId": "A"}],
+      "title": "Callback failures (15m)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "diddipay-prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
+      "id": 5,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "diddipay:http_5xx_ratio:rate5m / 0.001", "legendFormat": "5m burn rate", "refId": "A"},
+        {"expr": "diddipay:http_5xx_ratio:rate30m / 0.001", "legendFormat": "30m burn rate", "refId": "B"},
+        {"expr": "diddipay:http_5xx_ratio:rate1h / 0.001", "legendFormat": "1h burn rate", "refId": "C"},
+        {"expr": "diddipay:http_5xx_ratio:rate6h / 0.001", "legendFormat": "6h burn rate", "refId": "D"}
+      ],
+      "title": "Availability error-budget burn rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "diddipay-prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+      "id": 6,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, route) (rate(diddipay_http_request_duration_seconds_bucket[5m])))", "legendFormat": "API {{route}}", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le, provider, operation) (rate(diddipay_provider_call_duration_seconds_bucket[5m])))", "legendFormat": "{{provider}} {{operation}}", "refId": "B"}
+      ],
+      "title": "API and provider p95 latency",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["diddipay", "slo", "fintech"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "DiddiPay SLO",
+  "uid": "diddipay-slo",
+  "version": 1
+}

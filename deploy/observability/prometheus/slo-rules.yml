@@ -1,0 +1,114 @@
+groups:
+  - name: diddipay-slo-recording
+    interval: 30s
+    rules:
+      - record: diddipay:http_5xx_ratio:rate5m
+        expr: |
+          (sum(rate(diddipay_http_requests_total{status_code=~"5.."}[5m])) or vector(0))
+          /
+          clamp_min(sum(rate(diddipay_http_requests_total[5m])), 0.000001)
+
+      - record: diddipay:http_5xx_ratio:rate30m
+        expr: |
+          (sum(rate(diddipay_http_requests_total{status_code=~"5.."}[30m])) or vector(0))
+          /
+          clamp_min(sum(rate(diddipay_http_requests_total[30m])), 0.000001)
+
+      - record: diddipay:http_5xx_ratio:rate1h
+        expr: |
+          (sum(rate(diddipay_http_requests_total{status_code=~"5.."}[1h])) or vector(0))
+          /
+          clamp_min(sum(rate(diddipay_http_requests_total[1h])), 0.000001)
+
+      - record: diddipay:http_5xx_ratio:rate6h
+        expr: |
+          (sum(rate(diddipay_http_requests_total{status_code=~"5.."}[6h])) or vector(0))
+          /
+          clamp_min(sum(rate(diddipay_http_requests_total[6h])), 0.000001)
+
+      - record: diddipay:http_latency_p95_seconds:rate5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(diddipay_http_request_duration_seconds_bucket[5m]))
+          )
+
+      - record: diddipay:webhook_failure_ratio:rate15m
+        expr: |
+          (sum(rate(diddipay_webhook_events_total{outcome="failed"}[15m])) or vector(0))
+          /
+          clamp_min(sum(rate(diddipay_webhook_events_total[15m])), 0.000001)
+
+      - record: diddipay:callback_failure_ratio:rate15m
+        expr: |
+          (sum(rate(diddipay_outbox_deliveries_total{outcome=~"retried|unavailable"}[15m])) or vector(0))
+          /
+          clamp_min(sum(rate(diddipay_outbox_deliveries_total[15m])), 0.000001)
+
+  - name: diddipay-slo-alerts
+    rules:
+      - alert: DiddiPayAvailabilityBudgetFastBurn
+        expr: |
+          diddipay:http_5xx_ratio:rate5m > (14.4 * 0.001)
+          and
+          diddipay:http_5xx_ratio:rate1h > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          service: diddipay
+          slo: availability
+        annotations:
+          summary: DiddiPay consomme rapidement son budget d'erreur
+          description: Le taux 5xx depasse le seuil de burn rate 14.4x sur 5 minutes et 1 heure.
+          runbook_url: OBSERVABILITY_RUNBOOK.md#availability-budget-burn
+
+      - alert: DiddiPayAvailabilityBudgetSlowBurn
+        expr: |
+          diddipay:http_5xx_ratio:rate30m > (6 * 0.001)
+          and
+          diddipay:http_5xx_ratio:rate6h > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          service: diddipay
+          slo: availability
+        annotations:
+          summary: DiddiPay consomme durablement son budget d'erreur
+          description: Le taux 5xx depasse le seuil de burn rate 6x sur 30 minutes et 6 heures.
+          runbook_url: OBSERVABILITY_RUNBOOK.md#availability-budget-burn
+
+      - alert: DiddiPayApiLatencySloBreached
+        expr: diddipay:http_latency_p95_seconds:rate5m > 1
+        for: 15m
+        labels:
+          severity: warning
+          service: diddipay
+          slo: latency
+        annotations:
+          summary: La latence API p95 depasse une seconde
+          description: La latence p95 de DiddiPay est superieure a une seconde depuis 15 minutes.
+          runbook_url: OBSERVABILITY_RUNBOOK.md#api-latency
+
+      - alert: DiddiPayWebhookFailureSloBreached
+        expr: diddipay:webhook_failure_ratio:rate15m > 0.01
+        for: 10m
+        labels:
+          severity: critical
+          service: diddipay
+          slo: webhooks
+        annotations:
+          summary: Trop de webhooks provider echouent
+          description: Plus de 1 pourcent des webhooks provider echouent sur 15 minutes.
+          runbook_url: OBSERVABILITY_RUNBOOK.md#webhook-failures
+
+      - alert: DiddiPayModuleCallbackFailureSloBreached
+        expr: diddipay:callback_failure_ratio:rate15m > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          service: diddipay
+          slo: callbacks
+        annotations:
+          summary: Trop de callbacks vers les modules echouent
+          description: Plus de 5 pourcent des callbacks sont en retry ou indisponibles sur 15 minutes.
+          runbook_url: OBSERVABILITY_RUNBOOK.md#module-callback-failures
