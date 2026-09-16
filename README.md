@@ -467,7 +467,8 @@ log DiddiPay. En production, le port Tempo reste local et ne doit jamais etre ex
 ### Objectifs de service OBS-6
 
 Le dashboard provisionne **DiddiPay SLO** suit un objectif provisoire de 99,9 % de requetes HTTP
-sans `5xx` sur 30 jours; les reponses `4xx` ne consomment pas ce budget. Deux alertes
+sans `5xx` sur 30 jours; les reponses `4xx`, probes `/health` et `/ready`, Swagger et le scrape
+`/internal/metrics` sont exclus du calcul pour ne pas masquer les erreurs metier. Deux alertes
 multi-fenetres signalent une consommation rapide (14,4x sur 5 minutes et 1 heure) ou persistante
 (6x sur 30 minutes et 6 heures). Des alertes distinctes suivent la latence API p95 > 1 seconde,
 les webhooks `failed` > 1 % et les callbacks `retried|unavailable` > 5 %. Ces valeurs devront etre

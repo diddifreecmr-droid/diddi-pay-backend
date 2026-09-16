@@ -241,3 +241,4 @@ particulier.
 | OBS-5 | traces W3C, OTLP Collector, Tempo, correlation logs et expurgation des URLs | ce commit |
 | OBS-6 | SLO, burn-rate multi-fenetres, dashboard fiabilite et runbook incident fintech | ce commit |
 | OBS-7 | logs JSON centralises via Alloy/Loki, retention et collecte sans socket Docker | ce commit |
+| OBS-8 | correction SLO: exclusion des probes, Swagger, scrape et erreurs client du calcul | ce commit |

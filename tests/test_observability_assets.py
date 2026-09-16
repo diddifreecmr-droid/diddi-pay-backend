@@ -84,6 +84,10 @@ def test_slo_rules_match_metric_names_and_link_to_runbook() -> None:
     runbook = (ROOT / "OBSERVABILITY_RUNBOOK.md").read_text()
 
     assert len(recordings) == 7
+    for rule in recordings[:4]:
+        expression = str(rule["expr"])
+        assert 'status_code!~"4.."' in expression
+        assert '/payfund/v1/(health|ready|docs|openapi[.]json)|/internal/metrics' in expression
     assert "diddipay_webhook_events_total{outcome=\"failed\"}" in expressions
     assert "diddipay_outbox_deliveries_total{outcome=~\"retried|unavailable\"}" in expressions
     assert "diddipay_provider_webhooks_total" not in expressions

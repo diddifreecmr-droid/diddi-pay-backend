@@ -29,8 +29,9 @@ verification aupres du PSP. Horodatage des incidents et preuves en UTC.
 
 ## Availability Budget Burn
 
-Objectif provisoire: 99,9 % des requetes HTTP sans `5xx`, mesure sur 30 jours. Les `4xx` ne sont
-pas des erreurs serveur. Le burn rate critique utilise 5 minutes et 1 heure a 14,4x; le warning
+Objectif provisoire: 99,9 % des requetes HTTP sans `5xx`, mesure sur 30 jours. Les `4xx`, les
+probes, Swagger et le scrape de metriques sont exclus du calcul. Le burn rate critique utilise
+5 minutes et 1 heure a 14,4x; le warning
 utilise 30 minutes et 6 heures a 6x. Ces seuils sont des hypotheses de depart a recalibrer avec
 le trafic et l'impact reel.
 
