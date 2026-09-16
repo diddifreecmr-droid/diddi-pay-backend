@@ -17,7 +17,10 @@ def test_observability_yaml_files_are_valid() -> None:
         ROOT / "deploy/observability/prometheus/prometheus.yml",
         ROOT / "deploy/observability/prometheus/alerts.yml",
         ROOT / "deploy/observability/alertmanager/alertmanager.yml",
+        ROOT / "deploy/observability/otel-collector/config.yml",
+        ROOT / "deploy/observability/tempo/tempo.yml",
         ROOT / "deploy/observability/grafana/provisioning/datasources/prometheus.yml",
+        ROOT / "deploy/observability/grafana/provisioning/datasources/tempo.yml",
         ROOT / "deploy/observability/grafana/provisioning/dashboards/diddipay.yml",
     ]
 
@@ -57,9 +60,12 @@ def test_monitoring_images_are_pinned_and_ports_are_local_only() -> None:
     assert "prom/prometheus:v3.12.0" in compose
     assert "grafana/grafana:13.2.1" in compose
     assert "prom/alertmanager:v0.34.0" in compose
+    assert "otel/opentelemetry-collector-contrib:0.160.0" in compose
+    assert "grafana/tempo:3.0.3" in compose
     assert '127.0.0.1:${PROMETHEUS_PORT:-49090}:9090' in compose
     assert '127.0.0.1:${GRAFANA_PORT:-43000}:3000' in compose
     assert '127.0.0.1:${ALERTMANAGER_PORT:-49093}:9093' in compose
+    assert '127.0.0.1:${TEMPO_PORT:-43200}:3200' in compose
     assert "GRAFANA_ADMIN_PASSWORD must be set" in compose
 
 

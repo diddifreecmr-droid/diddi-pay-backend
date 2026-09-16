@@ -16,6 +16,7 @@ from payfund_app.core.database import SessionLocal
 from payfund_app.core.errors import register_exception_handlers
 from payfund_app.core.observability.metrics import router as metrics_router
 from payfund_app.core.observability.middleware import ObservabilityMiddleware
+from payfund_app.core.observability.tracing import configure_tracing
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.payments.presentation.routers import router as payment_router
 from payfund_app.modules.payments.presentation.webhook_router import router as payment_webhook_router
@@ -43,6 +44,8 @@ async def lifespan(_: FastAPI):
     yield
     if isinstance(bus, RedisEventBus):
         bus.stop()
+    if tracer_provider is not None:
+        tracer_provider.shutdown()
 
 
 app = FastAPI(
@@ -54,6 +57,7 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+tracer_provider = configure_tracing(app)
 
 # Authentification par JWT dans l'en-tête `Authorization`, pas par cookie : pas besoin de
 # `allow_credentials`, donc `allow_origins=["*"]` reste valide (le navigateur l'accepterait de

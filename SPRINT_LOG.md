@@ -238,3 +238,4 @@ particulier.
 | OBS-2 | metriques PaymentIntent, provider, webhook, reconciliation et outbox a cardinalite bornee | ce commit |
 | OBS-3 | stack Prometheus/Grafana, dashboard provisionne, alertes et runbook securise | ce commit |
 | OBS-4 | routage Alertmanager, inhibition, relais secret et test synthetique | ce commit |
+| OBS-5 | traces W3C, OTLP Collector, Tempo, correlation logs et expurgation des URLs | ce commit |

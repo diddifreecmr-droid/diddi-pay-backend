@@ -425,6 +425,7 @@ course sur la seule reponse `processing`.
 Chaque log DiddiGo lie au paiement doit permettre une correlation avec :
 
 - `request_id`, transmis a DiddiPay dans `X-Request-ID` puis repris depuis la reponse ;
+- `trace_id`, obtenu par OpenTelemetry en propageant l'en-tete W3C `traceparent` vers DiddiPay ;
 - `ride_id` ;
 - `business_reference` ;
 - `payment_intent_id` ;
@@ -435,6 +436,11 @@ Chaque log DiddiGo lie au paiement doit permettre une correlation avec :
 Ne jamais logger la service key, le callback secret, le JWT, une signature complete, un PIN ou des
 donnees de carte. Ajouter des alertes sur les paiements non finaux trop anciens, les callbacks en
 echec, les ecarts montant/devise et les erreurs d'authentification S2S.
+
+`X-Request-ID` sert a la recherche humaine et doit rester lisible. `traceparent` est gere par la
+bibliotheque OpenTelemetry et ne doit pas etre fabrique manuellement. Le client HTTP DiddiPay de
+DiddiGo doit etre instrumente afin que la decision d'echantillonnage et le contexte traversent
+automatiquement l'appel interservice.
 
 ## 13. Plan d'implementation DiddiGo
 

@@ -1,4 +1,9 @@
 services:
+  app:
+    depends_on:
+      otel-collector:
+        condition: service_started
+
   prometheus:
     image: prom/prometheus:v3.12.0
     container_name: payfund-prometheus
@@ -54,9 +59,34 @@ services:
       - "127.0.0.1:${GRAFANA_PORT:-43000}:3000"
     depends_on:
       - prometheus
+      - tempo
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    container_name: payfund-otel-collector
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    volumes:
+      - ./deploy/observability/otel-collector/config.yml:/etc/otelcol-contrib/config.yml:ro
+    depends_on:
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:3.0.3
+    container_name: payfund-tempo
+    profiles: ["observability"]
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./deploy/observability/tempo/tempo.yml:/etc/tempo.yml:ro
+      - payfund_tempo_data:/var/tempo
+    ports:
+      - "127.0.0.1:${TEMPO_PORT:-43200}:3200"
     restart: unless-stopped
 
 volumes:
   payfund_prometheus_data:
   payfund_grafana_data:
   payfund_alertmanager_data:
+  payfund_tempo_data:

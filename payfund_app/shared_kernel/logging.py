@@ -10,6 +10,7 @@ from typing import Any
 from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import get_request_id
 from payfund_app.core.observability.redaction import redact
+from payfund_app.core.observability.tracing import current_trace_fields
 
 
 logger = logging.getLogger("payfund")
@@ -22,6 +23,8 @@ _RESERVED_FIELDS = {
     "environment",
     "release",
     "request_id",
+    "trace_id",
+    "span_id",
 }
 
 
@@ -52,6 +55,7 @@ def build_log_payload(level: str, message: str, fields: dict[str, Any]) -> dict[
         "environment": settings.observability_environment,
         "release": settings.observability_release_sha,
         "request_id": get_request_id(),
+        **current_trace_fields(),
         **safe_fields,
     }
     return redact(payload)

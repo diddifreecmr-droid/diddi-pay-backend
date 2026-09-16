@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     metrics_enabled: bool = False
     metrics_token: str = ""
+    tracing_enabled: bool = False
+    tracing_otlp_endpoint: str = "http://otel-collector:4318"
+    tracing_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
 
     @field_validator("metrics_token")
     @classmethod

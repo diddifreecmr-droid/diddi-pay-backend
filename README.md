@@ -426,6 +426,44 @@ Le message porte explicitement `DiddiPaySyntheticTest`. Il doit arriver dans le 
 apres le `group_wait` de 30 secondes. L'interface Alertmanager locale permet ensuite de le rendre
 silencieux ou de verifier son groupement.
 
+### Traces distribuees OBS-5
+
+DiddiPay accepte le standard W3C `traceparent` d'un module appelant et le propage dans ses appels
+`httpx`, notamment vers Paystack. Un meme parcours peut donc relier DiddiGo, DiddiPay et le PSP
+sans confondre leurs responsabilites. Les logs JSON ajoutent `trace_id` et `span_id`, ce qui permet
+de partir d'une erreur dans les logs et d'ouvrir la trace correspondante dans Grafana Explore.
+
+La stack optionnelle ajoute :
+
+- OpenTelemetry Collector `0.160.0`, point d'entree OTLP interne et batcher ;
+- Tempo `3.0.3`, stockage local des traces avec retention de sept jours ;
+- une datasource Tempo provisionnee dans Grafana.
+
+Configuration de staging :
+
+```dotenv
+TRACING_ENABLED=true
+TRACING_OTLP_ENDPOINT=http://otel-collector:4318
+TRACING_SAMPLE_RATE=0.1
+TEMPO_PORT=43200
+```
+
+L'echantillonnage est `ParentBased`: DiddiPay respecte la decision prise par DiddiGo lorsqu'une
+trace existe deja; il conserve 10 % des nouvelles traces qu'il initie. Monter temporairement le
+taux exige une decision ops, car plus de traces signifie plus de disque et de donnees techniques.
+Les query strings sont remplacees par `[REDACTED]`, et les UUID/references provider dans les chemins
+sont normalises avant export. Les corps de requete, tokens, emails, telephones, PIN et montants ne
+sont jamais ajoutes manuellement aux spans.
+
+Verifier Tempo apres lancement :
+
+```bash
+curl -fsS http://127.0.0.1:${TEMPO_PORT:-43200}/ready
+```
+
+Dans Grafana, ouvrir **Explore**, choisir **Tempo**, puis rechercher le `trace_id` present dans un
+log DiddiPay. En production, le port Tempo reste local et ne doit jamais etre expose publiquement.
+
 ## Conventions
 
 - Montants : entiers d'unités mineures. Garanti par le value object `Money`.
