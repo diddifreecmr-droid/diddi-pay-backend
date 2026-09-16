@@ -364,6 +364,40 @@ collecte regulierement et gere leurs remises a zero lors d'un redeploiement. La 
 rafraichie par la commande ops de statut; OBS-3 automatisera la collecte et les alertes autour de
 ces series.
 
+### Stack de supervision OBS-3
+
+La supervision est volontairement separee dans `docker-compose.observability.yml`. Elle ajoute
+Prometheus avec 30 jours de retention et Grafana avec le dashboard `DiddiPay Overview`. Les deux
+interfaces sont liees a `127.0.0.1`, donc elles ne sont pas publiquement accessibles depuis le VPS.
+
+Avant le premier lancement :
+
+1. Definir `METRICS_ENABLED=true`, un `METRICS_TOKEN` aleatoire et un
+   `GRAFANA_ADMIN_PASSWORD` aleatoire dans `.env` ou Portainer.
+2. Creer `.secrets/metrics_token` avec exactement la valeur de `METRICS_TOKEN`, sans espace ni
+   guillemets. Ce dossier est ignore par Git.
+3. Demarrer l'ensemble avec la configuration additionnelle :
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+  --profile observability up -d --build
+```
+
+Verifier ensuite :
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml ps
+curl -fsS -H "Authorization: Bearer $METRICS_TOKEN" \
+  http://127.0.0.1:${APP_PORT:-48213}/internal/metrics
+curl -fsS http://127.0.0.1:${PROMETHEUS_PORT:-49090}/-/ready
+curl -fsS http://127.0.0.1:${GRAFANA_PORT:-43000}/api/health
+```
+
+Les regles initiales detectent une API non collectable, plus de 5 % de HTTP 5xx, les erreurs
+transport provider, une latence provider p95 superieure a cinq secondes, les rejets repetes de
+signature webhook et les dead letters. Prometheus affiche leur etat, mais aucune notification
+externe n'est encore envoyee : le routage Alertmanager sera la tranche OBS-4.
+
 ## Conventions
 
 - Montants : entiers d'unités mineures. Garanti par le value object `Money`.

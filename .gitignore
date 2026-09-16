@@ -17,3 +17,5 @@ tests_live/.auth_cache.json
 /docs git ignore this folder/
 /graphify-out/
 /tmp/
+/.secrets/*
+!/.secrets/.gitkeep

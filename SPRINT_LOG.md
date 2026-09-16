@@ -236,3 +236,4 @@ particulier.
 |---:|---|---|
 | OBS-1 | correlation `X-Request-ID`, logs JSON expurges et metriques Prometheus protegees | ce commit |
 | OBS-2 | metriques PaymentIntent, provider, webhook, reconciliation et outbox a cardinalite bornee | ce commit |
+| OBS-3 | stack Prometheus/Grafana, dashboard provisionne, alertes et runbook securise | ce commit |
