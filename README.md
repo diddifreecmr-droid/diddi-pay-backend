@@ -396,7 +396,35 @@ curl -fsS http://127.0.0.1:${GRAFANA_PORT:-43000}/api/health
 Les regles initiales detectent une API non collectable, plus de 5 % de HTTP 5xx, les erreurs
 transport provider, une latence provider p95 superieure a cinq secondes, les rejets repetes de
 signature webhook et les dead letters. Prometheus affiche leur etat, mais aucune notification
-externe n'est encore envoyee : le routage Alertmanager sera la tranche OBS-4.
+externe n'est envoyee tant que le relais OBS-4 n'est pas configure.
+
+### Notifications Alertmanager OBS-4
+
+Alertmanager groupe les alertes par nom, severite et provider. Les alertes critiques sont repetees
+toutes les 30 minutes, les warnings toutes les deux heures, et une critique inhibe le warning
+equivalent. Les resolutions sont egalement envoyees afin que l'astreinte sache qu'un incident est
+termine.
+
+Creer `.secrets/alert_webhook_url` avec l'URL HTTPS d'un relais n8n/Make ou d'un service interne.
+Le relais recoit le JSON standard Alertmanager, doit repondre `2xx` en moins de dix secondes et
+doit traiter `groupKey` de facon idempotente avant de transmettre vers le canal humain choisi.
+L'URL elle-meme reste hors Git. Sur le VPS, les interfaces restent accessibles seulement via un
+tunnel SSH ou un reverse proxy authentifie :
+
+```bash
+ssh -L 43000:127.0.0.1:43000 -L 49090:127.0.0.1:49090 \
+  -L 49093:127.0.0.1:49093 user@vps
+```
+
+Une fois le relais configure, verifier la notification sans toucher a un paiement :
+
+```bash
+sh scripts/test_alertmanager.sh
+```
+
+Le message porte explicitement `DiddiPaySyntheticTest`. Il doit arriver dans le canal d'astreinte
+apres le `group_wait` de 30 secondes. L'interface Alertmanager locale permet ensuite de le rendre
+silencieux ou de verifier son groupement.
 
 ## Conventions
 
