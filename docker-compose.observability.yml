@@ -1,5 +1,9 @@
 services:
   app:
+    environment:
+      OBSERVABILITY_LOG_FILE: /var/log/diddipay/app.jsonl
+    volumes:
+      - payfund_app_logs:/var/log/diddipay
     depends_on:
       otel-collector:
         condition: service_started
@@ -61,6 +65,33 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - loki
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.7.7
+    container_name: payfund-loki
+    profiles: ["observability"]
+    command: ["-config.file=/etc/loki.yml"]
+    volumes:
+      - ./deploy/observability/loki/loki.yml:/etc/loki.yml:ro
+      - payfund_loki_data:/var/loki
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-43100}:3100"
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.19.2
+    container_name: payfund-alloy
+    profiles: ["observability"]
+    command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy"]
+    volumes:
+      - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - payfund_app_logs:/var/log/diddipay:ro
+      - payfund_alloy_data:/var/lib/alloy
+    depends_on:
+      - app
+      - loki
     restart: unless-stopped
 
   otel-collector:
@@ -87,6 +118,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  payfund_app_logs:
+  payfund_loki_data:
+  payfund_alloy_data:
   payfund_prometheus_data:
   payfund_grafana_data:
   payfund_alertmanager_data:

@@ -22,7 +22,7 @@ verification aupres du PSP. Horodatage des incidents et preuves en UTC.
    sans les utiliser comme labels Prometheus ou les publier hors canal securise.
 3. Verifier la disponibilite de l'application, de Postgres, du PSP, de Prometheus et du scraper.
    `up{job="diddipay"} == 0` signifie absence de telemetrie, pas absence d'incident.
-4. Comparer le dashboard **DiddiPay SLO** aux logs JSON et traces Tempo. Examiner un echantillon
+4. Comparer le dashboard **DiddiPay SLO** aux logs JSON dans Loki et aux traces Tempo. Examiner un echantillon
    de transactions par la lecture ops et les evenements provider, sans modifier leur statut.
 5. Designer un responsable de l'incident, enregistrer chaque action et annoncer l'impact connu
    aux modules consommateurs. Une notification Alertmanager n'est pas une preuve de paiement.

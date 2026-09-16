@@ -1,0 +1,24 @@
+loki.source.file "diddipay" {
+  targets = [
+    {__path__ = "/var/log/diddipay/app.jsonl", service = "diddipay"},
+  ]
+  forward_to = [loki.process.diddipay.receiver]
+}
+
+loki.process "diddipay" {
+  stage.json {
+    expressions = {ts = "ts"}
+  }
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339Nano"
+    action_on_failure = "skip"
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

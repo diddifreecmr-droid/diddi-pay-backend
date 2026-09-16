@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from logging.handlers import RotatingFileHandler
 
 from fastapi.testclient import TestClient
 
@@ -10,7 +12,7 @@ from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import bind_request_id, reset_request_id
 from payfund_app.core.observability.redaction import REDACTED, redact
 from payfund_app.main import app
-from payfund_app.shared_kernel.logging import build_log_payload
+from payfund_app.shared_kernel.logging import build_log_payload, configure_logging, emit, logger
 
 
 def test_redaction_removes_nested_secrets_and_personal_data() -> None:
@@ -60,6 +62,35 @@ def test_structured_log_envelope_includes_request_context(monkeypatch) -> None:
     assert payload["request_id"] == "req-contract-test"
     assert payload["payment_intent_id"] == "pi_123"
     assert payload["api_key"] == REDACTED
+
+
+def test_optional_file_logs_are_bounded_and_redacted(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "app.jsonl"
+    monkeypatch.setenv("OBSERVABILITY_LOG_FILE", str(path))
+    get_settings.cache_clear()
+    try:
+        configure_logging()
+        configure_logging()
+        handlers = [
+            handler for handler in logger.handlers
+            if getattr(handler, "_diddipay_file", None) == str(path)
+        ]
+        assert len(handlers) == 1
+        assert isinstance(handlers[0], RotatingFileHandler)
+        assert handlers[0].maxBytes == 10 * 1024 * 1024
+        assert handlers[0].backupCount == 5
+        emit("info", "payment.test", api_key="secret-value")
+        handlers[0].flush()
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["api_key"] == REDACTED
+        assert "secret-value" not in lines[0]
+    finally:
+        for handler in logger.handlers[:]:
+            if getattr(handler, "_diddipay_file", None) == str(path):
+                logger.removeHandler(handler)
+                handler.close()
+        get_settings.cache_clear()
 
 
 def test_request_id_is_propagated_or_generated() -> None:

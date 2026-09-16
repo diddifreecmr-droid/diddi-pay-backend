@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 from payfund_app.core.config import get_settings
@@ -29,17 +30,26 @@ _RESERVED_FIELDS = {
 
 
 def configure_logging() -> None:
-    """Configure one predictable JSON-only handler for DiddiPay application logs."""
+    """Keep stdout logs; optionally mirror the same redacted JSON to a bounded file."""
 
     settings = get_settings()
     logger.setLevel(settings.log_level)
     logger.propagate = False
-    if any(getattr(handler, "_diddipay_json", False) for handler in logger.handlers):
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(message)s"))
-    handler._diddipay_json = True  # type: ignore[attr-defined]
-    logger.addHandler(handler)
+    if not any(getattr(handler, "_diddipay_stream", False) for handler in logger.handlers):
+        stream = logging.StreamHandler()
+        stream.setFormatter(logging.Formatter("%(message)s"))
+        stream._diddipay_stream = True  # type: ignore[attr-defined]
+        logger.addHandler(stream)
+    path = settings.observability_log_file
+    if path and not any(
+        getattr(handler, "_diddipay_file", None) == path for handler in logger.handlers
+    ):
+        file_handler = RotatingFileHandler(
+            path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8", delay=True
+        )
+        file_handler.setFormatter(logging.Formatter("%(message)s"))
+        file_handler._diddipay_file = path  # type: ignore[attr-defined]
+        logger.addHandler(file_handler)
 
 
 def build_log_payload(level: str, message: str, fields: dict[str, Any]) -> dict[str, Any]:

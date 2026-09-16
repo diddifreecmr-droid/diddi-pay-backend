@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     observability_service_name: str = "diddipay"
     observability_release_sha: str = "unknown"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    observability_log_file: str = ""
     metrics_enabled: bool = False
     metrics_token: str = ""
     tracing_enabled: bool = False

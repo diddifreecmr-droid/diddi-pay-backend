@@ -477,6 +477,38 @@ Le [runbook d'incident](OBSERVABILITY_RUNBOOK.md) decrit les verifications et le
 financiers. Un signal d'observabilite ne prouve jamais qu'un paiement a reussi: le webhook
 authentifie ou la reconciliation PSP reste la source de verite.
 
+### Logs centralises OBS-7
+
+L'overlay d'observabilite active `OBSERVABILITY_LOG_FILE` pour copier les memes evenements JSON
+expurges que stdout vers un fichier a rotation locale (10 Mio, cinq archives). Alloy lit le volume
+applicatif en lecture seule et garde ses positions dans un volume persistant; il n'a **pas** acces
+au socket Docker. Loki conserve les logs sept jours via son compactor, et Grafana provisionne la
+datasource **Loki**. `LOKI_PORT` est lie a `127.0.0.1` (defaut `43100`), jamais expose au public.
+Seuls les evenements emis par le logger applicatif sont collectes; les logs Uvicorn et ceux des
+autres conteneurs restent visibles via `docker compose logs`.
+
+Dans Grafana Explore, choisir **Loki** puis `{service="diddipay"}`. Pour une requete precise,
+filtrer le JSON par `request_id` ou `trace_id` au moment de la requete, sans en faire des labels
+indexes. Le champ UTC `ts` fournit l'heure de l'evenement meme si Alloy rattrape des logs plus
+tard. Les logs peuvent etre dupliques ou perdus pendant une rotation ou une panne prolongee du
+collector; ils aident a enqueter mais ne remplacent jamais la DB, l'outbox et la reconciliation PSP.
+Ne donner l'acces Grafana qu'aux operateurs habilites: les identifiants techniques restent
+potentiellement sensibles, meme apres expurgation.
+
+Sur un hote Docker fonctionnel, verifier avant de publier:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+  --profile observability config --quiet
+docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+  --profile observability up -d --build
+curl -fsS http://127.0.0.1:${LOKI_PORT:-43100}/ready
+docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+  exec alloy alloy validate /etc/alloy/config.alloy
+```
+
+Generer ensuite une requete `/payfund/v1/health` et verifier sa presence dans Grafana Explore.
+
 ## Conventions
 
 - Montants : entiers d'unités mineures. Garanti par le value object `Money`.

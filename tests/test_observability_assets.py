@@ -20,6 +20,8 @@ def test_observability_yaml_files_are_valid() -> None:
         ROOT / "deploy/observability/alertmanager/alertmanager.yml",
         ROOT / "deploy/observability/otel-collector/config.yml",
         ROOT / "deploy/observability/tempo/tempo.yml",
+        ROOT / "deploy/observability/loki/loki.yml",
+        ROOT / "deploy/observability/grafana/provisioning/datasources/loki.yml",
         ROOT / "deploy/observability/grafana/provisioning/datasources/prometheus.yml",
         ROOT / "deploy/observability/grafana/provisioning/datasources/tempo.yml",
         ROOT / "deploy/observability/grafana/provisioning/dashboards/diddipay.yml",
@@ -107,12 +109,34 @@ def test_monitoring_images_are_pinned_and_ports_are_local_only() -> None:
     assert "prom/alertmanager:v0.34.0" in compose
     assert "otel/opentelemetry-collector-contrib:0.160.0" in compose
     assert "grafana/tempo:3.0.3" in compose
+    assert "grafana/loki:3.7.7" in compose
+    assert "grafana/alloy:v1.19.2" in compose
     assert '127.0.0.1:${PROMETHEUS_PORT:-49090}:9090' in compose
     assert '127.0.0.1:${GRAFANA_PORT:-43000}:3000' in compose
     assert '127.0.0.1:${ALERTMANAGER_PORT:-49093}:9093' in compose
     assert '127.0.0.1:${TEMPO_PORT:-43200}:3200' in compose
+    assert '127.0.0.1:${LOKI_PORT:-43100}:3100' in compose
     assert "GRAFANA_ADMIN_PASSWORD must be set" in compose
     assert "/etc/prometheus/slo-rules.yml:ro" in compose
+
+
+def test_log_collection_has_no_docker_socket_and_persists_positions() -> None:
+    compose = (ROOT / "docker-compose.observability.yml").read_text()
+    alloy = (ROOT / "deploy/observability/alloy/config.alloy").read_text()
+    loki = yaml.safe_load((ROOT / "deploy/observability/loki/loki.yml").read_text())
+
+    assert "/var/run/docker.sock" not in compose
+    assert "payfund_app_logs:/var/log/diddipay:ro" in compose
+    assert "payfund_alloy_data:/var/lib/alloy" in compose
+    assert "OBSERVABILITY_LOG_FILE: /var/log/diddipay/app.jsonl" in compose
+    assert 'service = "diddipay"' in alloy
+    assert 'format = "RFC3339Nano"' in alloy
+    assert 'action_on_failure = "skip"' in alloy
+    assert "request_id" not in alloy
+    assert "trace_id" not in alloy
+    assert loki["limits_config"]["retention_period"] == "168h"
+    assert loki["compactor"]["retention_enabled"] is True
+    assert loki["compactor"]["delete_request_store"] == "filesystem"
 
 
 def test_alertmanager_routes_severity_and_reads_webhook_from_secret() -> None:
