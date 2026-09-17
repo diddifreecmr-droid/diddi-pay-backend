@@ -9,9 +9,10 @@ import uuid
 
 from sqlalchemy import select
 
+from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.entities import Direction, TransactionStatus
-from payfund_app.modules.wallet.infra.models import LedgerEntry
+from payfund_app.modules.wallet.infra.models import LedgerEntry, Transaction
 from payfund_app.modules.wallet.infra.repositories import (
     AccountRepository,
     GatewayAccountRepository,
@@ -194,6 +195,39 @@ def test_retrait_sans_pin_est_refuse_par_le_contrat(client, auth, make_user):
     )
 
     assert response.status_code == 422
+
+
+def test_paystack_refuse_le_retrait_avant_reservation(
+    client, auth, session, make_user, fund_account, set_pin, monkeypatch
+):
+    """Paystack est deposit-only : aucun fonds ne doit être réservé par erreur."""
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_not_real")
+    get_settings.cache_clear()
+
+    user_id, account_id = make_user()
+    set_pin(user_id)
+    fund_account(account_id, 10_000)
+    auth.as_user(user_id)
+
+    response = client.post(
+        f"{BASE}/withdraw",
+        json={
+            "provider": "paystack",
+            "amount": 3000,
+            "phone": "+2250700000000",
+            "pin": "1234",
+        },
+        headers=_key(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "WITHDRAWAL_NOT_SUPPORTED"
+    assert client.get(f"{BASE}/balance").json()["balance"] == 10_000
+    assert session.scalars(
+        select(Transaction).where(Transaction.type == "withdrawal")
+    ).all() == []
+    get_settings.cache_clear()
 
 
 def test_retrait_reserve_les_fonds_des_l_initiation(

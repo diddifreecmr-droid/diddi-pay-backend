@@ -242,3 +242,9 @@ particulier.
 | OBS-6 | SLO, burn-rate multi-fenetres, dashboard fiabilite et runbook incident fintech | ce commit |
 | OBS-7 | logs JSON centralises via Alloy/Loki, retention et collecte sans socket Docker | ce commit |
 | OBS-8 | correction SLO: exclusion des probes, Swagger, scrape et erreurs client du calcul | ce commit |
+
+## Retrait wallet legacy
+
+| Sprint | Livraison | Commit |
+|---:|---|---|
+| WDR-1 | refuser les rails de retrait indisponibles avant toute reservation ledger et clarifier le contrat | ce commit |

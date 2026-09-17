@@ -218,6 +218,11 @@ def withdraw(
     session: SessionDep,
     idempotency_key: IdempotencyKeyDep,
 ) -> PendingOperationResponse:
+    """Initie un retrait du wallet historique.
+
+    Un rail non pris en charge renvoie `WITHDRAWAL_NOT_SUPPORTED` (422). Une reponse
+    `202/pending` signifie seulement que les fonds sont reserves, pas qu'ils ont ete verses.
+    """
     emit(
         "info",
         "wallet.withdraw.start",

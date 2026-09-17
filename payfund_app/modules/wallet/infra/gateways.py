@@ -40,6 +40,8 @@ class GatewayOperation:
 
 
 class PaymentGatewayPort(Protocol):
+    def supports_withdrawal(self, provider: str) -> bool: ...
+
     def initier_depot(
         self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation: ...
@@ -70,6 +72,9 @@ class StubGateway:
             status=GatewayStatus.COMPLETED if self.autoconfirm else GatewayStatus.PENDING,
         )
 
+    def supports_withdrawal(self, provider: str) -> bool:
+        return provider in PROVIDERS
+
     def initier_depot(
         self, *, provider: str, phone: str, email: str | None = None, montant: int, reference: str
     ) -> GatewayOperation:
@@ -92,6 +97,9 @@ class OrangeMoneySandboxGateway(StubGateway):
     """
 
     provider_name = "orange_money"
+
+    def supports_withdrawal(self, provider: str) -> bool:
+        return provider == self.provider_name
 
     def _ensure_provider(self, provider: str) -> None:
         if provider != self.provider_name:
@@ -132,6 +140,9 @@ class WaveSandboxGateway(StubGateway):
     """
 
     provider_name = "wave"
+
+    def supports_withdrawal(self, provider: str) -> bool:
+        return provider == self.provider_name
 
     def _ensure_provider(self, provider: str) -> None:
         if provider != self.provider_name:
@@ -176,6 +187,9 @@ class PaystackGateway:
         self.base_url = settings.paystack_base_url.rstrip("/")
         if not self.secret_key:
             raise RuntimeError("PAYSTACK_SECRET_KEY manquant.")
+
+    def supports_withdrawal(self, provider: str) -> bool:
+        return False
 
     def initier_depot(
         self,

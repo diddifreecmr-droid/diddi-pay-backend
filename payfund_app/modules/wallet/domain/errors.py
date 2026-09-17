@@ -57,6 +57,12 @@ class GatewayUnavailable(AppError):
     message = "Passerelle Mobile Money indisponible."
 
 
+class WithdrawalNotSupported(AppError):
+    status_code = 422
+    code = "WITHDRAWAL_NOT_SUPPORTED"
+    message = "Retrait indisponible pour ce moyen de paiement."
+
+
 class ExchangeRateUnavailable(AppError):
     """Aucune cotation connue : on refuse la conversion plutôt que d'inventer un taux."""
 

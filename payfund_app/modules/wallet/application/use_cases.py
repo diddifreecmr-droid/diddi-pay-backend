@@ -54,6 +54,7 @@ from payfund_app.modules.wallet.domain.errors import (
     StepUpOtpRequired,
     StepUpProofAlreadyUsed,
     TransactionNotFound,
+    WithdrawalNotSupported,
 )
 from payfund_app.modules.wallet.domain.money import Balance, InvalidAmount, Money
 from payfund_app.modules.wallet.infra.gateways import (
@@ -631,6 +632,8 @@ class WalletUseCases:
         montant = to_money(amount, compte.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
+        if not self.gateway.supports_withdrawal(provider):
+            raise WithdrawalNotSupported()
         suspense_id = self._compte_suspense(provider, compte.currency)
 
         transaction, _ = self.ledger.transfer(

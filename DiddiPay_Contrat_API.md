@@ -505,3 +505,9 @@ Pas encore a considerer comme disponible tant que les sprints correspondants ne 
 - import automatique et rapprochement global des rapports de settlement Paystack ;
 - adaptateurs directs Orange Money, Wave ou MTN MoMo ;
 - wallet comme moyen de paiement du nouvel orchestrateur.
+
+Le retrait du wallet historique `/payfund/v1/wallet/withdraw` est distinct du futur payout du
+coeur PaymentIntent. Sous `PAYMENT_GATEWAY_MODE=paystack`, il retourne
+`422 WITHDRAWAL_NOT_SUPPORTED` sans réserver les fonds : l'adaptateur Paystack wallet ne sait
+initialiser que les dépôts. Les modes `stub`, `sandbox_orange_money` et `sandbox_wave` simulent
+le retrait et ne constituent pas une preuve de versement externe.

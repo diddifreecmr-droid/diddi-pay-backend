@@ -189,6 +189,11 @@ Pour le premier provider réel, Paystack :
 - `PAYSTACK_WEBHOOK_SECRET=<secret key ou secret dédié au webhook>`
 - le webhook `POST /payfund/v1/wallet/webhooks/paystack` finalise les dépôts
 
+Le mode Paystack du wallet ne prend pas en charge les retraits. `POST /wallet/withdraw` renvoie
+`422 WITHDRAWAL_NOT_SUPPORTED` avant toute écriture ledger pour ce mode, ou si le provider
+demande n'est pas celui de la sandbox Orange Money/Wave active. Un `202 pending` sous `stub` ou
+une sandbox locale ne prouve pas un versement externe.
+
 La politique de step-up est indépendante du provider. Le seuil se configure avec
 `WALLET_STEP_UP_THRESHOLD_XOF` (défaut : `50000`) et un transfert de ce montant ou plus exige
 une preuve JWT DiddiFreeID avec `purpose=wallet.transfer.high_value`. Le frontend ne doit pas

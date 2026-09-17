@@ -225,6 +225,11 @@ liste codee en dur dans Flutter.
 Les ecrans historiques `/wallet/*` peuvent rester presents pendant la migration. Ils concernent le
 wallet legacy et ses PIN, transferts P2P, depots ou retraits.
 
+Pour le retrait legacy, `WITHDRAWAL_NOT_SUPPORTED` (`422`) signifie que le rail configure ne
+permet pas ce retrait. Afficher une indisponibilite du moyen choisi; ne pas proposer une relance
+automatique avec une autre cle d'idempotence. `202/pending` ne signifie pas que l'argent a ete
+verse au destinataire.
+
 Pour toute nouvelle fonctionnalite DiddiGo, DiddiFund ou futur module :
 
 - utiliser le parcours `PaymentIntent` via le backend du module ;
