@@ -229,6 +229,9 @@ Le connecteur historique de dépôt wallet utilise `PAYMENT_GATEWAY_MODE`. Le no
 utilise `PAYMENT_PROCESSOR_MODE` et `PAYMENT_SERVICE_KEYS`. Il ne faut pas confondre ces deux
 configurations pendant la période de coexistence.
 
+Pour configurer un nouveau module backend, ses secrets S2S et son callback signé, voir
+[`S2S_Integration_Brief.md`](S2S_Integration_Brief.md).
+
 ### Prêts — crowdlending
 
 Le pool d'une campagne finance le prêt de son porteur ; ses remboursements y retournent, intérêts
