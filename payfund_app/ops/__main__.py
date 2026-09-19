@@ -114,7 +114,14 @@ def main(argv: list[str] | None = None) -> int:
                 with SessionLocal() as session:
                     reconciliation = reconcile_pending_payment_intents(session)
                     delivery = deliver_payment_events(session)
-                    emit("info", "ops.payment_worker.cycle", reconciled=reconciliation.scanned, delivered=delivery.delivered)
+                    queue = payment_event_delivery_status(session)
+                    emit(
+                        "warning" if queue["dead_letter"] else "info",
+                        "ops.payment_worker.cycle",
+                        reconciled=reconciliation.scanned,
+                        delivered=delivery.delivered,
+                        **queue,
+                    )
             except Exception as exc:  # noqa: BLE001 - worker must retry after transient failures
                 emit("error", "ops.payment_worker.failed", error=str(exc))
             time.sleep(args.interval)
@@ -133,8 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "maintain-payment-intents":
             reconciliation = reconcile_pending_payment_intents(session)
             delivery = deliver_payment_events(session)
-            print(f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} delivered={delivery.delivered} retried={delivery.retried}")
-            return 0
+            queue = payment_event_delivery_status(session)
+            print(f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} delivered={delivery.delivered} retried={delivery.retried} pending={queue['pending']} dead_letter={queue['dead_letter']}")
+            return 2 if queue["dead_letter"] else 0
         if args.command == "backfill-wallet":
             result = backfill_wallet(
                 session,

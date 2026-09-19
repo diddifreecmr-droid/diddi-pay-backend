@@ -209,6 +209,11 @@ Paystack en attente et le relay des callbacks tournent automatiquement toutes le
 `python -m payfund_app.ops maintain-payment-intents` toutes les minutes et
 surveiller les erreurs et les dead letters. Le `housekeeping` historique ne
 remplace pas ce cycle PaymentIntent : il traite surtout les depots wallet.
+Chaque cycle du worker journalise `pending`, `delivering`, `delivered` et
+`dead_letter` depuis la base. Une valeur `dead_letter > 0` exige une alerte et
+une investigation ; la commande ponctuelle retourne le code `2` dans ce cas.
+Ces logs ne sont pas automatiquement des metriques Prometheus : le worker et
+l'API sont deux processus distincts.
 Pour reperer les PaymentIntents deja confirmes mais sans capture ou sans
 notification module, lancer `python -m payfund_app.ops audit-payment-integrity`.
 Cet audit est en lecture seule ; ne pas reconstruire des mouvements financiers
