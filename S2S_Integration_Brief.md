@@ -5,6 +5,10 @@ l'integration **actuelle** de l'API PaymentIntent. Un S2S entre deux autres serv
 definir son propre contrat, ses droits et ses secrets ; `PAYMENT_SERVICE_KEYS` n'est pas une
 identite universelle pour toute la plateforme.
 
+Pour le standard cible JWT de service valide dans Jira SCRUM-415, les autres modules et la
+recette de migration, voir `S2S_Alignment_and_Recipe.md`. Le present brief reste exact pour
+le code DiddiPay actuellement deployable en `X-Service-Key`.
+
 ## 1. Qui authentifie qui ?
 
 ```text

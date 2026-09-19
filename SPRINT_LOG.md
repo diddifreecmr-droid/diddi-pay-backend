@@ -248,3 +248,10 @@ particulier.
 | Sprint | Livraison | Commit |
 |---:|---|---|
 | WDR-1 | refuser les rails de retrait indisponibles avant toute reservation ledger et clarifier le contrat | ce commit |
+
+## Alignement S2S
+
+- Contrat cible JWT de service conforme a l'ADR Jira SCRUM-415, distinction du `X-Service-Key`
+  legacy DiddiPay et matrice de recette pour les modules, callbacks et evenements.
+- Aucun changement runtime ; la migration de DiddiPay reste a implementer et a tester.
+- Commit : ce commit.

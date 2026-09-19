@@ -231,6 +231,8 @@ configurations pendant la période de coexistence.
 
 Pour configurer un nouveau module backend, ses secrets S2S et son callback signé, voir
 [`S2S_Integration_Brief.md`](S2S_Integration_Brief.md).
+Pour le standard cible JWT de service et la recette intermodules, voir
+[`S2S_Alignment_and_Recipe.md`](S2S_Alignment_and_Recipe.md).
 
 ### Prêts — crowdlending
 
