@@ -21,6 +21,10 @@ from payfund_app.modules.payments.application.deliveries import (
     DeliverySummary,
     PaymentEventDeliveryUseCases,
 )
+from payfund_app.modules.payments.application.integrity import (
+    PaymentIntegrityReport,
+    PaymentIntegrityUseCases,
+)
 from payfund_app.modules.payments.application.ports import (
     CallbackTarget,
     PaymentEventSenderPort,
@@ -32,6 +36,7 @@ from payfund_app.modules.payments.application.reconciliation import (
 from payfund_app.modules.payments.infra.callback_delivery import (
     HttpSignedCallbackSender,
 )
+from payfund_app.modules.payments.infra.integrity import SqlPaymentIntegrityRepository
 from payfund_app.modules.payments.infra.repositories import (
     FinancialLedgerRepository,
     PaymentAttemptRepository,
@@ -306,6 +311,17 @@ def payment_event_delivery_status(session: Session) -> dict[str, int]:
     set_outbox_status_counts(result)
     emit("info", "ops.payment_events.status", **result)
     return result
+
+
+def audit_payment_integrity(session: Session, *, limit: int = 100) -> PaymentIntegrityReport:
+    report = PaymentIntegrityUseCases(SqlPaymentIntegrityRepository(session)).audit(limit=limit)
+    emit(
+        "warning" if report.has_gaps else "info",
+        "ops.payment_intents.integrity_audit",
+        gaps_returned=len(report.gaps),
+        has_more=report.has_more,
+    )
+    return report
 
 
 def record_payment_settlement(

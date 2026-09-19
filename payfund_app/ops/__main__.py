@@ -10,6 +10,7 @@ import uuid
 from payfund_app.core.database import SessionLocal
 from payfund_app.core.security import CurrentUser
 from payfund_app.ops.maintenance import (
+    audit_payment_integrity,
     backfill_wallet,
     deliver_payment_events,
     payment_event_delivery_status,
@@ -74,6 +75,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     payment_once.add_argument("--admin-role", default="admin")
 
+    audit = sub.add_parser(
+        "audit-payment-integrity", help="Read-only check for missing captures or module events"
+    )
+    audit.add_argument("--limit", type=int, choices=range(1, 501), default=100)
+    audit.add_argument("--admin-role", default="admin")
+
     settlement = sub.add_parser(
         "record-payment-settlement",
         help="Record a provider settlement against a PaymentIntent receivable",
@@ -113,6 +120,16 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(args.interval)
 
     with SessionLocal() as session:
+        if args.command == "audit-payment-integrity":
+            report = audit_payment_integrity(session, limit=args.limit)
+            for gap in report.gaps:
+                print(
+                    f"payment_intent_id={gap.payment_intent_id} "
+                    f"missing_capture={gap.missing_capture} "
+                    f"missing_callback={gap.missing_callback}"
+                )
+            print(f"gaps_returned={len(report.gaps)} has_more={report.has_more}")
+            return 2 if report.has_gaps else 0
         if args.command == "maintain-payment-intents":
             reconciliation = reconcile_pending_payment_intents(session)
             delivery = deliver_payment_events(session)

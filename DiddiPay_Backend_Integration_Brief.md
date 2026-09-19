@@ -209,6 +209,10 @@ Paystack en attente et le relay des callbacks tournent automatiquement toutes le
 `python -m payfund_app.ops maintain-payment-intents` toutes les minutes et
 surveiller les erreurs et les dead letters. Le `housekeeping` historique ne
 remplace pas ce cycle PaymentIntent : il traite surtout les depots wallet.
+Pour reperer les PaymentIntents deja confirmes mais sans capture ou sans
+notification module, lancer `python -m payfund_app.ops audit-payment-integrity`.
+Cet audit est en lecture seule ; ne pas reconstruire des mouvements financiers
+sur la seule base du statut local, sans verification Paystack et trace d'audit.
 
 ## 9. DiddiFund et futurs modules
 

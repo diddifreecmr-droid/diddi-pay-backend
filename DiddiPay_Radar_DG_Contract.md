@@ -50,6 +50,18 @@ assure la journalisation des nouvelles confirmations, mais ne reconstruit pas
 automatiquement les historiques : une reprise auditee et une comparaison en
 staging sont necessaires avant d'annoncer un total historique exhaustif.
 
+Avant de comparer les totaux, lancer l'audit interne en lecture seule :
+
+```bash
+python -m payfund_app.ops audit-payment-integrity --limit 100
+```
+
+Chaque ligne indique un `payment_intent_id`, `missing_capture` et
+`missing_callback`. Le code de sortie est `2` si au moins une anomalie est
+trouvee, `0` sinon ; `has_more=true` signale que la limite masque d'autres
+anomalies. Cette commande **ne repare rien** et ne prouve pas que Paystack a
+regle les fonds. Une reprise doit verifier la preuve PSP et etre auditee.
+
 Verifier en staging un jour avec une capture connue, un remboursement partiel,
 un doublon webhook et une journee vide. Comparer les references aux journaux
 sans exposer ces references dans la reponse Pilotage. Pilotage rafraichit son
