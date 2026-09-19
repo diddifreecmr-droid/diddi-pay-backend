@@ -20,6 +20,7 @@ from payfund_app.core.observability.tracing import configure_tracing
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.payments.presentation.routers import router as payment_router
 from payfund_app.modules.payments.presentation.webhook_router import router as payment_webhook_router
+from payfund_app.modules.payments.presentation.summary_router import router as payment_summary_router
 from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
@@ -76,6 +77,7 @@ app.include_router(wallet_router, prefix=API_PREFIX)
 app.include_router(fund_router, prefix=API_PREFIX)
 app.include_router(payment_router, prefix=API_PREFIX)
 app.include_router(payment_webhook_router, prefix=API_PREFIX)
+app.include_router(payment_summary_router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health", tags=["ops"])
