@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from payfund_app.modules.payments.application.ports import (
     PaymentAttemptRepositoryPort,
@@ -13,6 +13,7 @@ from payfund_app.modules.payments.application.ports import (
     ProviderEventRepositoryPort,
     UnitOfWorkPort,
 )
+from payfund_app.modules.payments.application.success import record_payment_success
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
 from payfund_app.modules.payments.domain.errors import InvalidStateTransition
 
@@ -114,34 +115,10 @@ class PaymentWebhookUseCases:
         self.attempts.save(attempt)
         self.intents.save(intent)
         self.events.mark(row, status="processed", payment_attempt_id=attempt.id)
-        if (
-            self.outbox is not None
-            and event.status == AttemptStatus.SUCCEEDED
-            and not was_succeeded
-        ):
-            self.outbox.enqueue(
-                client_id=intent.client_id,
-                event_type="payment.succeeded",
-                aggregate_id=intent.id,
-                payload={
-                    "event_id": event.event_key,
-                    "payment_intent_id": str(intent.id),
-                    "business_reference": intent.business_reference,
-                    "amount": intent.money.amount,
-                    "currency": intent.money.currency,
-                    "status": str(intent.status),
-                },
-            )
-        if (
-            self.accounting is not None
-            and event.status == AttemptStatus.SUCCEEDED
-            and not was_succeeded
-        ):
-            self.accounting.record_capture(
-                intent,
-                attempt,
-                event_reference=event.event_key,
-                fee=event.fee or 0,
+        if event.status == AttemptStatus.SUCCEEDED and not was_succeeded:
+            record_payment_success(
+                intent, attempt, event_key=event.event_key,
+                outbox=self.outbox, accounting=self.accounting, fee=event.fee or 0,
             )
         self.uow.commit()
         return WebhookOutcome("processed", event.event_key, str(intent.id))

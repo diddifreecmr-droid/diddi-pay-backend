@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
@@ -72,6 +73,7 @@ class ProviderResult:
     failure_message: str | None = None
     amount: int | None = None
     currency: str | None = None
+    fee: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

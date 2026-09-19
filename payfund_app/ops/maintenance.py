@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.observability.business_metrics import (
     observe_delivery_summary,
     observe_reconciliation_summary,
     set_outbox_status_counts,
 )
 from payfund_app.core.security import CurrentUser
-from payfund_app.core.config import get_settings
+from payfund_app.modules.payments.application.accounting import PaymentAccountingService
 from payfund_app.modules.payments.application.deliveries import (
     DeliverySummary,
     PaymentEventDeliveryUseCases,
@@ -24,22 +25,35 @@ from payfund_app.modules.payments.application.ports import (
     CallbackTarget,
     PaymentEventSenderPort,
 )
-from payfund_app.modules.payments.infra.callback_delivery import HttpSignedCallbackSender
-from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
-from payfund_app.modules.payments.application.accounting import PaymentAccountingService
+from payfund_app.modules.payments.application.reconciliation import (
+    PaymentReconciliationUseCases,
+    ReconciliationSummary,
+)
+from payfund_app.modules.payments.infra.callback_delivery import (
+    HttpSignedCallbackSender,
+)
 from payfund_app.modules.payments.infra.repositories import (
     FinancialLedgerRepository,
     PaymentAttemptRepository,
     PaymentIntentRepository,
+    PaymentOutboxRepository,
+    ProviderEventRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
+from payfund_app.modules.payments.presentation.deps import get_processor_registry
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
-from payfund_app.modules.wallet.domain.entities import TransactionStatus, TransactionType
-from payfund_app.modules.wallet.infra.models import Transaction
+from payfund_app.modules.wallet.domain.entities import (
+    TransactionStatus,
+    TransactionType,
+)
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
-from payfund_app.modules.wallet.infra.repositories import OutboxRepository, UserPhoneRepository
-from payfund_app.shared_kernel.logging import emit
+from payfund_app.modules.wallet.infra.models import Transaction
+from payfund_app.modules.wallet.infra.repositories import (
+    OutboxRepository,
+    UserPhoneRepository,
+)
 from payfund_app.shared_kernel.events.types import Event
+from payfund_app.shared_kernel.logging import emit
 
 
 @dataclass(frozen=True)
@@ -254,6 +268,30 @@ def deliver_payment_events(
         retried=result.retried,
         unavailable=result.unavailable,
     )
+    return result
+
+
+def reconcile_pending_payment_intents(
+    session: Session, *, minimum_age_seconds: int = 300, limit: int = 100
+) -> ReconciliationSummary:
+    """Verify pending processor attempts and persist all success side effects."""
+    result = PaymentReconciliationUseCases(
+        PaymentIntentRepository(session),
+        PaymentAttemptRepository(session),
+        ProviderEventRepository(session),
+        get_processor_registry(),
+        SqlAlchemyUnitOfWork(session),
+        PaymentOutboxRepository(session),
+        PaymentAccountingService(FinancialLedgerRepository(session)),
+    ).run(minimum_age_seconds=minimum_age_seconds, limit=limit)
+    observe_reconciliation_summary(
+        provider=get_settings().payment_processor_mode,
+        succeeded=result.succeeded,
+        failed=result.failed,
+        pending=result.pending,
+        mismatched=result.mismatched,
+    )
+    emit("info", "ops.payment_intents.reconciled", **asdict(result))
     return result
 
 

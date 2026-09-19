@@ -203,6 +203,13 @@ Le relay DiddiPay s'execute dans un worker ou un job interne :
 python -m payfund_app.ops relay-payment-events --limit 100
 ```
 
+Avec le service `payment-worker` du Compose, la reconciliation des PaymentIntents
+Paystack en attente et le relay des callbacks tournent automatiquement toutes les
+30 secondes. Pour un deploiement sans ce worker, planifier a la place
+`python -m payfund_app.ops maintain-payment-intents` toutes les minutes et
+surveiller les erreurs et les dead letters. Le `housekeeping` historique ne
+remplace pas ce cycle PaymentIntent : il traite surtout les depots wallet.
+
 ## 9. DiddiFund et futurs modules
 
 Le meme pattern s'applique :

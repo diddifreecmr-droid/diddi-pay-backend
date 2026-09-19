@@ -44,10 +44,11 @@ apparait le jour de sa reception. Journee vide : `200` avec quatre zeros.
 
 ## Limites et recette
 
-Le chemin de reconciliation actuel ne cree pas de journal `capture`
-(SCRUM-426). Les paiements recuperes uniquement par ce chemin sont donc absents
-du resume jusqu'au correctif et a une reprise auditee des historiques. Ne pas
-utiliser ce resume comme total financier exhaustif avant cette correction.
+Les paiements passes a `succeeded` par l'ancienne reconciliation, avant le
+correctif SCRUM-426, peuvent manquer d'un journal `capture`. Le correctif
+assure la journalisation des nouvelles confirmations, mais ne reconstruit pas
+automatiquement les historiques : une reprise auditee et une comparaison en
+staging sont necessaires avant d'annoncer un total historique exhaustif.
 
 Verifier en staging un jour avec une capture connue, un remboursement partiel,
 un doublon webhook et une journee vide. Comparer les references aux journaux

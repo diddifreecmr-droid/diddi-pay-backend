@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from payfund_app.modules.payments.application.errors import ProcessorCallUncertain
+from payfund_app.modules.payments.application.success import record_payment_success
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
 
@@ -22,12 +23,14 @@ class ReconciliationSummary:
 
 
 class PaymentReconciliationUseCases:
-    def __init__(self, intents, attempts, events, processors, uow) -> None:
+    def __init__(self, intents, attempts, events, processors, uow, outbox=None, accounting=None) -> None:
         self.intents = intents
         self.attempts = attempts
         self.events = events
         self.processors = processors
         self.uow = uow
+        self.outbox = outbox
+        self.accounting = accounting
 
     def run(self, *, minimum_age_seconds: int = 300, limit: int = 100) -> ReconciliationSummary:
         cutoff = datetime.now(UTC) - timedelta(seconds=minimum_age_seconds)
@@ -51,7 +54,9 @@ class PaymentReconciliationUseCases:
                 self.uow.commit()
                 continue
             if result.status == AttemptStatus.SUCCEEDED and (
-                result.amount != attempt.money.amount or result.currency != attempt.money.currency
+                result.provider_reference != attempt.provider_reference
+                or result.amount != attempt.money.amount
+                or result.currency != attempt.money.currency
             ):
                 self._log(attempt, "failed", {"reason": "amount_or_currency_mismatch"})
                 mismatched += 1
@@ -60,10 +65,18 @@ class PaymentReconciliationUseCases:
             updater = PaymentWebhookUseCases(
                 self.intents, self.attempts, self.events, self.uow
             )
+            was_succeeded = intent.status == PaymentIntentStatus.SUCCEEDED
             updater._apply_status(intent, attempt, result.status)
             attempt.provider_status = result.provider_status
             self.attempts.save(attempt)
             self.intents.save(intent)
+            if result.status == AttemptStatus.SUCCEEDED and not was_succeeded:
+                record_payment_success(
+                    intent, attempt,
+                    event_key=f"reconciliation:{attempt.id}",
+                    outbox=self.outbox, accounting=self.accounting,
+                    fee=result.fee or 0,
+                )
             self._log(
                 attempt,
                 "processed",

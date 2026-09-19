@@ -38,7 +38,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: payfund-app
-    environment:
+    environment: &app_environment
       # Communication interne au réseau Compose : noms de service + ports internes fixes — pas
       # `localhost`, pas les ports hôte configurables. POSTGRES_PORT/REDIS_PORT ne concernent
       # que l'accès *depuis l'hôte* (utile en dev local, quand l'app tourne hors Docker) ; entre
@@ -98,6 +98,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  payment-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["python", "-m", "payfund_app.ops", "payment-worker"]
+    environment: *app_environment
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   payfund_pgdata:

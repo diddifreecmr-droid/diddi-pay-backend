@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import uuid
 
 from payfund_app.core.database import SessionLocal
@@ -11,13 +12,14 @@ from payfund_app.core.security import CurrentUser
 from payfund_app.ops.maintenance import (
     backfill_wallet,
     deliver_payment_events,
-    run_housekeeping,
-    reconcile_pending_paystack_deposits,
-    reconcile_paystack_deposit,
-    record_payment_settlement,
     payment_event_delivery_status,
+    reconcile_paystack_deposit,
+    reconcile_pending_payment_intents,
+    reconcile_pending_paystack_deposits,
+    record_payment_settlement,
     relay_outbox_events,
     require_admin,
+    run_housekeeping,
 )
 from payfund_app.shared_kernel.events.bus import get_bus
 from payfund_app.shared_kernel.logging import emit
@@ -61,6 +63,17 @@ def main(argv: list[str] | None = None) -> int:
     payment_relay.add_argument("--limit", type=int, choices=range(1, 501), default=100)
     payment_relay.add_argument("--admin-role", default="admin")
 
+    payment_worker = sub.add_parser(
+        "payment-worker", help="Continuously reconcile PaymentIntents and relay module callbacks"
+    )
+    payment_worker.add_argument("--interval", type=int, default=30)
+    payment_worker.add_argument("--admin-role", default="admin")
+
+    payment_once = sub.add_parser(
+        "maintain-payment-intents", help="Run one PaymentIntent reconciliation and callback cycle"
+    )
+    payment_once.add_argument("--admin-role", default="admin")
+
     settlement = sub.add_parser(
         "record-payment-settlement",
         help="Record a provider settlement against a PaymentIntent receivable",
@@ -86,7 +99,25 @@ def main(argv: list[str] | None = None) -> int:
     admin_user = CurrentUser(uuid.uuid4(), args.admin_role, "active")
     require_admin(admin_user)
 
+    if args.command == "payment-worker":
+        if args.interval < 1:
+            parser.error("--interval must be positive")
+        while True:
+            try:
+                with SessionLocal() as session:
+                    reconciliation = reconcile_pending_payment_intents(session)
+                    delivery = deliver_payment_events(session)
+                    emit("info", "ops.payment_worker.cycle", reconciled=reconciliation.scanned, delivered=delivery.delivered)
+            except Exception as exc:  # noqa: BLE001 - worker must retry after transient failures
+                emit("error", "ops.payment_worker.failed", error=str(exc))
+            time.sleep(args.interval)
+
     with SessionLocal() as session:
+        if args.command == "maintain-payment-intents":
+            reconciliation = reconcile_pending_payment_intents(session)
+            delivery = deliver_payment_events(session)
+            print(f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} delivered={delivery.delivered} retried={delivery.retried}")
+            return 0
         if args.command == "backfill-wallet":
             result = backfill_wallet(
                 session,

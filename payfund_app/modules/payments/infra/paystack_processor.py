@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import hashlib
 import hmac
 import json
 import time
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -178,6 +178,7 @@ class PaystackPaymentProcessor:
             provider_status=provider_status,
             amount=int(data["amount"]) if data.get("amount") is not None else None,
             currency=str(data["currency"]).upper() if data.get("currency") else None,
+            fee=int(data["fees"]) if data.get("fees") is not None else None,
         )
 
     def parse_webhook(
