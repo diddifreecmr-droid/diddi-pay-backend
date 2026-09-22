@@ -16,7 +16,10 @@ from payfund_app.core.observability.business_metrics import (
     set_outbox_status_counts,
 )
 from payfund_app.core.security import CurrentUser
-from payfund_app.modules.payments.application.accounting import PaymentAccountingService
+from payfund_app.modules.payments.application.accounting import (
+    PaymentAccountingService,
+    PayoutAccountingService,
+)
 from payfund_app.modules.payments.application.deliveries import (
     DeliverySummary,
     PaymentEventDeliveryUseCases,
@@ -313,6 +316,7 @@ def reconcile_pending_payouts(
         PaymentOutboxRepository(session),
         get_processor_registry(),
         SqlAlchemyUnitOfWork(session),
+        PayoutAccountingService(FinancialLedgerRepository(session)),
     ).reconcile(minimum_age_seconds=minimum_age_seconds, limit=limit)
     emit("info", "ops.payouts.reconciled", **asdict(result))
     return result

@@ -5,7 +5,12 @@ from sqlalchemy import select
 
 from payfund_app.modules.payments.application.payouts import PayoutUseCases
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
-from payfund_app.modules.payments.infra.models import PaymentOutboxRecord, PayoutRecord
+from payfund_app.modules.payments.infra.models import (
+    FinancialEntryRecord,
+    FinancialJournalRecord,
+    PaymentOutboxRecord,
+    PayoutRecord,
+)
 from payfund_app.modules.payments.infra.repositories import (
     PaymentOutboxRepository,
     PayoutRepository,
@@ -53,6 +58,34 @@ def test_create_restaurant_payout_is_idempotent_and_emits_callback(client, sessi
     assert events[0].event_type == "payout.succeeded"
     assert events[0].client_id == "diddifood"
     assert events[0].payload["metadata"]["delivery_id"] == "delivery-42"
+    journals = list(
+        session.scalars(
+            select(FinancialJournalRecord).where(
+                FinancialJournalRecord.payout_id == first.json()["id"]
+            )
+        )
+    )
+    assert len(journals) == 1
+    entries = list(
+        session.scalars(
+            select(FinancialEntryRecord).where(
+                FinancialEntryRecord.journal_id == journals[0].id
+            )
+        )
+    )
+    assert {(entry.account, entry.direction) for entry in entries} == {
+        ("module_payable:diddifood", "debit"),
+        ("processor_balance:sandbox", "credit"),
+    }
+    assert sum(entry.amount for entry in entries if entry.direction == "debit") == 4_500
+    assert sum(entry.amount for entry in entries if entry.direction == "credit") == 4_500
+
+    summary = client.get(
+        f"{BASE}/{first.json()['id']}/financial-summary",
+        headers={"X-Client-ID": "diddifood", "X-Service-Key": "food-service-key"},
+    )
+    assert summary.status_code == 200
+    assert summary.json()["paid_out"] == 4_500
 
 
 def test_payout_idempotency_rejects_changed_financial_data(client):
@@ -97,6 +130,7 @@ def test_payout_requires_idempotency_and_documents_contract(client):
     assert missing_key.json()["error"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
     assert BASE in schema["paths"]
     assert f"{BASE}/{{payout_id}}" in schema["paths"]
+    assert f"{BASE}/{{payout_id}}/financial-summary" in schema["paths"]
     parameter_names = {
         parameter["name"] for parameter in schema["paths"][BASE]["post"]["parameters"]
     }

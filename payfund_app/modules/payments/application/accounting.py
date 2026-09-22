@@ -52,3 +52,19 @@ class PaymentAccountingService:
             debit_account="bank_cash",
             credit_account=f"processor_receivable:{processor}",
         )
+
+
+class PayoutAccountingService:
+    def __init__(self, ledger) -> None:
+        self.ledger = ledger
+
+    def record_success(self, payout) -> None:
+        self.ledger.post_payout(
+            payout_id=payout.id,
+            event_type="payout",
+            event_reference=f"payout:{payout.id}:succeeded",
+            amount=payout.money.amount,
+            currency=payout.money.currency,
+            debit_account=f"module_payable:{payout.client_id}",
+            credit_account=f"processor_balance:{payout.processor}",
+        )

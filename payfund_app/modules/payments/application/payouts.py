@@ -71,11 +71,13 @@ class PayoutUseCases:
         outbox: PaymentOutboxRepositoryPort,
         processors: ProcessorRegistry,
         uow: UnitOfWorkPort,
+        accounting=None,
     ) -> None:
         self.payouts = payouts
         self.outbox = outbox
         self.processors = processors
         self.uow = uow
+        self.accounting = accounting
 
     def create(self, command: CreatePayoutCommand) -> PayoutView:
         fingerprint = command.fingerprint()
@@ -118,6 +120,8 @@ class PayoutUseCases:
             failure_message=result.failure_message,
         )
         self.payouts.save(payout)
+        if payout.status == PayoutStatus.SUCCEEDED and self.accounting is not None:
+            self.accounting.record_success(payout)
         self._enqueue_status(payout)
         self.uow.commit()
         return PayoutView(payout, created=True)
@@ -218,6 +222,8 @@ class PayoutUseCases:
                 failure_message=result.failure_message,
             )
             self.payouts.save(payout)
+            if payout.status == PayoutStatus.SUCCEEDED and self.accounting is not None:
+                self.accounting.record_success(payout)
             if payout.status != previous:
                 self._enqueue_status(payout)
             if payout.status == PayoutStatus.SUCCEEDED:

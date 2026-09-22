@@ -146,3 +146,9 @@ class PayoutResponse(BaseModel):
     metadata: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+class PayoutFinancialSummaryResponse(BaseModel):
+    payout_id: uuid.UUID
+    currency: str
+    paid_out: int

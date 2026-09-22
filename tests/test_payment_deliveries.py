@@ -8,14 +8,16 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from payfund_app.core.config import Settings
 from payfund_app.modules.payments.application.deliveries import (
     PaymentEventDeliveryUseCases,
 )
 from payfund_app.modules.payments.application.ports import CallbackTarget
-from payfund_app.modules.payments.infra.callback_delivery import HttpSignedCallbackSender
+from payfund_app.modules.payments.infra.callback_delivery import (
+    HttpSignedCallbackSender,
+)
 from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
-from payfund_app.core.config import Settings
 
 
 def test_payment_event_delivery_is_signed_and_marked_delivered(session):
@@ -58,6 +60,52 @@ def test_payment_event_delivery_is_signed_and_marked_delivered(session):
     assert envelope["type"] == "payment.succeeded"
     assert envelope["data"]["payment_intent_id"] == "pi_1"
     assert envelope["occurred_at"]
+
+
+def test_diddifood_payout_callback_is_signed_and_contains_correlation(session):
+    repo = PaymentOutboxRepository(session)
+    payout_id = uuid.uuid4()
+    row = repo.enqueue(
+        client_id="diddifood",
+        event_type="payout.succeeded",
+        aggregate_id=payout_id,
+        payload={
+            "payout_id": str(payout_id),
+            "business_reference": "diddifood:order:42:restaurant-payout:v1",
+            "status": "succeeded",
+            "metadata": {"order_reference": "42", "delivery_id": "delivery-42"},
+        },
+    )
+    session.commit()
+    captured = {}
+
+    def handler(request):
+        captured["request"] = request
+        return httpx.Response(204)
+
+    result = PaymentEventDeliveryUseCases(
+        repo,
+        SqlAlchemyUnitOfWork(session),
+        HttpSignedCallbackSender(httpx.Client(transport=httpx.MockTransport(handler))),
+        {
+            "diddifood": CallbackTarget(
+                "https://food.test/internal/webhooks/diddipay",
+                "food-callback-secret",
+            )
+        },
+    ).run()
+
+    request = captured["request"]
+    envelope = json.loads(request.content)
+    expected = hmac.new(
+        b"food-callback-secret", request.content, hashlib.sha256
+    ).hexdigest()
+    assert result.delivered == 1
+    assert row.status == "delivered"
+    assert request.headers["X-DiddiPay-Signature"] == expected
+    assert envelope["type"] == "payout.succeeded"
+    assert envelope["data"]["payout_id"] == str(payout_id)
+    assert envelope["data"]["metadata"]["delivery_id"] == "delivery-42"
 
 
 def test_failed_delivery_is_scheduled_for_retry(session):

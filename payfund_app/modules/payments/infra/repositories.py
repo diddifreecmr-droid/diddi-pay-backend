@@ -6,8 +6,10 @@ import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from payfund_app.modules.payments.application.errors import PersistenceConflict
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
     Money,
@@ -458,7 +460,11 @@ class PayoutRepository:
                 updated_at=payout.updated_at,
             )
         )
-        self.session.flush()
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            self.session.rollback()
+            raise PersistenceConflict() from exc
         return payout
 
     def get(self, payout_id: uuid.UUID) -> Payout | None:
@@ -588,6 +594,66 @@ class FinancialLedgerRepository:
         )
         self.session.flush()
         return journal
+
+    def post_payout(
+        self,
+        *,
+        payout_id: uuid.UUID,
+        event_type: str,
+        event_reference: str,
+        amount: int,
+        currency: str,
+        debit_account: str,
+        credit_account: str,
+    ) -> FinancialJournalRecord:
+        existing = self.session.scalar(
+            select(FinancialJournalRecord).where(
+                FinancialJournalRecord.event_type == event_type,
+                FinancialJournalRecord.event_reference == event_reference,
+            )
+        )
+        if existing is not None:
+            return existing
+        journal = FinancialJournalRecord(
+            payout_id=payout_id,
+            event_type=event_type,
+            event_reference=event_reference,
+            amount=amount,
+            currency=currency,
+        )
+        self.session.add(journal)
+        self.session.flush()
+        self.session.add_all(
+            [
+                FinancialEntryRecord(
+                    journal_id=journal.id,
+                    account=debit_account,
+                    direction="debit",
+                    amount=amount,
+                    currency=currency,
+                ),
+                FinancialEntryRecord(
+                    journal_id=journal.id,
+                    account=credit_account,
+                    direction="credit",
+                    amount=amount,
+                    currency=currency,
+                ),
+            ]
+        )
+        self.session.flush()
+        return journal
+
+    def payout_summary(self, payout_id: uuid.UUID) -> dict[str, int]:
+        rows = self.session.execute(
+            select(
+                FinancialJournalRecord.event_type,
+                func.coalesce(func.sum(FinancialJournalRecord.amount), 0),
+            )
+            .where(FinancialJournalRecord.payout_id == payout_id)
+            .group_by(FinancialJournalRecord.event_type)
+        )
+        return {event_type: int(amount) for event_type, amount in rows}
 
     def summary(self, payment_intent_id: uuid.UUID) -> dict[str, int]:
         rows = self.session.execute(

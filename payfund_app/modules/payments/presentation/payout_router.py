@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query
 
 from payfund_app.core.errors import Conflict, NotFound, UnprocessableEntity
+from payfund_app.modules.payments.application.accounting import PayoutAccountingService
 from payfund_app.modules.payments.application.errors import (
     IdempotencyConflict,
     PaymentNotFound,
@@ -21,6 +22,7 @@ from payfund_app.modules.payments.application.processor_router import (
     ProcessorRoutingError,
 )
 from payfund_app.modules.payments.infra.repositories import (
+    FinancialLedgerRepository,
     PaymentOutboxRepository,
     PayoutRepository,
 )
@@ -32,6 +34,7 @@ from payfund_app.modules.payments.presentation.deps import (
 )
 from payfund_app.modules.payments.presentation.schemas import (
     CreatePayoutRequest,
+    PayoutFinancialSummaryResponse,
     PayoutResponse,
 )
 from payfund_app.shared_kernel.logging import emit
@@ -45,6 +48,7 @@ def _use_cases(session, processors) -> PayoutUseCases:
         PaymentOutboxRepository(session),
         processors,
         SqlAlchemyUnitOfWork(session),
+        PayoutAccountingService(FinancialLedgerRepository(session)),
     )
 
 
@@ -126,6 +130,26 @@ def get_payout(
     except Exception as exc:
         _translate(exc)
         raise
+
+
+@router.get("/{payout_id}/financial-summary", response_model=PayoutFinancialSummaryResponse)
+def get_payout_financial_summary(
+    payout_id: uuid.UUID,
+    client: PaymentClientDep,
+    session: SessionDep,
+    processors: ProcessorRegistryDep,
+) -> PayoutFinancialSummaryResponse:
+    try:
+        view = _use_cases(session, processors).get(client.client_id, payout_id)
+    except Exception as exc:
+        _translate(exc)
+        raise
+    totals = FinancialLedgerRepository(session).payout_summary(payout_id)
+    return PayoutFinancialSummaryResponse(
+        payout_id=payout_id,
+        currency=view.payout.money.currency,
+        paid_out=totals.get("payout", 0),
+    )
 
 
 @router.get("", response_model=PayoutResponse)

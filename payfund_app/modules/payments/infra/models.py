@@ -293,13 +293,21 @@ class FinancialJournalRecord(Base):
     __table_args__ = (
         UniqueConstraint("event_type", "event_reference", name="uq_financial_journal_event"),
         CheckConstraint("amount > 0", name="ck_financial_journal_amount"),
+        CheckConstraint(
+            "num_nonnulls(payment_intent_id, payout_id) = 1",
+            name="ck_financial_journal_single_owner",
+        ),
         Index("idx_financial_journal_intent", "payment_intent_id", "created_at"),
+        Index("idx_financial_journal_payout", "payout_id", "created_at"),
         {"schema": "payments"},
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    payment_intent_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), ForeignKey("payments.payment_intents.id"), nullable=False
+    payment_intent_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("payments.payment_intents.id")
+    )
+    payout_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("payments.payouts.id")
     )
     event_type: Mapped[str] = mapped_column(String(40), nullable=False)
     event_reference: Mapped[str] = mapped_column(String(180), nullable=False)
