@@ -63,8 +63,8 @@ def test_reconciliation_recovers_missed_success_webhook(session):
     assert [row.event_type for row in session.scalars(select(PaymentOutboxRecord))] == ["payment.succeeded"]
 
     raw = json.dumps({"event": "charge.success", "data": {
-        "reference": attempt.provider_reference, "status": "success", "amount": 5000,
-        "currency": "XOF", "fees": 100,
+        "reference": attempt.provider_reference, "status": "success", "amount": 500000,
+        "currency": "XOF", "fees": 10000,
     }}).encode()
     secret = "sk_test"
     signature = hmac.new(secret.encode(), raw, hashlib.sha512).hexdigest()

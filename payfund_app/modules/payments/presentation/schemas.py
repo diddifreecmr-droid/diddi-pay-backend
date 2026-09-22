@@ -13,7 +13,7 @@ class CreatePaymentIntentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     business_reference: str = Field(min_length=1, max_length=128)
-    amount: int = Field(gt=0, description="Positive amount in minor units")
+    amount: int = Field(gt=0, description="Positive amount; for XOF, 5000 means 5,000 XOF")
     currency: Literal["XOF"] = "XOF"
     payer_user_id: uuid.UUID | None = None
     payee_user_id: uuid.UUID | None = None
@@ -96,7 +96,7 @@ class PaymentWebhookResponse(BaseModel):
 class CreateRefundRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount: int = Field(gt=0, description="Amount to refund in minor units")
+    amount: int = Field(gt=0, description="Amount to refund; for XOF, 5000 means 5,000 XOF")
     reason: str | None = Field(default=None, max_length=255)
 
 

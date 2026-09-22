@@ -79,6 +79,9 @@ Regles de securite :
 
 - `amount` est un entier strictement positif en unite mineure.
 - Pour le MVP XOF, `5000` represente `5 000 XOF`.
+- Cette convention est celle du contrat DiddiPay. L'adaptateur Paystack convertit en interne
+  `5000 XOF` vers `500000` pour l'API Paystack, puis reconvertit et valide le montant des retours.
+  Les modules clients ne doivent jamais effectuer cette multiplication eux-memes.
 - `currency` vaut actuellement `XOF`.
 - Un `PaymentIntent` est mono-devise et son montant ne change pas apres creation.
 - Le statut DiddiPay est la source de verite normalisee ; le statut Paystack reste un detail

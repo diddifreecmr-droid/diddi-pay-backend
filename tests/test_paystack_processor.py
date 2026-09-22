@@ -73,7 +73,7 @@ def test_initialize_maps_paystack_checkout_to_generic_redirect():
     sent = json.loads(captured["request"].content)
 
     assert captured["request"].headers["Authorization"] == "Bearer sk_test_secret"
-    assert sent["amount"] == 5_000
+    assert sent["amount"] == 500_000
     assert sent["currency"] == "XOF"
     assert sent["channels"] == ["mobile_money"]
     assert sent["metadata"]["requested_network"] == "orange"
@@ -114,7 +114,7 @@ def test_refund_maps_paystack_processing_response():
 
     assert captured["request"].url.path == "/refund"
     assert sent["transaction"] == "dpi_reference"
-    assert sent["amount"] == 2_000
+    assert sent["amount"] == 200_000
     assert sent["currency"] == "XOF"
     assert result.status == RefundStatus.PROCESSING
     assert result.provider_reference == "12345"
@@ -148,8 +148,9 @@ def test_verify_normalizes_paystack_status(provider_status, expected):
                 "data": {
                     "reference": "dpi_reference",
                     "status": provider_status,
-                    "amount": 5_000,
+                    "amount": 500_000,
                     "currency": "XOF",
+                    "fees": 11_501,
                 },
             },
         )
@@ -158,6 +159,7 @@ def test_verify_normalizes_paystack_status(provider_status, expected):
     assert result.status == expected
     assert result.amount == 5_000
     assert result.currency == "XOF"
+    assert result.fee == 116
 
 
 def test_http_rejection_is_a_definitive_failed_attempt():
@@ -176,8 +178,9 @@ def test_webhook_signature_and_payload_are_normalized_and_sanitized():
             "data": {
                 "reference": "dpi_reference",
                 "status": "success",
-                "amount": 5_000,
+                "amount": 500_000,
                 "currency": "XOF",
+                "fees": 11_501,
                 "channel": "mobile_money",
                 "customer": {"email": "private@example.com"},
                 "authorization": {"last4": "4081"},
@@ -193,6 +196,7 @@ def test_webhook_signature_and_payload_are_normalized_and_sanitized():
 
     assert event.status == AttemptStatus.SUCCEEDED
     assert event.amount == 5_000
+    assert event.fee == 116
     assert "customer" not in event.sanitized_payload
     assert "authorization" not in event.sanitized_payload
 
@@ -201,3 +205,24 @@ def test_webhook_rejects_invalid_signature():
     adapter = processor(lambda _: pytest.fail("HTTP must not be called"))
     with pytest.raises(Exception, match="invalid Paystack webhook signature"):
         adapter.parse_webhook(b"{}", {"x-paystack-signature": "invalid"})
+
+
+def test_verify_rejects_fractional_xof_provider_amount():
+    def handler(_):
+        return httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {
+                    "reference": "dpi_reference",
+                    "status": "success",
+                    "amount": 500_001,
+                    "currency": "XOF",
+                },
+            },
+        )
+
+    result = processor(handler).verify_payment("dpi_reference")
+
+    assert result.status == AttemptStatus.UNKNOWN
+    assert result.failure_code == "PAYSTACK_RESPONSE_INVALID"

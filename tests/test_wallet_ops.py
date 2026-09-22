@@ -113,7 +113,12 @@ def test_ops_reconcile_paystack_finalise_un_webhook_manque(
         def verifier_depot(self, reference):
             from payfund_app.modules.wallet.infra.gateways import GatewayOperation, GatewayStatus
 
-            return GatewayOperation(provider_reference=reference, status=GatewayStatus.COMPLETED)
+            return GatewayOperation(
+                provider_reference=reference,
+                status=GatewayStatus.COMPLETED,
+                amount=5000,
+                currency="XOF",
+            )
 
     monkeypatch.setattr("payfund_app.modules.wallet.presentation.routers.PaystackGateway", FakeGateway)
 

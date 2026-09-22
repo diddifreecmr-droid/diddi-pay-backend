@@ -35,6 +35,8 @@ from payfund_app.modules.payments.domain import (
 
 
 class PaystackPaymentProcessor:
+    _XOF_SUBUNIT_FACTOR = 100
+
     name = "paystack"
     capabilities = ProcessorCapabilities(
         currencies=frozenset({"XOF"}),
@@ -113,7 +115,9 @@ class PaystackPaymentProcessor:
         }
         payload: dict[str, Any] = {
             "email": request.customer_email,
-            "amount": request.money.amount,
+            "amount": self._to_paystack_amount(
+                request.money.amount, request.money.currency
+            ),
             "currency": request.money.currency,
             "reference": reference,
             "metadata": metadata,
@@ -172,13 +176,23 @@ class PaystackPaymentProcessor:
         data = body.get("data") or {}
         provider_status = str(data.get("status") or "unknown").lower()
         status = self._normalize_status(provider_status)
+        try:
+            amount = self._from_paystack_amount(data.get("amount"), data.get("currency"))
+        except ValueError as exc:
+            return ProviderResult(
+                provider_reference=str(data.get("reference") or provider_reference),
+                status=AttemptStatus.UNKNOWN,
+                provider_status="invalid_response",
+                failure_code="PAYSTACK_RESPONSE_INVALID",
+                failure_message=str(exc),
+            )
         return ProviderResult(
             provider_reference=str(data.get("reference") or provider_reference),
             status=status,
             provider_status=provider_status,
-            amount=int(data["amount"]) if data.get("amount") is not None else None,
+            amount=amount,
             currency=str(data["currency"]).upper() if data.get("currency") else None,
-            fee=int(data["fees"]) if data.get("fees") is not None else None,
+            fee=self._from_paystack_fee(data.get("fees"), data.get("currency")),
         )
 
     def parse_webhook(
@@ -225,21 +239,27 @@ class PaystackPaymentProcessor:
             "paid_at": data.get("paid_at"),
             "gateway_response": data.get("gateway_response"),
         }
+        try:
+            amount = self._from_paystack_amount(data.get("amount"), data.get("currency"))
+        except ValueError as exc:
+            raise ProcessorWebhookRejected(str(exc)) from exc
         return ProviderEvent(
             event_key=event_key,
             event_type=event_type,
             provider_reference=reference,
             status=status,
-            amount=int(data["amount"]) if data.get("amount") is not None else None,
+            amount=amount,
             currency=str(data["currency"]).upper() if data.get("currency") else None,
-            fee=int(data["fees"]) if data.get("fees") is not None else None,
+            fee=self._from_paystack_fee(data.get("fees"), data.get("currency")),
             sanitized_payload=sanitized,
         )
 
     def refund_payment(self, request: RefundRequest) -> RefundResult:
         payload = {
             "transaction": request.provider_reference,
-            "amount": request.money.amount,
+            "amount": self._to_paystack_amount(
+                request.money.amount, request.money.currency
+            ),
             "currency": request.money.currency,
             "merchant_note": f"DiddiPay refund {request.refund_id}",
         }
@@ -282,6 +302,34 @@ class PaystackPaymentProcessor:
         except ValueError:
             return {}
         return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def _to_paystack_amount(cls, amount: int, currency: str) -> int:
+        # Paystack requires XOF amounts multiplied by 100 despite XOF having no subunit.
+        return amount * cls._XOF_SUBUNIT_FACTOR if currency.upper() == "XOF" else amount
+
+    @classmethod
+    def _from_paystack_amount(cls, value: Any, currency: Any) -> int | None:
+        if value is None:
+            return None
+        amount = int(value)
+        if str(currency or "").upper() != "XOF":
+            return amount
+        quotient, remainder = divmod(amount, cls._XOF_SUBUNIT_FACTOR)
+        if remainder:
+            raise ValueError("Paystack returned a fractional XOF payment amount")
+        return quotient
+
+    @classmethod
+    def _from_paystack_fee(cls, value: Any, currency: Any) -> int | None:
+        if value is None:
+            return None
+        fee = int(value)
+        if str(currency or "").upper() != "XOF":
+            return fee
+        # The internal XOF ledger stores whole francs; round provider fees upward so
+        # expected net settlement is never overstated.
+        return (fee + cls._XOF_SUBUNIT_FACTOR - 1) // cls._XOF_SUBUNIT_FACTOR
 
     @staticmethod
     def _normalize_status(status: str) -> AttemptStatus:

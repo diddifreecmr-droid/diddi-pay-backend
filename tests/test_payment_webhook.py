@@ -54,7 +54,7 @@ def seed_payment(session):
     return intent, attempt
 
 
-def signed_payload(attempt, *, amount=5_000, currency="XOF", fees=100):
+def signed_payload(attempt, *, amount=500_000, currency="XOF", fees=10_000):
     raw = json.dumps(
         {
             "event": "charge.success",
@@ -134,7 +134,7 @@ def test_invalid_webhook_signature_is_rejected(client, session):
 
 def test_amount_mismatch_is_audited_without_completing_payment(client, session):
     intent, attempt = seed_payment(session)
-    raw, signature = signed_payload(attempt, amount=5_001)
+    raw, signature = signed_payload(attempt, amount=500_100)
     configure_processor()
 
     response = client.post(

@@ -305,6 +305,9 @@ ne le préclut plus.
   `5000`, 12,50 EUR valent `1250`. L'exposant vient de `CURRENCIES` (`domain/money.py`) — 0 pour le
   XOF, 2 pour l'euro. Pour le XOF, cela ne change **rien** : ni l'API, ni la base, ni les clients.
   C'est le seul point qui aurait été coûteux à rattraper après la mise en production.
+- **Frontière Paystack.** Paystack demande exceptionnellement de multiplier aussi le XOF par 100.
+  Cette conversion est limitée aux adaptateurs Paystack : DiddiPay conserve `5000` en API et en
+  base, envoie `500000` au provider, puis divise et valide ses webhooks et vérifications.
 - **Une transaction reste mono-devise.** Deux écritures dans des unités différentes ne peuvent pas
   sommer à zéro ; assouplir l'invariant reviendrait à renoncer à la seule vérification qui détecte
   mécaniquement une incohérence.

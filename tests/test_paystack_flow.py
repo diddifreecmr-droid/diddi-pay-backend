@@ -73,6 +73,8 @@ def test_paystack_gateway_initialization_uses_backend_client(monkeypatch):
     assert captured["url"].endswith("/transaction/initialize")
     assert captured["headers"]["Authorization"] == "Bearer sk_test_123"
     assert captured["json"]["reference"] == "wallet-deposit-1"
+    assert captured["json"]["amount"] == "500000"
+    assert captured["json"]["currency"] == "XOF"
 
 
 def test_paystack_webhook_confirms_deposit(client, auth, session, make_user, monkeypatch):
@@ -97,7 +99,12 @@ def test_paystack_webhook_confirms_deposit(client, auth, session, make_user, mon
 
     payload = {
         "event": "charge.success",
-        "data": {"reference": "paystack-ref-1", "status": "success"},
+        "data": {
+            "reference": "paystack-ref-1",
+            "status": "success",
+            "amount": 500000,
+            "currency": "XOF",
+        },
     }
     body = json.dumps(payload, separators=(",", ":")).encode()
     signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
@@ -142,7 +149,12 @@ def test_paystack_webhook_ignores_duplicate_finalized_transaction(
 
     payload = {
         "event": "charge.success",
-        "data": {"reference": "paystack-ref-final", "status": "success"},
+        "data": {
+            "reference": "paystack-ref-final",
+            "status": "success",
+            "amount": 500000,
+            "currency": "XOF",
+        },
     }
     body = json.dumps(payload, separators=(",", ":")).encode()
     signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
@@ -184,7 +196,12 @@ def test_paystack_webhook_ignores_duplicate_event_key(client, auth, session, mak
 
     payload = {
         "event": "charge.success",
-        "data": {"reference": "paystack-ref-repeat", "status": "success"},
+        "data": {
+            "reference": "paystack-ref-repeat",
+            "status": "success",
+            "amount": 500000,
+            "currency": "XOF",
+        },
     }
     body = json.dumps(payload, separators=(",", ":")).encode()
     signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
@@ -249,6 +266,52 @@ def test_paystack_webhook_reports_unknown_reference(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"] == "unknown_reference"
     assert response.json()["reason"] == "no_local_transaction"
+
+
+def test_paystack_webhook_does_not_credit_mismatched_amount(
+    client, auth, session, make_user, monkeypatch
+):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+
+    user_id, account_id = make_user()
+    auth.as_user(user_id)
+    transaction = TransactionRepository(session).create(
+        type_="deposit",
+        status="pending",
+        origin_module="wallet",
+        idempotency_key=str(uuid.uuid4()),
+        account_id=account_id,
+        money=None,
+        provider_reference="paystack-ref-underpaid",
+    )
+    transaction.amount = 5000
+    transaction.currency = "XOF"
+    session.commit()
+
+    payload = {
+        "event": "charge.success",
+        "data": {
+            "reference": "paystack-ref-underpaid",
+            "status": "success",
+            "amount": 5000,
+            "currency": "XOF",
+        },
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(b"sk_test_123", body, hashlib.sha512).hexdigest()
+
+    response = client.post(
+        f"{BASE}/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": signature},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason"] == "amount_or_currency_mismatch"
+    assert session.get(Transaction, transaction.id).status == "pending"
+    assert AccountRepository(session).balance(account_id).amount == 0
 
 
 def test_depot_paystack_persiste_le_lien_de_checkout(client, auth, make_user, monkeypatch):

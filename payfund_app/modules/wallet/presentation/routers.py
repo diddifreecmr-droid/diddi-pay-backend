@@ -598,6 +598,19 @@ def reconcile_paystack_deposit(
     gateway = PaystackGateway()
     result = gateway.verifier_depot(transaction.provider_reference)
     if result.status is GatewayStatus.COMPLETED:
+        if result.amount != transaction.amount or result.currency != transaction.currency:
+            ReconciliationLogRepository(session).append(
+                transaction_id=transaction.id,
+                provider="paystack",
+                provider_reference=transaction.provider_reference,
+                event="manual_reconcile",
+                outcome="ignored",
+                reason="amount_or_currency_mismatch",
+            )
+            return {
+                "status": "amount_or_currency_mismatch",
+                "transaction_id": str(transaction.id),
+            }
         use_cases.confirmer_operation(transaction.id, provider="paystack")
         ReconciliationLogRepository(session).append(
             transaction_id=transaction.id,
@@ -849,6 +862,33 @@ async def paystack_webhook(
         }
 
     if event == "charge.success" or data.get("status") == "success":
+        try:
+            provider_amount = PaystackGateway.from_provider_xof(data.get("amount"))
+        except (TypeError, ValueError):
+            provider_amount = None
+        provider_currency = str(data.get("currency") or "").upper()
+        if provider_amount != transaction.amount or provider_currency != transaction.currency:
+            emit(
+                "warning",
+                "paystack.webhook.amount_or_currency_mismatch",
+                transaction_id=str(transaction.id),
+            )
+            ReconciliationLogRepository(session).append(
+                transaction_id=transaction.id,
+                provider="paystack",
+                provider_reference=transaction.provider_reference,
+                event=str(event or "webhook"),
+                outcome="ignored",
+                reason="amount_or_currency_mismatch",
+            )
+            # The signed event was handled and deliberately rejected; keeping it as
+            # received would not make a retry safe because the inbox key is unique.
+            inbox.mark_processed(inbox_row)
+            return {
+                "status": "ignored",
+                "reason": "amount_or_currency_mismatch",
+                "transaction_status": transaction.status,
+            }
         use_cases.confirmer_operation(transaction.id, provider="paystack")
         emit(
             "info",

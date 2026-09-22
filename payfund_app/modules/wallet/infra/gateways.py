@@ -37,6 +37,8 @@ class GatewayOperation:
     status: GatewayStatus
     authorization_url: str | None = None
     access_code: str | None = None
+    amount: int | None = None
+    currency: str | None = None
 
 
 class PaymentGatewayPort(Protocol):
@@ -202,7 +204,9 @@ class PaystackGateway:
     ) -> GatewayOperation:
         payload = {
             "email": email or f"{reference}@diddipay.local",
-            "amount": str(montant),
+            # Paystack expects XOF multiplied by 100 even though XOF has no subunit.
+            "amount": str(self.to_provider_xof(montant)),
+            "currency": "XOF",
             "reference": reference,
             "metadata": {"phone": phone, "provider": provider, "wallet_reference": reference},
         }
@@ -254,7 +258,22 @@ class PaystackGateway:
             status=gw_status,
             authorization_url=body.get("authorization_url"),
             access_code=body.get("access_code"),
+            amount=self.from_provider_xof(body.get("amount")),
+            currency=str(body.get("currency") or "").upper() or None,
         )
+
+    @staticmethod
+    def to_provider_xof(amount: int) -> int:
+        return amount * 100
+
+    @staticmethod
+    def from_provider_xof(value: object) -> int | None:
+        if value is None:
+            return None
+        amount, remainder = divmod(int(value), 100)
+        if remainder:
+            raise ValueError("Paystack returned a fractional XOF payment amount")
+        return amount
 
 
 def get_gateway() -> PaymentGatewayPort:

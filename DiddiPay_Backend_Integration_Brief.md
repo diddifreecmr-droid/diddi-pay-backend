@@ -82,6 +82,10 @@ def start_ride_payment(ride, authenticated_user):
 Le prix envoye vient de la base DiddiGo. Ne jamais accepter comme autoritaire un montant calcule
 ou modifie par le frontend.
 
+Pour `XOF`, envoyer le nombre de francs entiers: `5000` signifie 5 000 FCFA. La conversion
+particuliere requise par Paystack (`x100`) appartient exclusivement a son adaptateur DiddiPay.
+DiddiGo, DiddiSend et les futurs modules ne doivent ni connaitre ni appliquer cette conversion.
+
 ### Reprise apres timeout
 
 Si l'appel de creation expire, DiddiGo reutilise exactement la meme cle et le meme payload. Il ne
