@@ -16,15 +16,18 @@ from payfund_app.modules.payments.domain import (
     PaymentAttempt,
     PaymentIntent,
     PaymentIntentStatus,
+    Payout,
+    PayoutStatus,
     Refund,
 )
 from payfund_app.modules.payments.infra.models import (
-    PaymentAttemptRecord,
-    PaymentIntentRecord,
-    ProviderEventRecord,
-    PaymentOutboxRecord,
     FinancialEntryRecord,
     FinancialJournalRecord,
+    PaymentAttemptRecord,
+    PaymentIntentRecord,
+    PaymentOutboxRecord,
+    PayoutRecord,
+    ProviderEventRecord,
     RefundRecord,
 )
 
@@ -427,6 +430,94 @@ class PaymentOutboxRepository:
             )
         )
         return {status: int(count) for status, count in rows}
+
+
+class PayoutRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, payout: Payout) -> Payout:
+        self.session.add(
+            PayoutRecord(
+                id=payout.id,
+                client_id=payout.client_id,
+                business_reference=payout.business_reference,
+                beneficiary_reference=payout.beneficiary_reference,
+                amount=payout.money.amount,
+                currency=payout.money.currency,
+                status=str(payout.status),
+                idempotency_key=payout.idempotency_key,
+                request_fingerprint=payout.request_fingerprint,
+                processor=payout.processor,
+                provider_reference=payout.provider_reference,
+                provider_status=payout.provider_status,
+                failure_code=payout.failure_code,
+                failure_message=payout.failure_message,
+                metadata_json=payout.metadata,
+                created_at=payout.created_at,
+                updated_at=payout.updated_at,
+            )
+        )
+        self.session.flush()
+        return payout
+
+    def get(self, payout_id: uuid.UUID) -> Payout | None:
+        row = self.session.get(PayoutRecord, payout_id)
+        return self._to_domain(row) if row else None
+
+    def get_by_idempotency(self, client_id: str, key: str) -> Payout | None:
+        row = self.session.scalar(
+            select(PayoutRecord).where(
+                PayoutRecord.client_id == client_id,
+                PayoutRecord.idempotency_key == key,
+            )
+        )
+        return self._to_domain(row) if row else None
+
+    def get_by_business_reference(self, client_id: str, reference: str) -> Payout | None:
+        row = self.session.scalar(
+            select(PayoutRecord)
+            .where(
+                PayoutRecord.client_id == client_id,
+                PayoutRecord.business_reference == reference,
+            )
+            .order_by(PayoutRecord.created_at.desc())
+        )
+        return self._to_domain(row) if row else None
+
+    def save(self, payout: Payout) -> Payout:
+        row = self.session.get(PayoutRecord, payout.id)
+        if row is None:
+            raise LookupError(f"payout not found: {payout.id}")
+        row.status = str(payout.status)
+        row.provider_reference = payout.provider_reference
+        row.provider_status = payout.provider_status
+        row.failure_code = payout.failure_code
+        row.failure_message = payout.failure_message
+        row.updated_at = payout.updated_at
+        self.session.flush()
+        return payout
+
+    @staticmethod
+    def _to_domain(row: PayoutRecord) -> Payout:
+        return Payout(
+            id=row.id,
+            client_id=row.client_id,
+            business_reference=row.business_reference,
+            beneficiary_reference=row.beneficiary_reference,
+            money=Money(row.amount, row.currency),
+            status=PayoutStatus(row.status),
+            idempotency_key=row.idempotency_key,
+            request_fingerprint=row.request_fingerprint,
+            processor=row.processor,
+            provider_reference=row.provider_reference,
+            provider_status=row.provider_status,
+            failure_code=row.failure_code,
+            failure_message=row.failure_message,
+            metadata=row.metadata_json,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
 
 class FinancialLedgerRepository:

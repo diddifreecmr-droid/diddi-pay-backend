@@ -8,6 +8,8 @@ from payfund_app.modules.payments.domain.entities import (
     PaymentAttempt,
     PaymentIntent,
     PaymentIntentStatus,
+    Payout,
+    PayoutStatus,
     Refund,
     RefundStatus,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "PaymentDomainError",
     "PaymentIntent",
     "PaymentIntentStatus",
+    "Payout",
+    "PayoutStatus",
     "Refund",
     "RefundStatus",
 ]

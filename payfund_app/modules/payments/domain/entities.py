@@ -46,6 +46,14 @@ class RefundStatus(StrEnum):
     FAILED = "failed"
 
 
+class PayoutStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    DISPUTED = "disputed"
+
+
 class NextActionType(StrEnum):
     REDIRECT = "redirect"
     MOBILE_MONEY_PROMPT = "mobile_money_prompt"
@@ -250,4 +258,42 @@ class Refund:
         if target not in _REFUND_TRANSITIONS[self.status]:
             raise InvalidStateTransition("refund", self.status, target)
         self.status = target
+        self.updated_at = utc_now()
+
+
+@dataclass(slots=True)
+class Payout:
+    client_id: str
+    business_reference: str
+    beneficiary_reference: str
+    money: Money
+    idempotency_key: str
+    request_fingerprint: str
+    processor: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
+    status: PayoutStatus = PayoutStatus.PENDING
+    provider_reference: str | None = None
+    provider_status: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
+
+    def apply_provider_status(
+        self,
+        status: PayoutStatus,
+        *,
+        provider_reference: str | None,
+        provider_status: str | None,
+        failure_code: str | None = None,
+        failure_message: str | None = None,
+    ) -> None:
+        if self.status in {PayoutStatus.SUCCEEDED, PayoutStatus.FAILED} and status != self.status:
+            raise InvalidStateTransition("payout", self.status, status)
+        self.status = status
+        self.provider_reference = provider_reference or self.provider_reference
+        self.provider_status = provider_status
+        self.failure_code = failure_code
+        self.failure_message = failure_message
         self.updated_at = utc_now()

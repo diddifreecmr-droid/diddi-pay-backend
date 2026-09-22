@@ -3,6 +3,8 @@
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
+    PayoutRequest,
+    PayoutResult,
     ProcessorCapabilities,
     ProviderResult,
     RefundRequest,
@@ -12,6 +14,7 @@ from payfund_app.modules.payments.domain import (
     AttemptStatus,
     NextAction,
     NextActionType,
+    PayoutStatus,
     RefundStatus,
 )
 
@@ -20,7 +23,9 @@ class SandboxPaymentProcessor:
     name = "sandbox"
     capabilities = ProcessorCapabilities(
         currencies=frozenset({"XOF"}),
-        directions=frozenset({PaymentDirection.COLLECTION, PaymentDirection.REFUND}),
+        directions=frozenset(
+            {PaymentDirection.COLLECTION, PaymentDirection.REFUND, PaymentDirection.PAYOUT}
+        ),
         channels=frozenset({"mobile_money", "card"}),
         networks=frozenset({"orange", "wave", "mtn"}),
     )
@@ -51,5 +56,19 @@ class SandboxPaymentProcessor:
         return RefundResult(
             provider_reference=f"sandbox-refund-{request.refund_id}",
             status=RefundStatus.SUCCEEDED,
+            provider_status="processed",
+        )
+
+    def create_payout(self, request: PayoutRequest) -> PayoutResult:
+        return PayoutResult(
+            provider_reference=f"sandbox-payout-{request.payout_id}",
+            status=PayoutStatus.SUCCEEDED,
+            provider_status="processed",
+        )
+
+    def verify_payout(self, provider_reference: str) -> PayoutResult:
+        return PayoutResult(
+            provider_reference=provider_reference,
+            status=PayoutStatus.SUCCEEDED,
             provider_status="processed",
         )

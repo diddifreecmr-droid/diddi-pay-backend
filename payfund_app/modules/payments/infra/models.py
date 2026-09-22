@@ -6,8 +6,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger,
     CHAR,
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -238,6 +238,52 @@ class PaymentOutboxRecord(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PayoutRecord(Base):
+    __tablename__ = "payouts"
+    __table_args__ = (
+        UniqueConstraint("client_id", "idempotency_key", name="uq_payout_client_idempotency"),
+        CheckConstraint("amount > 0", name="ck_payout_amount_positive"),
+        CheckConstraint(
+            "status IN ('pending','processing','succeeded','failed','disputed')",
+            name="ck_payout_status",
+        ),
+        Index("idx_payout_business", "client_id", "business_reference"),
+        Index("idx_payout_status_updated", "status", "updated_at"),
+        Index(
+            "uq_payout_provider_reference",
+            "processor",
+            "provider_reference",
+            unique=True,
+            postgresql_where=text("provider_reference IS NOT NULL"),
+        ),
+        {"schema": "payments"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    client_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    business_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    beneficiary_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(180), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    processor: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_reference: Mapped[str | None] = mapped_column(String(160))
+    provider_status: Mapped[str | None] = mapped_column(String(80))
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_message: Mapped[str | None] = mapped_column(String(255))
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 

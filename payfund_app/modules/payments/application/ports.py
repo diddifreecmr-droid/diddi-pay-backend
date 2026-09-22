@@ -15,6 +15,8 @@ from payfund_app.modules.payments.domain import (
     NextAction,
     PaymentAttempt,
     PaymentIntent,
+    Payout,
+    PayoutStatus,
     Refund,
     RefundStatus,
 )
@@ -111,6 +113,25 @@ class RefundResult:
     failure_message: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PayoutRequest:
+    payout_id: uuid.UUID
+    business_reference: str
+    beneficiary_reference: str
+    money: Money
+    idempotency_key: str
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class PayoutResult:
+    provider_reference: str | None
+    status: PayoutStatus
+    provider_status: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+
+
 class PaymentProcessorPort(Protocol):
     name: str
     capabilities: ProcessorCapabilities
@@ -122,6 +143,22 @@ class PaymentProcessorPort(Protocol):
     def parse_webhook(self, raw_body: bytes, headers: Mapping[str, str]) -> ProviderEvent: ...
 
     def refund_payment(self, request: RefundRequest) -> RefundResult: ...
+
+    def create_payout(self, request: PayoutRequest) -> PayoutResult: ...
+
+    def verify_payout(self, provider_reference: str) -> PayoutResult: ...
+
+
+class PayoutRepositoryPort(Protocol):
+    def add(self, payout: Payout) -> Payout: ...
+
+    def get(self, payout_id: uuid.UUID) -> Payout | None: ...
+
+    def get_by_idempotency(self, client_id: str, key: str) -> Payout | None: ...
+
+    def get_by_business_reference(self, client_id: str, reference: str) -> Payout | None: ...
+
+    def save(self, payout: Payout) -> Payout: ...
 
 
 class PaymentIntentRepositoryPort(Protocol):

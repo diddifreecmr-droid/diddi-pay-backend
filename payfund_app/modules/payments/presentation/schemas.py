@@ -120,3 +120,29 @@ class PaymentFinancialSummaryResponse(BaseModel):
     net_expected: int
     settled: int
     outstanding: int
+
+
+class CreatePayoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    business_reference: str = Field(min_length=1, max_length=128)
+    beneficiary_reference: str = Field(min_length=1, max_length=128)
+    amount: int = Field(gt=0, description="Positive integer amount in XOF")
+    currency: Literal["XOF"] = "XOF"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PayoutResponse(BaseModel):
+    id: uuid.UUID
+    client_id: str
+    business_reference: str
+    beneficiary_reference: str
+    amount: int
+    currency: str
+    status: Literal["pending", "processing", "succeeded", "failed", "disputed"]
+    processor: str
+    provider_status: str | None = None
+    failure_code: str | None = None
+    metadata: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
