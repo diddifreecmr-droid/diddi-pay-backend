@@ -1,0 +1,9 @@
+services:
+  db:
+    container_name: diddipay-recipe-db
+  redis:
+    container_name: diddipay-recipe-redis
+  app:
+    container_name: diddipay-recipe-app
+  payment-worker:
+    container_name: diddipay-recipe-worker

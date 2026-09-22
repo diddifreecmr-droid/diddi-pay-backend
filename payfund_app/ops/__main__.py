@@ -23,14 +23,25 @@ from payfund_app.ops.maintenance import (
     run_housekeeping,
 )
 from payfund_app.shared_kernel.events.bus import get_bus
-from payfund_app.shared_kernel.logging import emit
+from payfund_app.shared_kernel.logging import configure_logging, emit
 
 
 def _parse_uuid(value: str) -> uuid.UUID:
     return uuid.UUID(value)
 
 
+def _emit_worker_cycle(reconciliation, delivery, queue: dict[str, int]) -> None:
+    emit(
+        "warning" if queue["dead_letter"] else "info",
+        "ops.payment_worker.cycle",
+        reconciled=reconciliation.scanned,
+        delivered_this_cycle=delivery.delivered,
+        **queue,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
+    configure_logging()
     parser = argparse.ArgumentParser(prog="python -m payfund_app.ops")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -115,13 +126,7 @@ def main(argv: list[str] | None = None) -> int:
                     reconciliation = reconcile_pending_payment_intents(session)
                     delivery = deliver_payment_events(session)
                     queue = payment_event_delivery_status(session)
-                    emit(
-                        "warning" if queue["dead_letter"] else "info",
-                        "ops.payment_worker.cycle",
-                        reconciled=reconciliation.scanned,
-                        delivered=delivery.delivered,
-                        **queue,
-                    )
+                    _emit_worker_cycle(reconciliation, delivery, queue)
             except Exception as exc:  # noqa: BLE001 - worker must retry after transient failures
                 emit("error", "ops.payment_worker.failed", error=str(exc))
             time.sleep(args.interval)
