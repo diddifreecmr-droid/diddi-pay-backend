@@ -160,6 +160,10 @@ class PayoutRepositoryPort(Protocol):
 
     def save(self, payout: Payout) -> Payout: ...
 
+    def pending_for_reconciliation(
+        self, *, older_than: datetime, limit: int = 100
+    ) -> list[Payout]: ...
+
 
 class PaymentIntentRepositoryPort(Protocol):
     def add(self, intent: PaymentIntent) -> PaymentIntent: ...

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from payfund_app.modules.payments.application.errors import (
@@ -53,6 +54,14 @@ class CreatePayoutCommand:
 class PayoutView:
     payout: Payout
     created: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PayoutReconciliationSummary:
+    scanned: int
+    succeeded: int
+    failed: int
+    pending: int
 
 
 class PayoutUseCases:
@@ -183,3 +192,39 @@ class PayoutUseCases:
                 "metadata": payout.metadata,
             },
         )
+
+    def reconcile(
+        self, *, minimum_age_seconds: int = 300, limit: int = 100
+    ) -> PayoutReconciliationSummary:
+        cutoff = datetime.now(UTC) - timedelta(seconds=minimum_age_seconds)
+        candidates = self.payouts.pending_for_reconciliation(
+            older_than=cutoff, limit=limit
+        )
+        succeeded = failed = pending = 0
+        for payout in candidates:
+            processor = self.processors.get(payout.processor)
+            try:
+                result = processor.verify_payout(payout.provider_reference)
+            except (ProcessorCallUncertain, OSError):
+                pending += 1
+                self.uow.commit()
+                continue
+            previous = payout.status
+            payout.apply_provider_status(
+                result.status,
+                provider_reference=result.provider_reference,
+                provider_status=result.provider_status,
+                failure_code=result.failure_code,
+                failure_message=result.failure_message,
+            )
+            self.payouts.save(payout)
+            if payout.status != previous:
+                self._enqueue_status(payout)
+            if payout.status == PayoutStatus.SUCCEEDED:
+                succeeded += 1
+            elif payout.status == PayoutStatus.FAILED:
+                failed += 1
+            else:
+                pending += 1
+            self.uow.commit()
+        return PayoutReconciliationSummary(len(candidates), succeeded, failed, pending)

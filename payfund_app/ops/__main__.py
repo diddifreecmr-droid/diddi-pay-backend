@@ -16,6 +16,7 @@ from payfund_app.ops.maintenance import (
     payment_event_delivery_status,
     reconcile_paystack_deposit,
     reconcile_pending_payment_intents,
+    reconcile_pending_payouts,
     reconcile_pending_paystack_deposits,
     record_payment_settlement,
     relay_outbox_events,
@@ -30,11 +31,12 @@ def _parse_uuid(value: str) -> uuid.UUID:
     return uuid.UUID(value)
 
 
-def _emit_worker_cycle(reconciliation, delivery, queue: dict[str, int]) -> None:
+def _emit_worker_cycle(reconciliation, payout_reconciliation, delivery, queue: dict[str, int]) -> None:
     emit(
         "warning" if queue["dead_letter"] else "info",
         "ops.payment_worker.cycle",
         reconciled=reconciliation.scanned,
+        payouts_reconciled=payout_reconciliation.scanned,
         delivered_this_cycle=delivery.delivered,
         **queue,
     )
@@ -124,9 +126,12 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 with SessionLocal() as session:
                     reconciliation = reconcile_pending_payment_intents(session)
+                    payout_reconciliation = reconcile_pending_payouts(session)
                     delivery = deliver_payment_events(session)
                     queue = payment_event_delivery_status(session)
-                    _emit_worker_cycle(reconciliation, delivery, queue)
+                    _emit_worker_cycle(
+                        reconciliation, payout_reconciliation, delivery, queue
+                    )
             except Exception as exc:  # noqa: BLE001 - worker must retry after transient failures
                 emit("error", "ops.payment_worker.failed", error=str(exc))
             time.sleep(args.interval)
@@ -144,9 +149,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2 if report.has_gaps else 0
         if args.command == "maintain-payment-intents":
             reconciliation = reconcile_pending_payment_intents(session)
+            payout_reconciliation = reconcile_pending_payouts(session)
             delivery = deliver_payment_events(session)
             queue = payment_event_delivery_status(session)
-            print(f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} delivered={delivery.delivered} retried={delivery.retried} pending={queue['pending']} dead_letter={queue['dead_letter']}")
+            print(f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} payouts_scanned={payout_reconciliation.scanned} delivered={delivery.delivered} retried={delivery.retried} pending={queue['pending']} dead_letter={queue['dead_letter']}")
             return 2 if queue["dead_letter"] else 0
         if args.command == "backfill-wallet":
             result = backfill_wallet(

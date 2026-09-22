@@ -1,6 +1,17 @@
+import uuid
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
 
-from payfund_app.modules.payments.infra.models import PaymentOutboxRecord
+from payfund_app.modules.payments.application.payouts import PayoutUseCases
+from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.infra.models import PaymentOutboxRecord, PayoutRecord
+from payfund_app.modules.payments.infra.repositories import (
+    PaymentOutboxRepository,
+    PayoutRepository,
+)
+from payfund_app.modules.payments.infra.sandbox_processor import SandboxPaymentProcessor
+from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 
 BASE = "/payfund/v1/payouts"
 HEADERS = {
@@ -90,3 +101,44 @@ def test_payout_requires_idempotency_and_documents_contract(client):
         parameter["name"] for parameter in schema["paths"][BASE]["post"]["parameters"]
     }
     assert {"X-Client-ID", "X-Service-Key", "Idempotency-Key"} <= parameter_names
+
+
+def test_processing_payout_is_reconciled_and_emits_final_event(session):
+    payout_id = uuid.uuid4()
+    session.add(
+        PayoutRecord(
+            id=payout_id,
+            client_id="diddifood",
+            business_reference="diddifood:order:reconcile-42:restaurant-payout:v1",
+            beneficiary_reference="restaurant:rest-7",
+            amount=4_500,
+            currency="XOF",
+            status="processing",
+            idempotency_key="diddisend:delivery:reconcile-42:picked_up:v1",
+            request_fingerprint="a" * 64,
+            processor="sandbox",
+            provider_reference=f"sandbox-payout-{payout_id}",
+            provider_status="network_error",
+            metadata_json={"delivery_id": "reconcile-42"},
+            created_at=datetime.now(UTC) - timedelta(minutes=10),
+            updated_at=datetime.now(UTC) - timedelta(minutes=10),
+        )
+    )
+    session.commit()
+    processors = ProcessorRegistry()
+    processors.register(SandboxPaymentProcessor())
+
+    result = PayoutUseCases(
+        PayoutRepository(session),
+        PaymentOutboxRepository(session),
+        processors,
+        SqlAlchemyUnitOfWork(session),
+    ).reconcile(minimum_age_seconds=300)
+
+    assert result.scanned == 1
+    assert result.succeeded == 1
+    assert PayoutRepository(session).get(payout_id).status == "succeeded"
+    event = session.scalar(
+        select(PaymentOutboxRecord).where(PaymentOutboxRecord.aggregate_id == payout_id)
+    )
+    assert event.event_type == "payout.succeeded"

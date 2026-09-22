@@ -498,6 +498,22 @@ class PayoutRepository:
         self.session.flush()
         return payout
 
+    def pending_for_reconciliation(
+        self, *, older_than: datetime, limit: int = 100
+    ) -> list[Payout]:
+        rows = self.session.scalars(
+            select(PayoutRecord)
+            .where(
+                PayoutRecord.status.in_(["pending", "processing"]),
+                PayoutRecord.provider_reference.is_not(None),
+                PayoutRecord.updated_at <= older_than,
+            )
+            .order_by(PayoutRecord.updated_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return [self._to_domain(row) for row in rows]
+
     @staticmethod
     def _to_domain(row: PayoutRecord) -> Payout:
         return Payout(

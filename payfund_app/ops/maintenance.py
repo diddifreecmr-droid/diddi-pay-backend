@@ -25,6 +25,10 @@ from payfund_app.modules.payments.application.integrity import (
     PaymentIntegrityReport,
     PaymentIntegrityUseCases,
 )
+from payfund_app.modules.payments.application.payouts import (
+    PayoutReconciliationSummary,
+    PayoutUseCases,
+)
 from payfund_app.modules.payments.application.ports import (
     CallbackTarget,
     PaymentEventSenderPort,
@@ -42,6 +46,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
     PaymentOutboxRepository,
+    PayoutRepository,
     ProviderEventRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
@@ -297,6 +302,19 @@ def reconcile_pending_payment_intents(
         mismatched=result.mismatched,
     )
     emit("info", "ops.payment_intents.reconciled", **asdict(result))
+    return result
+
+
+def reconcile_pending_payouts(
+    session: Session, *, minimum_age_seconds: int = 300, limit: int = 100
+) -> PayoutReconciliationSummary:
+    result = PayoutUseCases(
+        PayoutRepository(session),
+        PaymentOutboxRepository(session),
+        get_processor_registry(),
+        SqlAlchemyUnitOfWork(session),
+    ).reconcile(minimum_age_seconds=minimum_age_seconds, limit=limit)
+    emit("info", "ops.payouts.reconciled", **asdict(result))
     return result
 
 
