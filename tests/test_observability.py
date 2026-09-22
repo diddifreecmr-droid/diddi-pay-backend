@@ -12,7 +12,12 @@ from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import bind_request_id, reset_request_id
 from payfund_app.core.observability.redaction import REDACTED, redact
 from payfund_app.main import app
-from payfund_app.shared_kernel.logging import build_log_payload, configure_logging, emit, logger
+from payfund_app.shared_kernel.logging import (
+    build_log_payload,
+    configure_logging,
+    emit,
+    logger,
+)
 
 
 def test_redaction_removes_nested_secrets_and_personal_data() -> None:
@@ -69,8 +74,10 @@ def test_optional_file_logs_are_bounded_and_redacted(monkeypatch, tmp_path) -> N
     monkeypatch.setenv("OBSERVABILITY_LOG_FILE", str(path))
     get_settings.cache_clear()
     try:
+        logger.disabled = True
         configure_logging()
         configure_logging()
+        assert logger.disabled is False
         handlers = [
             handler for handler in logger.handlers
             if getattr(handler, "_diddipay_file", None) == str(path)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from typing import Any
 
@@ -12,7 +12,6 @@ from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import get_request_id
 from payfund_app.core.observability.redaction import redact
 from payfund_app.core.observability.tracing import current_trace_fields
-
 
 logger = logging.getLogger("payfund")
 
@@ -33,6 +32,8 @@ def configure_logging() -> None:
     """Keep stdout logs; optionally mirror the same redacted JSON to a bounded file."""
 
     settings = get_settings()
+    # Alembic's logging configuration may disable loggers created before migrations run.
+    logger.disabled = False
     logger.setLevel(settings.log_level)
     logger.propagate = False
     if not any(getattr(handler, "_diddipay_stream", False) for handler in logger.handlers):
@@ -58,7 +59,7 @@ def build_log_payload(level: str, message: str, fields: dict[str, Any]) -> dict[
     settings = get_settings()
     safe_fields = {key: value for key, value in fields.items() if key not in _RESERVED_FIELDS}
     payload = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "level": level.lower(),
         "message": message,
         "service": settings.observability_service_name,
