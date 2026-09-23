@@ -3,6 +3,9 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from payfund_app.modules.payments.application.ports import ProviderResult
+from payfund_app.modules.payments.application.processor_router import (
+    ProcessorRoutingError,
+)
 from payfund_app.modules.payments.application.reconciliation import (
     PaymentReconciliationUseCases,
 )
@@ -69,3 +72,34 @@ def test_fallback_emits_exactly_one_capture_and_module_event():
     assert outbox_events[0]["payload"]["business_reference"] == "ride:123"
     assert len(outbox_events) == len(captures) == 1
     assert captures[0][1]["fee"] == 100
+
+
+def test_reconciliation_isolates_historical_unregistered_processor():
+    intent = PaymentIntent("diddigo", "ride:legacy", Money(5000), str(uuid4()), "b" * 64)
+    attempt = PaymentAttempt(
+        intent.id,
+        "sandbox",
+        intent.money,
+        1,
+        status=AttemptStatus.UNKNOWN,
+        provider_reference="sandbox_legacy",
+        updated_at=datetime.now(UTC) - timedelta(minutes=10),
+    )
+    commits = []
+
+    def unavailable(_):
+        raise ProcessorRoutingError("processor 'sandbox' is not registered")
+
+    summary = PaymentReconciliationUseCases(
+        MemoryIntents(intent),
+        MemoryAttempts(attempt),
+        MemoryEvents(),
+        SimpleNamespace(get=unavailable),
+        SimpleNamespace(commit=lambda: commits.append(True)),
+    ).run(minimum_age_seconds=0)
+
+    assert summary.scanned == 1
+    assert summary.pending == 1
+    assert summary.succeeded == 0
+    assert commits == [True]
+    assert intent.status == PaymentIntentStatus.PROCESSING

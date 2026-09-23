@@ -20,11 +20,14 @@ Suivi Jira : `SCRUM-503`. Recette QA : `SCRUM-487`.
 
 - Compilation Python : pas d'erreur.
 - OpenAPI : 59 chemins generes, dont PaymentIntent et les manifestes Admin/Pilotage.
-- Collecte Pytest : 337 tests collectes.
+- Suite Pytest Docker sur PostgreSQL dedie : 338 tests passes.
 - Tests cibles des sprints production : passes.
 - `docker compose config --quiet` : passe.
-- Build et tests Docker : non executes sur ce poste, moteur Docker Desktop Linux indisponible.
-- Suite PostgreSQL complete : a executer dans Docker/CI/staging par la recette QA.
+- Build Docker app/worker : passe.
+- Migrations et demarrage Docker : passent.
+- API et payment-worker : healthy, sans redemarrage.
+- Un processeur historique non configure est isole pendant la reconciliation sans interrompre le
+  cycle worker ; il reste pending pour traitement operateur.
 - Ruff global : dette preexistante detectee dans plusieurs fichiers legacy/DiddiFund ; les fichiers
   modifies par ces sprints passent leurs controles cibles.
 

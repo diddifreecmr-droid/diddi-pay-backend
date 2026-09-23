@@ -285,3 +285,7 @@ Ticket chapeau : Jira `SCRUM-503`.
 | PROD-4 | `SCRUM-507` | manifestes de capacites DiddiAdmin et Pilotage | `dbf26fc` |
 | PROD-5 | `SCRUM-508` | heartbeat et healthcheck du worker de paiement | `582df33` |
 | PROD-6 | `SCRUM-509` | checklist backend et passage a la recette QA | ce commit |
+
+Verification Docker finale : build app/worker, migrations, healthchecks et 338 tests PostgreSQL
+valides. Le correctif de reconciliation isole les anciennes tentatives d'un processeur non charge
+au lieu d'arreter tout le worker.

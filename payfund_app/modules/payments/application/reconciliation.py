@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from payfund_app.modules.payments.application.errors import ProcessorCallUncertain
+from payfund_app.modules.payments.application.processor_router import (
+    ProcessorRoutingError,
+)
 from payfund_app.modules.payments.application.success import record_payment_success
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
@@ -39,7 +42,17 @@ class PaymentReconciliationUseCases:
         )
         succeeded = failed = pending = mismatched = 0
         for attempt in candidates:
-            processor = self.processors.get(attempt.processor)
+            try:
+                processor = self.processors.get(attempt.processor)
+            except ProcessorRoutingError as exc:
+                self._log(
+                    attempt,
+                    "failed",
+                    {"reason": str(exc), "outcome": "processor_unavailable"},
+                )
+                pending += 1
+                self.uow.commit()
+                continue
             try:
                 result = processor.verify_payment(attempt.provider_reference)
             except ProcessorCallUncertain as exc:

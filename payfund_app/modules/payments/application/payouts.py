@@ -23,7 +23,10 @@ from payfund_app.modules.payments.application.ports import (
     PayoutResult,
     UnitOfWorkPort,
 )
-from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.application.processor_router import (
+    ProcessorRegistry,
+    ProcessorRoutingError,
+)
 from payfund_app.modules.payments.domain import Money, Payout, PayoutStatus
 
 
@@ -206,7 +209,12 @@ class PayoutUseCases:
         )
         succeeded = failed = pending = 0
         for payout in candidates:
-            processor = self.processors.get(payout.processor)
+            try:
+                processor = self.processors.get(payout.processor)
+            except ProcessorRoutingError:
+                pending += 1
+                self.uow.commit()
+                continue
             try:
                 result = processor.verify_payout(payout.provider_reference)
             except (ProcessorCallUncertain, OSError):
