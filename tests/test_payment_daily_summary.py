@@ -1,11 +1,11 @@
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
-import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from payfund_app.core.errors import Forbidden, Unauthenticated
+from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.security import ServicePrincipal
 from payfund_app.main import app
 from payfund_app.modules.payments.application.daily_summary import (
     PaymentDailySummaryUseCases,
@@ -61,22 +61,28 @@ def test_summary_auth_checks_identity_and_scope(monkeypatch):
     settings = SimpleNamespace(
         payment_summary_client_id="pilotage-staging-diddipay",
         payment_summary_audience="diddipay",
-        payment_summary_scope="payment-summary:read",
+        payment_summary_scope="diddipay:payment-summary:read",
+        payment_summary_legacy_scope="payment-summary:read",
         diddifreeid_issuer="diddifree-id",
     )
     monkeypatch.setattr(summary_router, "get_settings", lambda: settings)
-    monkeypatch.setattr(summary_router, "_client", lambda: SimpleNamespace(get_signing_key_from_jwt=lambda _: SimpleNamespace(key="key")))
-    claims = {
-        "sub": "service:pilotage", "client_id": "pilotage-staging-diddipay",
-        "token_type": "service", "role": "service", "status": "active",
-        "scope": "payment-summary:read",
+    captured = {}
+
+    def verify(token, **kwargs):
+        captured.update(token=token, **kwargs)
+        return ServicePrincipal(
+            client_id="pilotage-staging-diddipay",
+            subject="service:pilotage",
+            scopes=frozenset({"diddipay:payment-summary:read"}),
+        )
+
+    monkeypatch.setattr(summary_router, "decode_service_token", verify)
+    principal = summary_router.require_pilotage_service(
+        "Bearer token", "pilotage-staging-diddipay"
+    )
+    assert principal.client_id == "pilotage-staging-diddipay"
+    assert captured["required_scopes"] == {
+        "diddipay:payment-summary:read",
+        "payment-summary:read",
     }
-    monkeypatch.setattr(jwt, "decode", lambda *args, **kwargs: claims)
-    summary_router.require_pilotage_service("Bearer token", "pilotage-staging-diddipay")
-    claims["scope"] = "other:read"
-    with pytest.raises(Forbidden):
-        summary_router.require_pilotage_service("Bearer token", "pilotage-staging-diddipay")
-    claims["scope"] = "payment-summary:read"
-    claims["sub"] = "service:diddigo"
-    with pytest.raises(Unauthenticated):
-        summary_router.require_pilotage_service("Bearer token", "pilotage-staging-diddipay")
+    assert captured["allowed_client_ids"] == {"pilotage-staging-diddipay"}

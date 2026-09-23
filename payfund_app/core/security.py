@@ -9,6 +9,7 @@ Le JWT ne porte que `sub`, `role`, `status`, `iat`, `exp` (§2) — il n'y a don
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from collections.abc import Collection
 from uuid import UUID
 
 import jwt
@@ -37,6 +38,13 @@ class StepUpProof:
     user_id: UUID
     purpose: str
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ServicePrincipal:
+    client_id: str
+    subject: str
+    scopes: frozenset[str]
 
 
 _jwk_client: PyJWKClient | None = None
@@ -79,6 +87,63 @@ def decode_access_token(token: str) -> CurrentUser:
         raise Unauthenticated("Claim `sub` invalide.") from exc
 
     return CurrentUser(user_id=user_id, role=str(claims.get("role", "user")), status=status)
+
+
+def decode_service_token(
+    token: str,
+    *,
+    audience: str,
+    client_id_header: str | None,
+    required_scopes: Collection[str] = (),
+    allowed_client_ids: Collection[str] = (),
+) -> ServicePrincipal:
+    """Verify a DiddiFreeID service JWT locally and enforce route-level trust."""
+    if not token or not client_id_header:
+        raise Unauthenticated("Token de service et X-Client-ID requis.")
+    try:
+        signing_key = _client().get_signing_key_from_jwt(token).key
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256"],
+            issuer=get_settings().diddifreeid_issuer,
+            audience=audience,
+            options={
+                "require": ["sub", "iss", "aud", "iat", "exp", "client_id", "token_type"],
+            },
+        )
+    except (jwt.PyJWTError, ValueError) as exc:
+        raise Unauthenticated("Token de service invalide.") from exc
+
+    client_id = str(claims.get("client_id") or "")
+    subject = str(claims.get("sub") or "")
+    if (
+        claims.get("token_type") != "service"
+        or claims.get("role") != "service"
+        or claims.get("status") != "active"
+        or not subject.startswith("service:")
+        or client_id != client_id_header
+    ):
+        raise Unauthenticated("Claims du token de service invalides.")
+
+    allowed = frozenset(allowed_client_ids)
+    if allowed and client_id not in allowed:
+        raise Forbidden(
+            "Service appelant non autorise.",
+            details={"client_id": client_id},
+            code="SERVICE_CLIENT_FORBIDDEN",
+        )
+
+    raw_scope = claims.get("scope")
+    scopes = frozenset(raw_scope.split()) if isinstance(raw_scope, str) else frozenset()
+    required = frozenset(required_scopes)
+    if required and scopes.isdisjoint(required):
+        raise Forbidden(
+            "Scope de service insuffisant.",
+            details={"required_scopes": sorted(required)},
+            code="SERVICE_SCOPE_REQUIRED",
+        )
+    return ServicePrincipal(client_id=client_id, subject=subject, scopes=scopes)
 
 
 def decode_step_up_token(

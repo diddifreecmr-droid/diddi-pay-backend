@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     )
     diddifreeid_issuer: str = "diddifree-id"
     payment_summary_audience: str = "diddipay"
-    payment_summary_scope: str = "payment-summary:read"
+    payment_summary_scope: str = "diddipay:payment-summary:read"
+    payment_summary_legacy_scope: str = "payment-summary:read"
     payment_summary_client_id: str = ""
     diddifreeid_step_up_max_ttl_seconds: int = Field(default=300, ge=60, le=900)
 

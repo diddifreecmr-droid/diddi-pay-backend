@@ -3,13 +3,12 @@
 from datetime import date, datetime
 from typing import Annotated
 
-import jwt
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel
 
 from payfund_app.core.config import get_settings
-from payfund_app.core.errors import Forbidden, Unauthenticated
-from payfund_app.core.security import _client
+from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.daily_summary import (
     PaymentDailySummary,
     PaymentDailySummaryUseCases,
@@ -37,45 +36,29 @@ class PaymentSummaryResponse(BaseModel):
 def require_pilotage_service(
     authorization: Annotated[str | None, Header()] = None,
     client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
-) -> None:
+) -> ServicePrincipal:
     settings = get_settings()
     if not settings.payment_summary_client_id:
         raise Unauthenticated("Client Pilotage non configure.")
     if not authorization or not authorization.startswith("Bearer ") or not client_id:
         raise Unauthenticated()
-    token = authorization.removeprefix("Bearer ").strip()
-    try:
-        key = _client().get_signing_key_from_jwt(token).key
-        claims = jwt.decode(
-            token,
-            key,
-            algorithms=["RS256"],
-            issuer=settings.diddifreeid_issuer,
-            audience=settings.payment_summary_audience,
-            options={"require": ["sub", "iss", "aud", "iat", "exp", "client_id"]},
-        )
-    except (jwt.PyJWTError, ValueError) as exc:
-        raise Unauthenticated() from exc
-    if (
-        claims.get("token_type") != "service"
-        or claims.get("role") != "service"
-        or claims.get("status") != "active"
-        or claims.get("sub") != "service:pilotage"
-        or claims.get("client_id") != client_id
-    ):
-        raise Unauthenticated()
-    if client_id != settings.payment_summary_client_id:
-        raise Forbidden("Service non autorise pour le resume DiddiPay.")
-    scopes = claims.get("scope")
-    if not isinstance(scopes, str) or settings.payment_summary_scope not in scopes.split():
-        raise Forbidden("Scope insuffisant pour le resume DiddiPay.")
+    accepted_scopes = {settings.payment_summary_scope}
+    if settings.payment_summary_legacy_scope:
+        accepted_scopes.add(settings.payment_summary_legacy_scope)
+    return decode_service_token(
+        authorization.removeprefix("Bearer ").strip(),
+        audience=settings.payment_summary_audience,
+        client_id_header=client_id,
+        required_scopes=accepted_scopes,
+        allowed_client_ids={settings.payment_summary_client_id},
+    )
 
 
 @router.get("/payment-summary", response_model=PaymentSummaryResponse)
 def payment_summary(
     session: SessionDep,
     date_: Annotated[date, Query(alias="date", description="Business day in Africa/Abidjan")],
-    _: Annotated[None, Depends(require_pilotage_service)],
+    _: Annotated[ServicePrincipal, Depends(require_pilotage_service)],
 ) -> PaymentSummaryResponse:
     result: PaymentDailySummary = PaymentDailySummaryUseCases(
         SqlPaymentDailySummaryRepository(session)
