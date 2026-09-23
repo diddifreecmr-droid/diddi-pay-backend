@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     payment_summary_scope: str = "diddipay:payment-summary:read"
     payment_summary_legacy_scope: str = "payment-summary:read"
     payment_summary_client_id: str = ""
+    backoffice_audience: str = "diddipay"
+    backoffice_client_ids: str = ""
+    backoffice_read_scope: str = "diddipay:operations:read"
     diddifreeid_step_up_max_ttl_seconds: int = Field(default=300, ge=60, le=900)
 
     redis_url: str = "redis://localhost:6379/0"
@@ -91,6 +94,14 @@ class Settings(BaseSettings):
             if separator and client_id and key:
                 entries[client_id] = key
         return entries
+
+    @property
+    def backoffice_client_id_set(self) -> set[str]:
+        return {
+            client_id.strip()
+            for client_id in self.backoffice_client_ids.split(",")
+            if client_id.strip()
+        }
 
     # Politique de risque DiddiPay. Le seuil reste une decision serveur et peut etre ajuste par
     # environnement sans modifier le code ni demander au frontend de connaitre la regle.

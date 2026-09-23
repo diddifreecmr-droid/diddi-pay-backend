@@ -22,6 +22,9 @@ from payfund_app.modules.payments.presentation.routers import router as payment_
 from payfund_app.modules.payments.presentation.webhook_router import router as payment_webhook_router
 from payfund_app.modules.payments.presentation.summary_router import router as payment_summary_router
 from payfund_app.modules.payments.presentation.payout_router import router as payout_router
+from payfund_app.modules.payments.presentation.backoffice_router import (
+    router as payment_backoffice_router,
+)
 from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
@@ -80,6 +83,7 @@ app.include_router(payment_router, prefix=API_PREFIX)
 app.include_router(payment_webhook_router, prefix=API_PREFIX)
 app.include_router(payment_summary_router, prefix=API_PREFIX)
 app.include_router(payout_router, prefix=API_PREFIX)
+app.include_router(payment_backoffice_router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health", tags=["ops"])
