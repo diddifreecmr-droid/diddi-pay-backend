@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -12,24 +13,64 @@ from sqlalchemy.orm import Session
 from payfund_app.core.config import get_settings
 from payfund_app.core.database import get_session
 from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.infra.paystack_processor import (
+    PaystackPaymentProcessor,
+)
 from payfund_app.modules.payments.infra.sandbox_processor import SandboxPaymentProcessor
-from payfund_app.modules.payments.infra.paystack_processor import PaystackPaymentProcessor
 
 
 @dataclass(frozen=True, slots=True)
 class PaymentClient:
     client_id: str
+    authentication_method: str
+    scopes: frozenset[str] = frozenset()
 
 
-def get_payment_client(
-    client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
-    service_key: Annotated[str | None, Header(alias="X-Service-Key")] = None,
-) -> PaymentClient:
-    expected = get_settings().payment_service_key_map.get(client_id or "")
-    if not client_id or not service_key or not expected or not hmac.compare_digest(service_key, expected):
-        raise Unauthenticated("Identifiants de service DiddiPay invalides.")
-    return PaymentClient(client_id=client_id)
+def _payment_client_dependency(scope_setting: str) -> Callable[..., PaymentClient]:
+    def dependency(
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
+        service_key: Annotated[str | None, Header(alias="X-Service-Key")] = None,
+    ) -> PaymentClient:
+        settings = get_settings()
+        if authorization:
+            scheme, _, token = authorization.partition(" ")
+            if scheme.lower() != "bearer" or not token:
+                raise Unauthenticated("Authorization Bearer invalide.")
+            principal: ServicePrincipal = decode_service_token(
+                token,
+                audience=settings.payment_service_audience,
+                client_id_header=client_id,
+                required_scopes={getattr(settings, scope_setting)},
+                allowed_client_ids=settings.payment_service_client_id_set,
+            )
+            return PaymentClient(
+                client_id=principal.client_id,
+                authentication_method="service_token",
+                scopes=principal.scopes,
+            )
+
+        expected = settings.payment_service_key_map.get(client_id or "")
+        if (
+            settings.payment_service_key_fallback_enabled
+            and client_id
+            and service_key
+            and expected
+            and hmac.compare_digest(service_key, expected)
+        ):
+            return PaymentClient(client_id=client_id, authentication_method="legacy_key")
+        raise Unauthenticated("Jeton de service DiddiPay invalide.")
+
+    return dependency
+
+
+get_payment_intent_reader = _payment_client_dependency("payment_intent_read_scope")
+get_payment_intent_writer = _payment_client_dependency("payment_intent_write_scope")
+get_payment_refunder = _payment_client_dependency("payment_refund_scope")
+get_payment_payout_reader = _payment_client_dependency("payment_payout_read_scope")
+get_payment_payout_writer = _payment_client_dependency("payment_payout_write_scope")
 
 
 _registry: ProcessorRegistry | None = None
@@ -63,7 +104,11 @@ def reset_processor_registry() -> None:
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
-PaymentClientDep = Annotated[PaymentClient, Depends(get_payment_client)]
+PaymentIntentReaderDep = Annotated[PaymentClient, Depends(get_payment_intent_reader)]
+PaymentIntentWriterDep = Annotated[PaymentClient, Depends(get_payment_intent_writer)]
+PaymentRefunderDep = Annotated[PaymentClient, Depends(get_payment_refunder)]
+PaymentPayoutReaderDep = Annotated[PaymentClient, Depends(get_payment_payout_reader)]
+PaymentPayoutWriterDep = Annotated[PaymentClient, Depends(get_payment_payout_writer)]
 ProcessorRegistryDep = Annotated[ProcessorRegistry, Depends(get_processor_registry)]
 
 

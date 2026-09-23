@@ -63,19 +63,24 @@ Headers requis :
 | Header | Requis | Description |
 |---|---:|---|
 | `X-Client-ID` | oui | Identifiant stable du module, par exemple `diddigo` ou `diddifund` |
-| `X-Service-Key` | oui | Secret du module configure dans `PAYMENT_SERVICE_KEYS` |
+| `Authorization` | oui | `Bearer <service_token>` emis par DiddiFreeID pour l'audience `diddipay` |
 | `Idempotency-Key` | creation | Cle unique de l'operation metier |
 
 Exemple de configuration backend :
 
 ```env
-PAYMENT_SERVICE_KEYS=diddigo:secret-distinct,diddifund:autre-secret-distinct
+PAYMENT_SERVICE_CLIENT_IDS=diddigo-staging,diddisend-staging,diddifood-staging
+PAYMENT_SERVICE_AUDIENCE=diddipay
+PAYMENT_SERVICE_KEY_FALLBACK_ENABLED=false
 ```
 
 Regles de securite :
 
-- `X-Service-Key` ne doit jamais etre embarque dans Flutter, JavaScript ou une application cliente ;
-- chaque module possede une cle distincte et rotative ;
+- le jeton de service ne doit jamais etre embarque dans Flutter, JavaScript ou une application cliente ;
+- chaque module obtient son propre jeton court aupres de DiddiFreeID ;
+- DiddiPay verifie localement signature RS256, `iss`, `aud`, `client_id`, statut et scope ;
+- `X-Service-Key` est tolere uniquement pendant la migration staging lorsque
+  `PAYMENT_SERVICE_KEY_FALLBACK_ENABLED=true` ;
 - un module ne peut lire que ses propres `PaymentIntent` ;
 - DiddiFreeID authentifie l'utilisateur aupres du module ; le module autorise l'action metier puis
   appelle DiddiPay avec son identite de service.
@@ -102,7 +107,7 @@ Headers :
 
 ```http
 X-Client-ID: diddigo
-X-Service-Key: <secret-backend>
+Authorization: Bearer <service-token-diddifreeid>
 Idempotency-Key: ride:42:collection:v1
 Content-Type: application/json
 ```
@@ -486,7 +491,7 @@ Le module proprietaire peut consulter :
 ```http
 GET /payment-intents/{intent_id}/financial-summary
 X-Client-ID: diddigo
-X-Service-Key: <secret>
+Authorization: Bearer <service-token-diddifreeid>
 ```
 
 La reponse distingue `gross_captured`, `refunded`, `processor_fees`, `net_expected`, `settled` et

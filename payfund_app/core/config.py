@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
     # the PaymentIntent API until operations configures service credentials.
     payment_service_keys: str = ""
+    payment_service_key_fallback_enabled: bool = True
+    payment_service_audience: str = "diddipay"
+    payment_service_client_ids: str = ""
+    payment_intent_read_scope: str = "diddipay:payment-intents:read"
+    payment_intent_write_scope: str = "diddipay:payment-intents:write"
+    payment_refund_scope: str = "diddipay:payment-intents:refund"
+    payment_payout_read_scope: str = "diddipay:payouts:read"
+    payment_payout_write_scope: str = "diddipay:payouts:write"
     payment_processor_mode: str = "sandbox"
     payment_callback_targets: dict[str, PaymentCallbackSettings] = Field(
         default_factory=dict
@@ -95,6 +103,15 @@ class Settings(BaseSettings):
             if separator and client_id and key:
                 entries[client_id] = key
         return entries
+
+    @property
+    def payment_service_client_id_set(self) -> set[str]:
+        configured = {
+            client_id.strip()
+            for client_id in self.payment_service_client_ids.split(",")
+            if client_id.strip()
+        }
+        return configured or set(self.payment_service_key_map)
 
     @property
     def backoffice_client_id_set(self) -> set[str]:

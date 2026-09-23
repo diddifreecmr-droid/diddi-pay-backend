@@ -33,11 +33,13 @@ Le backend du module :
 1. verifie le JWT DiddiFreeID ;
 2. verifie ses roles locaux et l'etat de son objet metier ;
 3. calcule lui-meme le montant ;
-4. appelle `/payfund/v1/payment-intents` avec `X-Client-ID`, `X-Service-Key` et
+4. appelle `/payfund/v1/payment-intents` avec `Authorization: Bearer <service_token>`,
+   `X-Client-ID` et
    `Idempotency-Key` ;
 5. ne renvoie au frontend que les donnees utiles, notamment `next_action`.
 
-`X-Service-Key` ne doit jamais traverser le backend du module vers Flutter ou le navigateur.
+Le jeton de service ne doit jamais traverser le backend du module vers Flutter ou le navigateur.
+`X-Service-Key` est un mécanisme de migration staging uniquement et doit être désactivé en production.
 
 ## 3. Integration DiddiGo
 

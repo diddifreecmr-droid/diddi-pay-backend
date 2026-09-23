@@ -8,32 +8,38 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query
 
 from payfund_app.core.errors import Conflict, NotFound, UnprocessableEntity
-from payfund_app.core.observability.business_metrics import observe_payment_intent_created
+from payfund_app.core.observability.business_metrics import (
+    observe_payment_intent_created,
+)
+from payfund_app.modules.payments.application.accounting import PaymentAccountingService
 from payfund_app.modules.payments.application.errors import (
     IdempotencyConflict,
     PaymentNotFound,
     PaymentOperationConflict,
 )
-from payfund_app.modules.payments.application.processor_router import ProcessorRoutingError
+from payfund_app.modules.payments.application.processor_router import (
+    ProcessorRoutingError,
+)
 from payfund_app.modules.payments.application.refunds import (
     CreateRefundCommand,
     RefundUseCases,
 )
-from payfund_app.modules.payments.application.accounting import PaymentAccountingService
 from payfund_app.modules.payments.application.use_cases import (
     CreatePaymentIntentCommand,
     PaymentUseCases,
     PaymentView,
 )
 from payfund_app.modules.payments.infra.repositories import (
+    FinancialLedgerRepository,
     PaymentAttemptRepository,
     PaymentIntentRepository,
     RefundRepository,
-    FinancialLedgerRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
-    PaymentClientDep,
+    PaymentIntentReaderDep,
+    PaymentIntentWriterDep,
+    PaymentRefunderDep,
     ProcessorRegistryDep,
     SessionDep,
 )
@@ -42,10 +48,10 @@ from payfund_app.modules.payments.presentation.schemas import (
     CreateRefundRequest,
     NextActionResponse,
     PaymentAttemptResponse,
+    PaymentFinancialSummaryResponse,
     PaymentIntentListResponse,
     PaymentIntentResponse,
     RefundResponse,
-    PaymentFinancialSummaryResponse,
 )
 from payfund_app.shared_kernel.logging import emit
 
@@ -122,7 +128,7 @@ def _translate_error(exc: Exception) -> None:
 @router.post("", response_model=PaymentIntentResponse, status_code=201)
 def create_payment_intent(
     payload: CreatePaymentIntentRequest,
-    client: PaymentClientDep,
+    client: PaymentIntentWriterDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -165,7 +171,7 @@ def create_payment_intent(
 @router.get("/{intent_id}", response_model=PaymentIntentResponse)
 def get_payment_intent(
     intent_id: uuid.UUID,
-    client: PaymentClientDep,
+    client: PaymentIntentReaderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
 ) -> PaymentIntentResponse:
@@ -178,7 +184,7 @@ def get_payment_intent(
 
 @router.get("", response_model=PaymentIntentListResponse)
 def list_payment_intents(
-    client: PaymentClientDep,
+    client: PaymentIntentReaderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
     limit: int = Query(default=50, ge=1, le=100),
@@ -190,7 +196,7 @@ def list_payment_intents(
 @router.post("/{intent_id}/cancel", response_model=PaymentIntentResponse)
 def cancel_payment_intent(
     intent_id: uuid.UUID,
-    client: PaymentClientDep,
+    client: PaymentIntentWriterDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
 ) -> PaymentIntentResponse:
@@ -207,7 +213,7 @@ def cancel_payment_intent(
 def create_refund(
     intent_id: uuid.UUID,
     payload: CreateRefundRequest,
-    client: PaymentClientDep,
+    client: PaymentRefunderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -266,7 +272,7 @@ def create_refund(
 )
 def get_financial_summary(
     intent_id: uuid.UUID,
-    client: PaymentClientDep,
+    client: PaymentIntentReaderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
 ) -> PaymentFinancialSummaryResponse:

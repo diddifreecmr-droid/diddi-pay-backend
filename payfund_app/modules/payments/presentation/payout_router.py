@@ -28,7 +28,8 @@ from payfund_app.modules.payments.infra.repositories import (
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
-    PaymentClientDep,
+    PaymentPayoutReaderDep,
+    PaymentPayoutWriterDep,
     ProcessorRegistryDep,
     SessionDep,
 )
@@ -87,7 +88,7 @@ def _translate(exc: Exception) -> None:
 @router.post("", response_model=PayoutResponse, status_code=201)
 def create_payout(
     payload: CreatePayoutRequest,
-    client: PaymentClientDep,
+    client: PaymentPayoutWriterDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -121,7 +122,7 @@ def create_payout(
 @router.get("/{payout_id}", response_model=PayoutResponse)
 def get_payout(
     payout_id: uuid.UUID,
-    client: PaymentClientDep,
+    client: PaymentPayoutReaderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
 ) -> PayoutResponse:
@@ -135,7 +136,7 @@ def get_payout(
 @router.get("/{payout_id}/financial-summary", response_model=PayoutFinancialSummaryResponse)
 def get_payout_financial_summary(
     payout_id: uuid.UUID,
-    client: PaymentClientDep,
+    client: PaymentPayoutReaderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
 ) -> PayoutFinancialSummaryResponse:
@@ -154,7 +155,7 @@ def get_payout_financial_summary(
 
 @router.get("", response_model=PayoutResponse)
 def get_payout_by_business_reference(
-    client: PaymentClientDep,
+    client: PaymentPayoutReaderDep,
     session: SessionDep,
     processors: ProcessorRegistryDep,
     business_reference: str = Query(min_length=1, max_length=128),
