@@ -1,17 +1,24 @@
 """S2S-only operational payment views for DiddiAdmin Backoffice."""
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Literal
-import uuid
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
 
 from payfund_app.core.config import get_settings
-from payfund_app.core.errors import NotFound, Unauthenticated
+from payfund_app.core.errors import BadRequest, NotFound, Unauthenticated
 from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.backoffice import BackofficePaymentQueries
+from payfund_app.modules.payments.application.backoffice_commands import (
+    BackofficeCommandService,
+)
 from payfund_app.modules.payments.infra.backoffice import SqlBackofficePaymentRepository
+from payfund_app.modules.payments.infra.backoffice_commands import (
+    SqlBackofficeCommandRepository,
+    SqlBackofficePaymentOperations,
+)
 from payfund_app.modules.payments.presentation.deps import SessionDep
 
 router = APIRouter(prefix="/internal/backoffice", tags=["internal-backoffice"])
@@ -49,6 +56,29 @@ class BackofficePaymentCollection(BaseModel):
     total: int
 
 
+class BackofficeCommandBody(BaseModel):
+    contract_version: Literal["backoffice.v1"] = "backoffice.v1"
+    reason: str = Field(min_length=3, max_length=500)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class RetryCallbackBody(BackofficeCommandBody):
+    pass
+
+
+class RecordSettlementBody(BackofficeCommandBody):
+    amount: int = Field(gt=0)
+    settlement_reference: str = Field(min_length=3, max_length=180)
+
+
+class BackofficeCommandResponse(BaseModel):
+    contract_version: Literal["backoffice.v1"] = "backoffice.v1"
+    status: str
+    command_id: str
+    service_audit_id: uuid.UUID
+    result: dict
+
+
 def require_backoffice_reader(
     authorization: Annotated[str | None, Header()] = None,
     client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
@@ -65,6 +95,53 @@ def require_backoffice_reader(
         client_id_header=client_id,
         required_scopes={settings.backoffice_read_scope},
         allowed_client_ids=allowed_clients,
+    )
+
+
+def require_backoffice_commander(
+    authorization: Annotated[str | None, Header()] = None,
+    client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
+) -> ServicePrincipal:
+    settings = get_settings()
+    allowed_clients = settings.backoffice_client_id_set
+    if not allowed_clients:
+        raise Unauthenticated("Client Backoffice non configure.")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise Unauthenticated("Token de service Backoffice requis.")
+    return decode_service_token(
+        authorization.removeprefix("Bearer ").strip(),
+        audience=settings.backoffice_audience,
+        client_id_header=client_id,
+        required_scopes={settings.backoffice_command_scope},
+        allowed_client_ids=allowed_clients,
+    )
+
+
+def _validate_command_headers(
+    body: BackofficeCommandBody,
+    actor: str | None,
+    command_id: str | None,
+    idempotency_key: str | None,
+) -> tuple[str, str, str]:
+    if not actor or not command_id or not idempotency_key:
+        raise BadRequest(
+            "X-Backoffice-Actor, X-Backoffice-Command-Id et Idempotency-Key sont obligatoires.",
+            code="BACKOFFICE_HEADERS_REQUIRED",
+        )
+    if body.idempotency_key != idempotency_key:
+        raise BadRequest(
+            "La clé du corps doit correspondre à l'en-tête Idempotency-Key.",
+            code="IDEMPOTENCY_KEY_MISMATCH",
+        )
+    return actor, command_id, idempotency_key
+
+
+def _command_response(command) -> BackofficeCommandResponse:
+    return BackofficeCommandResponse(
+        status=command.status,
+        command_id=command.command_id,
+        service_audit_id=command.id,
+        result=command.result,
     )
 
 
@@ -112,3 +189,85 @@ def get_backoffice_payment(
     if payment is None:
         raise NotFound("PaymentIntent introuvable.", code="PAYMENT_INTENT_NOT_FOUND")
     return _response(payment)
+
+
+@router.post(
+    "/payments/{payment_intent_id}/callbacks/{event_id}/retry",
+    response_model=BackofficeCommandResponse,
+)
+def retry_payment_callback(
+    payment_intent_id: uuid.UUID,
+    event_id: uuid.UUID,
+    body: RetryCallbackBody,
+    session: SessionDep,
+    principal: Annotated[ServicePrincipal, Depends(require_backoffice_commander)],
+    actor: Annotated[str | None, Header(alias="X-Backoffice-Actor")] = None,
+    command_id: Annotated[str | None, Header(alias="X-Backoffice-Command-Id")] = None,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> BackofficeCommandResponse:
+    actor, command_id, idempotency_key = _validate_command_headers(
+        body, actor, command_id, idempotency_key
+    )
+    command = BackofficeCommandService(
+        SqlBackofficeCommandRepository(session), SqlBackofficePaymentOperations(session)
+    ).execute(
+        client_id=principal.client_id,
+        command_id=command_id,
+        actor_user_id=actor,
+        idempotency_key=idempotency_key,
+        action="payment.callback.retry",
+        target_type="payment_intent",
+        target_id=payment_intent_id,
+        reason=body.reason,
+        payload={"event_id": str(event_id)},
+    )
+    return _command_response(command)
+
+
+@router.post(
+    "/payments/{payment_intent_id}/settlements",
+    response_model=BackofficeCommandResponse,
+)
+def record_payment_settlement(
+    payment_intent_id: uuid.UUID,
+    body: RecordSettlementBody,
+    session: SessionDep,
+    principal: Annotated[ServicePrincipal, Depends(require_backoffice_commander)],
+    actor: Annotated[str | None, Header(alias="X-Backoffice-Actor")] = None,
+    command_id: Annotated[str | None, Header(alias="X-Backoffice-Command-Id")] = None,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> BackofficeCommandResponse:
+    actor, command_id, idempotency_key = _validate_command_headers(
+        body, actor, command_id, idempotency_key
+    )
+    command = BackofficeCommandService(
+        SqlBackofficeCommandRepository(session), SqlBackofficePaymentOperations(session)
+    ).execute(
+        client_id=principal.client_id,
+        command_id=command_id,
+        actor_user_id=actor,
+        idempotency_key=idempotency_key,
+        action="payment.settlement.record",
+        target_type="payment_intent",
+        target_id=payment_intent_id,
+        reason=body.reason,
+        payload={
+            "amount": body.amount,
+            "settlement_reference": body.settlement_reference,
+        },
+    )
+    return _command_response(command)
+
+
+@router.get("/commands/{command_id}", response_model=BackofficeCommandResponse)
+def get_backoffice_command(
+    command_id: str,
+    session: SessionDep,
+    principal: Annotated[ServicePrincipal, Depends(require_backoffice_reader)],
+) -> BackofficeCommandResponse:
+    command = SqlBackofficeCommandRepository(session).get(
+        client_id=principal.client_id, command_id=command_id
+    )
+    if command is None:
+        raise NotFound("Commande Backoffice introuvable.", code="COMMAND_NOT_FOUND")
+    return _command_response(command)

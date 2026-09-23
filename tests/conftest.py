@@ -63,6 +63,7 @@ TABLES = [
     "fund.payment_orders",
     "payments.financial_entries",
     "payments.financial_journals",
+    "payments.backoffice_commands",
     "payments.outbox_events",
     "payments.refunds",
     "payments.provider_events",

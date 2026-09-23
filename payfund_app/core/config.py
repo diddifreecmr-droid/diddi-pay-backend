@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     backoffice_audience: str = "diddipay"
     backoffice_client_ids: str = ""
     backoffice_read_scope: str = "diddipay:operations:read"
+    backoffice_command_scope: str = "diddipay:operations:write"
     diddifreeid_step_up_max_ttl_seconds: int = Field(default=300, ge=60, le=900)
 
     redis_url: str = "redis://localhost:6379/0"

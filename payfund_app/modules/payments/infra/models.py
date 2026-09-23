@@ -242,6 +242,43 @@ class PaymentOutboxRecord(Base):
     )
 
 
+class BackofficeCommandRecord(Base):
+    __tablename__ = "backoffice_commands"
+    __table_args__ = (
+        UniqueConstraint("client_id", "command_id", name="uq_backoffice_command_id"),
+        UniqueConstraint(
+            "client_id", "idempotency_key", name="uq_backoffice_command_idempotency"
+        ),
+        CheckConstraint(
+            "status IN ('processing','completed','failed')",
+            name="ck_backoffice_command_status",
+        ),
+        Index("idx_backoffice_command_target", "target_type", "target_id", "created_at"),
+        {"schema": "payments"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    client_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    result: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PayoutRecord(Base):
     __tablename__ = "payouts"
     __table_args__ = (

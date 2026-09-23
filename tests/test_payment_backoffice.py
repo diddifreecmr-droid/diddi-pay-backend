@@ -1,16 +1,20 @@
+import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-import uuid
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
-from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.errors import BadRequest, Conflict, Unauthenticated
 from payfund_app.core.security import ServicePrincipal
 from payfund_app.main import app
 from payfund_app.modules.payments.application.backoffice import (
     BackofficePayment,
     BackofficePaymentQueries,
+)
+from payfund_app.modules.payments.application.backoffice_commands import (
+    BackofficeCommand,
+    BackofficeCommandService,
 )
 from payfund_app.modules.payments.presentation import backoffice_router
 
@@ -53,6 +57,9 @@ def test_backoffice_routes_are_documented_and_fail_closed():
     base = "/payfund/v1/internal/backoffice/payments"
     assert base in paths
     assert f"{base}/{{payment_intent_id}}" in paths
+    assert f"{base}/{{payment_intent_id}}/callbacks/{{event_id}}/retry" in paths
+    assert f"{base}/{{payment_intent_id}}/settlements" in paths
+    assert "/payfund/v1/internal/backoffice/commands/{command_id}" in paths
     response = TestClient(app).get(base)
     assert response.status_code == 401
 
@@ -90,3 +97,99 @@ def test_backoffice_reader_rejects_unprovisioned_surface(monkeypatch):
     )
     with pytest.raises(Unauthenticated):
         backoffice_router.require_backoffice_reader(None, None)
+
+
+def test_backoffice_command_replay_does_not_repeat_side_effect():
+    target_id = uuid.uuid4()
+    stored = []
+
+    class Repository:
+        def find_replay(self, **kwargs):
+            return stored[0] if stored else None
+
+        def create(self, **values):
+            command = BackofficeCommand(
+                id=uuid.uuid4(), status="processing", result={}, **values
+            )
+            stored.append(command)
+            return command
+
+        def complete(self, command, result):
+            completed = BackofficeCommand(
+                **{
+                    **{field: getattr(command, field) for field in command.__dataclass_fields__},
+                    "status": "completed",
+                    "result": result,
+                }
+            )
+            stored[0] = completed
+            return completed
+
+    class Operations:
+        calls = 0
+
+        def retry_callback(self, **kwargs):
+            self.calls += 1
+            return {"delivery_status": "pending"}
+
+    operations = Operations()
+    service = BackofficeCommandService(Repository(), operations)
+    values = {
+        "client_id": "backoffice",
+        "command_id": "cmd-12345678",
+        "actor_user_id": str(uuid.uuid4()),
+        "idempotency_key": "idem-12345678",
+        "action": "payment.callback.retry",
+        "target_type": "payment_intent",
+        "target_id": target_id,
+        "reason": "Relancer après correction du callback DiddiGo",
+        "payload": {"event_id": str(uuid.uuid4())},
+    }
+    first = service.execute(**values)
+    replay = service.execute(**values)
+    assert first.id == replay.id
+    assert operations.calls == 1
+
+
+def test_backoffice_command_rejects_divergent_replay():
+    class Repository:
+        def find_replay(self, **kwargs):
+            return BackofficeCommand(
+                id=uuid.uuid4(),
+                client_id="backoffice",
+                command_id="cmd-12345678",
+                actor_user_id=str(uuid.uuid4()),
+                idempotency_key="idem-12345678",
+                action="payment.settlement.record",
+                target_type="payment_intent",
+                target_id=uuid.uuid4(),
+                reason="Original",
+                request_fingerprint="different",
+                status="completed",
+                result={},
+            )
+
+    with pytest.raises(Conflict) as error:
+        BackofficeCommandService(Repository(), object()).execute(
+            client_id="backoffice",
+            command_id="cmd-12345678",
+            actor_user_id=str(uuid.uuid4()),
+            idempotency_key="idem-12345678",
+            action="payment.settlement.record",
+            target_type="payment_intent",
+            target_id=uuid.uuid4(),
+            reason="Changed",
+            payload={"amount": 100, "settlement_reference": "set-1"},
+        )
+    assert error.value.code == "IDEMPOTENCY_CONFLICT"
+
+
+def test_backoffice_command_requires_matching_idempotency_headers():
+    body = backoffice_router.RetryCallbackBody(
+        reason="Relance contrôlée", idempotency_key="body-key-123"
+    )
+    with pytest.raises(BadRequest) as error:
+        backoffice_router._validate_command_headers(
+            body, "actor-id", "command-id", "header-key-123"
+        )
+    assert error.value.code == "IDEMPOTENCY_KEY_MISMATCH"

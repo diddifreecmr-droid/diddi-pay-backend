@@ -255,3 +255,12 @@ particulier.
   legacy DiddiPay et matrice de recette pour les modules, callbacks et evenements.
 - Aucun changement runtime ; la migration de DiddiPay reste a implementer et a tester.
 - Commit : ce commit.
+
+## Integration DiddiAdmin et Pilotage
+
+| Sprint | Livraison | Commit |
+|---:|---|---|
+| Admin-1 | verification JWT de service DiddiFreeID reutilisable et scopes canoniques | `9b86763` |
+| Admin-2 | resume financier quotidien Pilotage v1, metriques et fraicheur | `e4b167d` |
+| Admin-3 | vues Backoffice de liste et detail des paiements, sans PII | `b0db70d` |
+| Admin-4 | commandes sensibles auditees pour retry callback et settlement | ce commit |

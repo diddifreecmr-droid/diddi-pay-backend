@@ -84,6 +84,12 @@ class Conflict(AppError):
     message = "Conflit d'état."
 
 
+class BadRequest(AppError):
+    status_code = 400
+    code = "BAD_REQUEST"
+    message = "Requête invalide."
+
+
 class UnprocessableEntity(AppError):
     status_code = 422
     code = "UNPROCESSABLE_ENTITY"
