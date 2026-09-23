@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://payfund:payfund@localhost:5432/payfund"
+    deployment_environment: Literal["local", "test", "staging", "production"] = "local"
 
     # Observabilite runtime. `release_sha` permet de relier une erreur au commit deploye.
     observability_enabled: bool = True
@@ -77,6 +78,7 @@ class Settings(BaseSettings):
     paystack_secret_key: str = ""
     paystack_base_url: str = "https://api.paystack.co"
     paystack_webhook_secret: str = ""
+    paystack_environment: Literal["test", "live"] = "test"
 
     # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
     # the PaymentIntent API until operations configures service credentials.

@@ -17,6 +17,7 @@ from payfund_app.core.errors import register_exception_handlers
 from payfund_app.core.observability.metrics import router as metrics_router
 from payfund_app.core.observability.middleware import ObservabilityMiddleware
 from payfund_app.core.observability.tracing import configure_tracing
+from payfund_app.core.production_readiness import production_configuration_errors
 from payfund_app.modules.fund.presentation.routers import router as fund_router
 from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.payments.presentation.backoffice_router import (
@@ -65,6 +66,12 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configuration_errors = production_configuration_errors(get_settings())
+    if configuration_errors:
+        raise RuntimeError(
+            "DiddiPay production configuration is unsafe: "
+            + "; ".join(configuration_errors)
+        )
     bus = get_bus()
     wallet_subscribers.register(bus)
     if isinstance(bus, RedisEventBus):
@@ -120,6 +127,8 @@ def health() -> dict[str, str]:
 @app.get(f"{API_PREFIX}/ready", tags=["ops"])
 def ready() -> dict[str, str]:
     """Readiness du runtime: la base est joignable et l'outbox existe."""
+    if production_configuration_errors(get_settings()):
+        return {"status": "degraded", "configuration": "unsafe"}
     with SessionLocal() as session:
         try:
             OutboxRepository(session).pending(limit=1)
