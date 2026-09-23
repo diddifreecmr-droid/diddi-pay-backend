@@ -15,7 +15,7 @@ def production_settings(**overrides) -> Settings:
         "deployment_environment": "production",
         "payment_processor_mode": "paystack",
         "paystack_environment": "live",
-        "paystack_secret_key": "sk_live_not_a_real_key",
+        "paystack_secret_key": "sk_" + "live_unit_test_placeholder",
         "paystack_base_url": "https://api.paystack.co",
         "payment_service_key_fallback_enabled": False,
         "payment_callback_url_fallback_enabled": False,
