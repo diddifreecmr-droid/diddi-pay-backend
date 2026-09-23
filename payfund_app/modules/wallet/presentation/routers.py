@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import math
-import hmac
 import hashlib
+import hmac
+import math
 import uuid
 from datetime import date
 from typing import Annotated
@@ -12,57 +12,11 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query, Request
 from sqlalchemy import select
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.errors import Forbidden
 from payfund_app.modules.wallet.application.qr_service import QrService
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
 from payfund_app.modules.wallet.domain.money import Money
-from payfund_app.modules.wallet.presentation.deps import (
-    CurrentUserDep,
-    IdempotencyKeyDep,
-    SessionDep,
-    StepUpProofVerifierDep,
-)
-from payfund_app.modules.wallet.presentation.schemas import (
-    DepositResponse,
-    BalanceResponse,
-    DepositRequest,
-    GenerateQrRequest,
-    GenerateQrResponse,
-    MerchantPaymentRequest,
-    KycDocumentRequest,
-    KycDocumentListResponse,
-    KycLinkResponse,
-    OpsBackfillRequest,
-    OpsBackfillResponse,
-    OutboxEventListResponse,
-    OutboxRelayResponse,
-    Page,
-    Pagination,
-    AdminPinResetRequest,
-    PinChangeRequest,
-    PinMutationResponse,
-    PinResetWithRecoveryRequest,
-    PinSetRequest,
-    PinSetResponse,
-    PinStatusResponse,
-    PendingPaystackTransactionListResponse,
-    PaystackReconcileResponse,
-    PaystackReconciliationListResponse,
-    PaystackReconciliationSummaryResponse,
-    PaystackTransactionInspectionResponse,
-    PaystackWebhookResponse,
-    ProvisioningStatusResponse,
-    RecipientLookupResponse,
-    PendingOperationResponse,
-    TransactionDetail,
-    TransactionItem,
-    TransferRequest,
-    TransferResponse,
-    VerifyQrRequest,
-    VerifyQrResponse,
-    WithdrawRequest,
-)
-from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.models import Transaction, UserPhone
 from payfund_app.modules.wallet.infra.repositories import (
@@ -71,10 +25,56 @@ from payfund_app.modules.wallet.infra.repositories import (
     ReconciliationLogRepository,
     WebhookInboxRepository,
 )
-from payfund_app.shared_kernel.logging import emit
+from payfund_app.modules.wallet.presentation.deps import (
+    CurrentUserDep,
+    IdempotencyKeyDep,
+    SessionDep,
+    StepUpProofVerifierDep,
+)
+from payfund_app.modules.wallet.presentation.schemas import (
+    AdminPinResetRequest,
+    BalanceResponse,
+    DepositRequest,
+    DepositResponse,
+    GenerateQrRequest,
+    GenerateQrResponse,
+    KycDocumentListResponse,
+    KycDocumentRequest,
+    KycLinkResponse,
+    MerchantPaymentRequest,
+    OpsBackfillRequest,
+    OpsBackfillResponse,
+    OutboxEventListResponse,
+    OutboxRelayResponse,
+    Page,
+    Pagination,
+    PaystackReconcileResponse,
+    PaystackReconciliationListResponse,
+    PaystackReconciliationSummaryResponse,
+    PaystackTransactionInspectionResponse,
+    PaystackWebhookResponse,
+    PendingOperationResponse,
+    PendingPaystackTransactionListResponse,
+    PinChangeRequest,
+    PinMutationResponse,
+    PinResetWithRecoveryRequest,
+    PinSetRequest,
+    PinSetResponse,
+    PinStatusResponse,
+    ProvisioningStatusResponse,
+    RecipientLookupResponse,
+    TransactionDetail,
+    TransactionItem,
+    TransferRequest,
+    TransferResponse,
+    VerifyQrRequest,
+    VerifyQrResponse,
+    WithdrawRequest,
+)
 from payfund_app.shared_kernel.events.bus import get_bus
+from payfund_app.shared_kernel.logging import emit
 
-router = APIRouter(prefix="/wallet", tags=["wallet"])
+router = APIRouter(prefix="/wallet", tags=["wallet-legacy"], deprecated=True)
 
 
 def _montant(transaction, entry) -> int:

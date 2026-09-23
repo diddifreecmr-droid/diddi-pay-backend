@@ -265,3 +265,10 @@ particulier.
 | Admin-3 | vues Backoffice de liste et detail des paiements, sans PII | `b0db70d` |
 | Admin-4 | commandes sensibles auditees pour retry callback et settlement | ce commit |
 | Admin-5 | erreurs correlees, sante Pilotage et recette d'integration DiddiAdmin | ce commit |
+
+## Clarification produit wallet
+
+- Le wallet historique est documente comme conservation et mouvement d'une valeur interne.
+- PaymentIntent reste le chemin obligatoire pour toute nouvelle integration de paiement module.
+- Les routes wallet sont marquees `deprecated` et `wallet-legacy` dans OpenAPI sans etre supprimees.
+- Suivi de migration : Jira `SCRUM-474`.

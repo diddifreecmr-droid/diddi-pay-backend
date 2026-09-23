@@ -12,6 +12,7 @@ Documents de référence :
 - `BRIEFING_FRONTEND.md` - comportement attendu des clients ;
 - `DiddiFund_Contrat_API.md` - contrat métier DiddiFund ;
 - `DiddiPay_Migration_Runbook.md` - coexistence et migration du wallet legacy ;
+- `docs/wallet-legacy-product-workflow.md` - distinction business et workflow wallet/PaymentIntent ;
 - `DiddiPay_DiddiFund_Architecture.md` et `DiddiPay_DiddiFund_Contrat_API.md` - références legacy ;
 - `DiddiFreeID_Contrat_API.md` (identité, consommée en vérification locale de JWT)
 

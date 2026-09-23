@@ -48,6 +48,11 @@ Les anciennes routes `/wallet/*` restent temporairement disponibles pour compati
 constituent plus le coeur du nouveau contrat DiddiPay et ne doivent pas etre utilisees pour une
 nouvelle integration module-to-module.
 
+Dans OpenAPI, toutes ces routes portent le tag `wallet-legacy` et `deprecated: true`. Cela signale
+la direction produit sans les desactiver : elles restent necessaires aux soldes existants et a
+certains flux historiques DiddiFund. Le workflow produit et les criteres de choix sont documentes
+dans `docs/wallet-legacy-product-workflow.md`.
+
 ## 2. Authentification service-to-service
 
 Les routes `/payment-intents` sont appelees par le backend du module, jamais directement par une

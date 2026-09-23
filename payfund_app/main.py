@@ -18,24 +18,49 @@ from payfund_app.core.observability.metrics import router as metrics_router
 from payfund_app.core.observability.middleware import ObservabilityMiddleware
 from payfund_app.core.observability.tracing import configure_tracing
 from payfund_app.modules.fund.presentation.routers import router as fund_router
-from payfund_app.modules.payments.presentation.routers import router as payment_router
-from payfund_app.modules.payments.presentation.webhook_router import router as payment_webhook_router
-from payfund_app.modules.payments.presentation.summary_router import router as payment_summary_router
-from payfund_app.modules.payments.presentation.payout_router import router as payout_router
+from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.payments.presentation.backoffice_router import (
     router as payment_backoffice_router,
 )
-from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
-from payfund_app.modules.wallet.infra.repositories import OutboxRepository
+from payfund_app.modules.payments.presentation.payout_router import (
+    router as payout_router,
+)
+from payfund_app.modules.payments.presentation.routers import router as payment_router
+from payfund_app.modules.payments.presentation.summary_router import (
+    router as payment_summary_router,
+)
+from payfund_app.modules.payments.presentation.webhook_router import (
+    router as payment_webhook_router,
+)
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
-from payfund_app.ops.maintenance import relay_outbox_events
+from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.presentation.routers import router as wallet_router
+from payfund_app.ops.maintenance import relay_outbox_events
 from payfund_app.shared_kernel.events.bus import RedisEventBus, get_bus
 from payfund_app.shared_kernel.logging import configure_logging
 
 configure_logging()
 
 API_PREFIX = "/payfund/v1"
+
+OPENAPI_TAGS = [
+    {
+        "name": "wallet-legacy",
+        "description": (
+            "API historique de conservation et mouvement d'une valeur interne DiddiFree. "
+            "Elle reste active pour compatibilite et certains flux DiddiFund, mais ne doit "
+            "pas etre choisie pour une nouvelle integration. Les nouveaux paiements de modules "
+            "utilisent PaymentIntent."
+        ),
+    },
+    {
+        "name": "payments",
+        "description": (
+            "Orchestration provider-neutral des paiements externes pour DiddiGo, DiddiSend, "
+            "DiddiFood, DiddiFund et les futurs modules."
+        ),
+    },
+]
 
 
 @asynccontextmanager
@@ -59,6 +84,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=f"{API_PREFIX}/docs",
     openapi_url=f"{API_PREFIX}/openapi.json",
+    openapi_tags=OPENAPI_TAGS,
 )
 
 register_exception_handlers(app)

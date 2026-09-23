@@ -44,3 +44,21 @@ def test_wallet_openapi_exposes_security_and_frontend_fields():
 
     webhook = schema["paths"]["/payfund/v1/wallet/webhooks/paystack"]["post"]
     assert "requestBody" in webhook
+
+
+def test_wallet_is_explicitly_legacy_and_deprecated_in_openapi():
+    schema = app.openapi()
+    wallet_operations = [
+        operation
+        for path, methods in schema["paths"].items()
+        if path.startswith("/payfund/v1/wallet")
+        for operation in methods.values()
+    ]
+
+    assert wallet_operations
+    assert all(operation.get("deprecated") is True for operation in wallet_operations)
+    assert all("wallet-legacy" in operation["tags"] for operation in wallet_operations)
+
+    tag = next(tag for tag in schema["tags"] if tag["name"] == "wallet-legacy")
+    assert "compatibilite" in tag["description"]
+    assert "PaymentIntent" in tag["description"]
