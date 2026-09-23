@@ -1,6 +1,7 @@
 """Pilotage-only aggregate of confirmed payment journal events."""
 
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -18,7 +19,7 @@ from payfund_app.modules.payments.infra.daily_summary import (
 )
 from payfund_app.modules.payments.presentation.deps import SessionDep
 
-router = APIRouter(prefix="/internal/v1", tags=["internal-pilotage"])
+router = APIRouter(prefix="/internal", tags=["internal-pilotage"])
 
 
 class PaymentSummaryResponse(BaseModel):
@@ -31,6 +32,34 @@ class PaymentSummaryResponse(BaseModel):
     confirmed_refunds_amount_xof: int
     calculated_at: datetime
     source: str
+
+
+class PilotageMetric(BaseModel):
+    name: str
+    value: int
+    unit: str
+
+
+class PilotageSource(BaseModel):
+    module: str
+    record_type: str
+
+
+class PilotageDeepLink(BaseModel):
+    label: str
+    href: str
+
+
+class PilotageDailySummaryResponse(BaseModel):
+    contract_version: str = "pilotage.v1"
+    module: str = "diddipay"
+    date: date
+    timezone: str
+    is_final: bool
+    metrics: list[PilotageMetric]
+    calculated_at: datetime
+    sources: list[PilotageSource]
+    deep_links: list[PilotageDeepLink]
 
 
 def require_pilotage_service(
@@ -54,7 +83,7 @@ def require_pilotage_service(
     )
 
 
-@router.get("/payment-summary", response_model=PaymentSummaryResponse)
+@router.get("/v1/payment-summary", response_model=PaymentSummaryResponse)
 def payment_summary(
     session: SessionDep,
     date_: Annotated[date, Query(alias="date", description="Business day in Africa/Abidjan")],
@@ -64,3 +93,89 @@ def payment_summary(
         SqlPaymentDailySummaryRepository(session)
     ).get(date_)
     return PaymentSummaryResponse.model_validate(result, from_attributes=True)
+
+
+@router.get("/pilotage/daily-summary", response_model=PilotageDailySummaryResponse)
+def pilotage_daily_summary(
+    session: SessionDep,
+    date_: Annotated[date, Query(alias="date", description="Business day in Africa/Abidjan")],
+    _: Annotated[ServicePrincipal, Depends(require_pilotage_service)],
+) -> PilotageDailySummaryResponse:
+    result = PaymentDailySummaryUseCases(SqlPaymentDailySummaryRepository(session)).get(date_)
+    net_expected_delta = (
+        result.confirmed_payments_amount_xof
+        - result.confirmed_refunds_amount_xof
+        - result.processor_fees_amount_xof
+    )
+    metrics = [
+        PilotageMetric(
+            name="confirmed_payments_count",
+            value=result.confirmed_payments_count,
+            unit="count",
+        ),
+        PilotageMetric(
+            name="confirmed_payments_amount_xof",
+            value=result.confirmed_payments_amount_xof,
+            unit="XOF",
+        ),
+        PilotageMetric(
+            name="confirmed_refunds_count",
+            value=result.confirmed_refunds_count,
+            unit="count",
+        ),
+        PilotageMetric(
+            name="confirmed_refunds_amount_xof",
+            value=result.confirmed_refunds_amount_xof,
+            unit="XOF",
+        ),
+        PilotageMetric(
+            name="processor_fees_amount_xof",
+            value=result.processor_fees_amount_xof,
+            unit="XOF",
+        ),
+        PilotageMetric(
+            name="net_expected_delta_xof",
+            value=net_expected_delta,
+            unit="XOF",
+        ),
+        PilotageMetric(
+            name="settlements_count",
+            value=result.settlements_count,
+            unit="count",
+        ),
+        PilotageMetric(
+            name="settlements_amount_xof",
+            value=result.settlements_amount_xof,
+            unit="XOF",
+        ),
+        PilotageMetric(
+            name="unsettled_receivable_delta_xof",
+            value=net_expected_delta - result.settlements_amount_xof,
+            unit="XOF",
+        ),
+        PilotageMetric(
+            name="payouts_count",
+            value=result.payouts_count,
+            unit="count",
+        ),
+        PilotageMetric(
+            name="payouts_amount_xof",
+            value=result.payouts_amount_xof,
+            unit="XOF",
+        ),
+    ]
+    today = datetime.now(ZoneInfo(result.timezone)).date()
+    return PilotageDailySummaryResponse(
+        date=result.date,
+        timezone=result.timezone,
+        is_final=result.date < today,
+        metrics=metrics,
+        calculated_at=result.calculated_at,
+        sources=[PilotageSource(module="diddipay", record_type=result.source)],
+        deep_links=[
+            PilotageDeepLink(
+                label="Open payment operations in Backoffice",
+                href="/backoffice/#diddipay-payments",
+            )
+        ],
+    )

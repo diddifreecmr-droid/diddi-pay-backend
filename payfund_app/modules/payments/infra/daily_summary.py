@@ -23,7 +23,9 @@ class SqlPaymentDailySummaryRepository:
                 FinancialJournalRecord.created_at >= start,
                 FinancialJournalRecord.created_at < end,
                 FinancialJournalRecord.currency == "XOF",
-                FinancialJournalRecord.event_type.in_(("capture", "refund")),
+                FinancialJournalRecord.event_type.in_(
+                    ("capture", "refund", "processor_fee", "settlement", "payout")
+                ),
             )
             .group_by(FinancialJournalRecord.event_type)
         )

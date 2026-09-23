@@ -16,6 +16,11 @@ class PaymentDailySummary:
     confirmed_payments_amount_xof: int
     confirmed_refunds_count: int
     confirmed_refunds_amount_xof: int
+    processor_fees_amount_xof: int
+    settlements_count: int
+    settlements_amount_xof: int
+    payouts_count: int
+    payouts_amount_xof: int
     calculated_at: datetime
     source: str = "payments.financial_journals"
 
@@ -41,5 +46,10 @@ class PaymentDailySummaryUseCases:
             confirmed_payments_amount_xof=totals.get("capture", (0, 0))[1],
             confirmed_refunds_count=totals.get("refund", (0, 0))[0],
             confirmed_refunds_amount_xof=totals.get("refund", (0, 0))[1],
+            processor_fees_amount_xof=totals.get("processor_fee", (0, 0))[1],
+            settlements_count=totals.get("settlement", (0, 0))[0],
+            settlements_amount_xof=totals.get("settlement", (0, 0))[1],
+            payouts_count=totals.get("payout", (0, 0))[0],
+            payouts_amount_xof=totals.get("payout", (0, 0))[1],
             calculated_at=datetime.now(UTC),
         )
