@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Query
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.errors import Conflict, NotFound, UnprocessableEntity
 from payfund_app.core.observability.business_metrics import (
     observe_payment_intent_created,
@@ -36,6 +37,9 @@ from payfund_app.modules.payments.infra.repositories import (
     RefundRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
+from payfund_app.modules.payments.presentation.checkout_return import (
+    resolve_checkout_return_url,
+)
 from payfund_app.modules.payments.presentation.deps import (
     PaymentIntentReaderDep,
     PaymentIntentWriterDep,
@@ -138,11 +142,19 @@ def create_payment_intent(
             "L'en-tete Idempotency-Key est obligatoire.", code="IDEMPOTENCY_KEY_REQUIRED"
         )
     try:
+        command_data = payload.model_dump(exclude={"return_target", "callback_url"})
+        callback_url = resolve_checkout_return_url(
+            settings=get_settings(),
+            client_id=client.client_id,
+            return_target=payload.return_target,
+            legacy_callback_url=payload.callback_url,
+        )
         view = _use_cases(session, processors).create(
             CreatePaymentIntentCommand(
                 client_id=client.client_id,
                 idempotency_key=idempotency_key.strip(),
-                **payload.model_dump(),
+                callback_url=callback_url,
+                **command_data,
             )
         )
     except Exception as exc:

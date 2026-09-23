@@ -61,6 +61,7 @@ class CreatePaymentIntentCommand:
                 "payee_user_id": self.payee_user_id,
                 "channel": self.channel,
                 "network": self.network,
+                "callback_url": self.callback_url,
                 "description": self.description,
                 "metadata": self.metadata,
             }
@@ -207,7 +208,7 @@ class PaymentUseCases:
                 failure_code="PROCESSOR_UNCERTAIN",
                 failure_message=str(exc)[:255],
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - unknown provider outcome must be reconciled
             # The processor may have accepted the request before the connection failed.
             return ProviderResult(
                 provider_reference=f"unknown-{attempt.id}",

@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     payment_callback_targets: dict[str, PaymentCallbackSettings] = Field(
         default_factory=dict
     )
+    payment_checkout_return_targets: dict[str, AnyHttpUrl] = Field(default_factory=dict)
+    payment_callback_url_fallback_enabled: bool = True
     diddifund_diddipay_callback_secret: str = ""
 
     @property

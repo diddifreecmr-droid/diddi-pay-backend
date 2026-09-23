@@ -21,7 +21,18 @@ class CreatePaymentIntentRequest(BaseModel):
     network: Literal["orange", "wave", "mtn"] | None = None
     customer_email: str | None = Field(default=None, max_length=254)
     customer_phone: str | None = Field(default=None, max_length=32)
-    callback_url: str | None = Field(default=None, max_length=2048)
+    return_target: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="Server-configured checkout return target name",
+    )
+    callback_url: str | None = Field(
+        default=None,
+        max_length=2048,
+        deprecated=True,
+        description="Staging migration only; use return_target",
+    )
     description: str | None = Field(default=None, max_length=255)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

@@ -125,7 +125,7 @@ Corps :
   "network": "orange",
   "customer_email": "client@example.com",
   "customer_phone": "+2250700000000",
-  "callback_url": "https://go.diddifree.com/payments/return",
+  "return_target": "app",
   "description": "Course DiddiGo 42",
   "metadata": {
     "ride_id": "42"
@@ -146,7 +146,13 @@ Champs :
 | `network` | non | `orange`, `wave` ou `mtn` ; indication de routage, pas garantie d'affichage PSP |
 | `customer_email` | Paystack | Requis par le checkout Paystack actuel |
 | `customer_phone` | non | Telephone normalise, maximum 32 caracteres |
-| `callback_url` | non | URL de retour navigateur apres le checkout, pas une preuve de paiement |
+| `return_target` | non | Nom d'une destination de retour configuree cote serveur, par exemple `app` |
+
+Le module ne fournit jamais une URL arbitraire. Les cibles sont configurees dans
+`PAYMENT_CHECKOUT_RETURN_TARGETS` avec une cle `<client_id>:<return_target>`. Le retour navigateur
+n'est pas une preuve de paiement : seul le statut DiddiPay, alimente par webhook ou reconciliation,
+fait foi. `callback_url` reste temporairement documente comme deprecie pour la migration staging et
+doit etre desactive en production avec `PAYMENT_CALLBACK_URL_FALLBACK_ENABLED=false`.
 | `description` | non | Libelle lisible, maximum 255 caracteres |
 | `metadata` | non | Contexte metier JSON non sensible |
 
