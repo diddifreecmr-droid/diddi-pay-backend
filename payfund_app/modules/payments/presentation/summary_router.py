@@ -1,8 +1,8 @@
 """Pilotage-only aggregate of confirmed payment journal events."""
 
 from datetime import date, datetime
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel
@@ -14,8 +14,14 @@ from payfund_app.modules.payments.application.daily_summary import (
     PaymentDailySummary,
     PaymentDailySummaryUseCases,
 )
+from payfund_app.modules.payments.application.health_summary import (
+    PaymentHealthSummaryUseCases,
+)
 from payfund_app.modules.payments.infra.daily_summary import (
     SqlPaymentDailySummaryRepository,
+)
+from payfund_app.modules.payments.infra.health_summary import (
+    SqlPaymentHealthSummaryRepository,
 )
 from payfund_app.modules.payments.presentation.deps import SessionDep
 
@@ -57,6 +63,17 @@ class PilotageDailySummaryResponse(BaseModel):
     timezone: str
     is_final: bool
     metrics: list[PilotageMetric]
+    calculated_at: datetime
+    sources: list[PilotageSource]
+    deep_links: list[PilotageDeepLink]
+
+
+class PilotageHealthSummaryResponse(BaseModel):
+    contract_version: str = "pilotage.v1"
+    module: str = "diddipay"
+    status: Literal["healthy", "degraded", "unavailable"]
+    pending_callbacks_count: int | None
+    dead_letter_callbacks_count: int | None
     calculated_at: datetime
     sources: list[PilotageSource]
     deep_links: list[PilotageDeepLink]
@@ -172,6 +189,27 @@ def pilotage_daily_summary(
         metrics=metrics,
         calculated_at=result.calculated_at,
         sources=[PilotageSource(module="diddipay", record_type=result.source)],
+        deep_links=[
+            PilotageDeepLink(
+                label="Open payment operations in Backoffice",
+                href="/backoffice/#diddipay-payments",
+            )
+        ],
+    )
+
+
+@router.get("/pilotage/health-summary", response_model=PilotageHealthSummaryResponse)
+def pilotage_health_summary(
+    session: SessionDep,
+    _: Annotated[ServicePrincipal, Depends(require_pilotage_service)],
+) -> PilotageHealthSummaryResponse:
+    result = PaymentHealthSummaryUseCases(SqlPaymentHealthSummaryRepository(session)).get()
+    return PilotageHealthSummaryResponse(
+        status=result.status,
+        pending_callbacks_count=result.pending_callbacks_count,
+        dead_letter_callbacks_count=result.dead_letter_callbacks_count,
+        calculated_at=result.calculated_at,
+        sources=[PilotageSource(module="diddipay", record_type="payments.outbox_events")],
         deep_links=[
             PilotageDeepLink(
                 label="Open payment operations in Backoffice",

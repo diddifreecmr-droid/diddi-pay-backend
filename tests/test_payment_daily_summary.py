@@ -11,6 +11,9 @@ from payfund_app.modules.payments.application.daily_summary import (
     PaymentDailySummaryUseCases,
     day_bounds,
 )
+from payfund_app.modules.payments.application.health_summary import (
+    PaymentHealthSummaryUseCases,
+)
 from payfund_app.modules.payments.presentation import summary_router
 
 
@@ -66,6 +69,11 @@ def test_summary_route_is_in_openapi_and_rejects_unauthenticated_requests():
     path = "/payfund/v1/internal/v1/payment-summary"
     assert path in app.openapi()["paths"]
     response = TestClient(app).get(path, params={"date": "2026-09-18"})
+    assert response.status_code == 401
+
+    health_path = "/payfund/v1/internal/pilotage/health-summary"
+    assert health_path in app.openapi()["paths"]
+    response = TestClient(app).get(health_path)
     assert response.status_code == 401
 
     pilotage_path = "/payfund/v1/internal/pilotage/daily-summary"
@@ -136,3 +144,23 @@ def test_summary_auth_checks_identity_and_scope(monkeypatch):
         "payment-summary:read",
     }
     assert captured["allowed_client_ids"] == {"pilotage-staging-diddipay"}
+
+
+def test_health_summary_distinguishes_degraded_and_unavailable_sources():
+    class DeadLetters:
+        def callback_status_counts(self):
+            return {"pending": 3, "dead_letter": 2}
+
+    class Unavailable:
+        def callback_status_counts(self):
+            raise RuntimeError("database unavailable")
+
+    degraded = PaymentHealthSummaryUseCases(DeadLetters()).get()
+    unavailable = PaymentHealthSummaryUseCases(Unavailable()).get()
+
+    assert degraded.status == "degraded"
+    assert degraded.pending_callbacks_count == 3
+    assert degraded.dead_letter_callbacks_count == 2
+    assert unavailable.status == "unavailable"
+    assert unavailable.pending_callbacks_count is None
+    assert unavailable.dead_letter_callbacks_count is None

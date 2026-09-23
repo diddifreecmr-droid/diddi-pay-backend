@@ -264,3 +264,4 @@ particulier.
 | Admin-2 | resume financier quotidien Pilotage v1, metriques et fraicheur | `e4b167d` |
 | Admin-3 | vues Backoffice de liste et detail des paiements, sans PII | `b0db70d` |
 | Admin-4 | commandes sensibles auditees pour retry callback et settlement | ce commit |
+| Admin-5 | erreurs correlees, sante Pilotage et recette d'integration DiddiAdmin | ce commit |

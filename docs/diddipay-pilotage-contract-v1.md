@@ -43,6 +43,17 @@ capture d'une journee precedente.
 valide et gere `fresh`, `stale` ou `unavailable`; une indisponibilite ne doit jamais devenir un
 resume rempli de zeros. La fenetre V1 est de 60 secondes.
 
+## Sante operationnelle
+
+```http
+GET /payfund/v1/internal/pilotage/health-summary
+```
+
+Cette route utilise la meme authentification et retourne uniquement le nombre de callbacks
+`pending` et `dead_letter`. `status=degraded` signifie qu'au moins une dead letter exige une
+intervention. Si la source ne peut pas etre lue, les compteurs valent `null` et le statut vaut
+`unavailable`; ils ne valent jamais artificiellement zero.
+
 ## Compatibilite
 
 `GET /payfund/v1/internal/v1/payment-summary` reste disponible temporairement pour l'ancien

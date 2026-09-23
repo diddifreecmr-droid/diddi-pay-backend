@@ -10,6 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from payfund_app.core.observability.context import get_request_id
+
 
 class AppError(Exception):
     """Erreur métier portant son propre code HTTP et son code applicatif."""
@@ -35,7 +37,14 @@ class AppError(Exception):
 
 
 def error_body(code: str, message: str, details: Any = None) -> dict[str, Any]:
-    return {"error": {"code": code, "message": message, "details": details}}
+    return {
+        "error": {
+            "code": code,
+            "message": message,
+            "details": details,
+            "request_id": get_request_id(),
+        }
+    }
 
 
 # --- Erreurs transverses -----------------------------------------------------

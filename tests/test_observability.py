@@ -113,6 +113,16 @@ def test_request_id_is_propagated_or_generated() -> None:
     assert re.fullmatch(r"[0-9a-f]{32}", generated.headers["x-request-id"])
 
 
+def test_error_body_carries_the_same_request_id_as_the_response() -> None:
+    response = TestClient(app).get(
+        "/route-that-does-not-exist", headers={"X-Request-ID": "req-error-contract"}
+    )
+
+    assert response.status_code == 404
+    assert response.headers["x-request-id"] == "req-error-contract"
+    assert response.json()["error"]["request_id"] == "req-error-contract"
+
+
 def test_metrics_are_protected_and_hidden_from_openapi(monkeypatch) -> None:
     monkeypatch.setenv("METRICS_ENABLED", "true")
     monkeypatch.setenv("METRICS_TOKEN", "test-metrics-token-with-at-least-32-characters")
