@@ -272,3 +272,16 @@ particulier.
 - PaymentIntent reste le chemin obligatoire pour toute nouvelle integration de paiement module.
 - Les routes wallet sont marquees `deprecated` et `wallet-legacy` dans OpenAPI sans etre supprimees.
 - Suivi de migration : Jira `SCRUM-474`.
+
+## Preparation production DiddiPay
+
+Ticket chapeau : Jira `SCRUM-503`.
+
+| Sprint | Jira | Livraison | Commit |
+|---:|---|---|---|
+| PROD-1 | `SCRUM-504` | jetons S2S DiddiFreeID et scopes PaymentIntent/Payout | `5779fc0` |
+| PROD-2 | `SCRUM-505` | retours checkout resolus depuis une allowlist serveur | `23f6b73` |
+| PROD-3 | `SCRUM-506` | validation fail-closed de la configuration Paystack live | `b33caa4` |
+| PROD-4 | `SCRUM-507` | manifestes de capacites DiddiAdmin et Pilotage | `dbf26fc` |
+| PROD-5 | `SCRUM-508` | heartbeat et healthcheck du worker de paiement | `582df33` |
+| PROD-6 | `SCRUM-509` | checklist backend et passage a la recette QA | ce commit |
