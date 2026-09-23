@@ -1,5 +1,7 @@
+import json
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +19,14 @@ from payfund_app.modules.payments.application.backoffice_commands import (
     BackofficeCommandService,
 )
 from payfund_app.modules.payments.presentation import backoffice_router
+
+
+BACKOFFICE_MANIFEST = (
+    Path(__file__).parents[1]
+    / "docs"
+    / "manifests"
+    / "diddipay-backoffice-v1.json"
+)
 
 
 def _payment():
@@ -63,6 +73,40 @@ def test_backoffice_routes_are_documented_and_fail_closed():
     assert "/payfund/v1/internal/backoffice/capabilities" in paths
     response = TestClient(app).get(base)
     assert response.status_code == 401
+
+
+def test_backoffice_manifest_matches_openapi_and_security_contract():
+    manifest = json.loads(BACKOFFICE_MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["contract_version"] == "backoffice.v1"
+    assert manifest["module"] == "diddipay"
+
+    openapi_paths = app.openapi()["paths"]
+    expected_names = {
+        "list_payments",
+        "get_payment_detail",
+        "retry_payment_callback",
+        "record_payment_settlement",
+    }
+    commands = manifest["commands"]
+    assert {command["name"] for command in commands} == expected_names
+
+    for command in commands:
+        method = command["method"].lower()
+        assert command["path"] in openapi_paths
+        assert method in openapi_paths[command["path"]]
+        assert command["execution_mode"] in {"interactive", "command"}
+        assert isinstance(command["input_fields"], list)
+
+        if command["permission"] == "read":
+            assert command["service_scope"] == "diddipay:operations:read"
+            assert command["requires_reason"] is False
+            assert command["requires_idempotency"] is False
+        else:
+            assert command["permission"] == "write"
+            assert command["service_scope"] == "diddipay:operations:write"
+            assert command["requires_reason"] is True
+            assert command["requires_idempotency"] is True
+            assert {field["name"] for field in command["input_fields"]} >= {"reason"}
 
 
 def test_backoffice_capabilities_are_versioned(monkeypatch):

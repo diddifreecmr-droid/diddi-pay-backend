@@ -1,0 +1,81 @@
+{
+  "contract_version": "backoffice.v1",
+  "module": "diddipay",
+  "commands": [
+    {
+      "name": "list_payments",
+      "permission": "read",
+      "description": "Consulter la file operationnelle des PaymentIntents",
+      "method": "GET",
+      "path": "/payfund/v1/internal/backoffice/payments",
+      "service_scope": "diddipay:operations:read",
+      "requires_reason": false,
+      "requires_idempotency": false,
+      "execution_mode": "interactive",
+      "input_fields": []
+    },
+    {
+      "name": "get_payment_detail",
+      "permission": "read",
+      "description": "Inspecter les tentatives et effets financiers d'un PaymentIntent",
+      "method": "GET",
+      "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}",
+      "service_scope": "diddipay:operations:read",
+      "requires_reason": false,
+      "requires_idempotency": false,
+      "execution_mode": "interactive",
+      "input_fields": []
+    },
+    {
+      "name": "retry_payment_callback",
+      "permission": "write",
+      "description": "Remettre en file un callback DiddiPay en dead letter",
+      "method": "POST",
+      "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}/callbacks/{event_id}/retry",
+      "service_scope": "diddipay:operations:write",
+      "requires_reason": true,
+      "requires_idempotency": true,
+      "execution_mode": "command",
+      "input_fields": [
+        {
+          "name": "reason",
+          "label": "Motif de la relance",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "record_payment_settlement",
+      "permission": "write",
+      "description": "Enregistrer un versement PSP constate par les operations",
+      "method": "POST",
+      "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}/settlements",
+      "service_scope": "diddipay:operations:write",
+      "requires_reason": true,
+      "requires_idempotency": true,
+      "execution_mode": "command",
+      "input_fields": [
+        {
+          "name": "amount",
+          "label": "Montant du versement",
+          "type": "integer",
+          "required": true,
+          "unit": "XOF"
+        },
+        {
+          "name": "settlement_reference",
+          "label": "Reference du versement PSP",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "reason",
+          "label": "Motif de l'enregistrement",
+          "type": "string",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

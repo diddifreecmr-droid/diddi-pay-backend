@@ -77,6 +77,10 @@ repeter l'effet; une reutilisation divergente retourne `409 IDEMPOTENCY_CONFLICT
 
 ## Manifest DiddiAdmin
 
+Le manifeste machine-readable officiel est versionne dans
+`docs/manifests/diddipay-backoffice-v1.json`. Le bloc ci-dessous en est la lecture humaine ;
+le fichier JSON fait foi pour l'integration et les controles automatises.
+
 ```json
 [
   {
