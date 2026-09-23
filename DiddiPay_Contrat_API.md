@@ -162,6 +162,12 @@ Reponse `201 Created` :
     "ride_id": "42"
   },
   "refunded_amount": 0,
+  "next_action": {
+    "type": "redirect",
+    "url": "https://checkout.paystack.com/example",
+    "instructions": null,
+    "expires_at": null
+  },
   "attempts": [
     {
       "id": "b0198fb9-d36d-4395-9225-76c686739264",
@@ -307,6 +313,10 @@ reconcilier cette tentative.
 
 Le module ne doit jamais coder une logique specifique a Paystack. Il transmet au frontend la
 structure normalisee `next_action` :
+
+Dans la reponse `PaymentIntent`, `next_action` top-level represente l'action courante a executer.
+Elle est derivee de la derniere tentative et evite aux modules consommateurs de parcourir
+`attempts[]` pour trouver le checkout actif. `attempts[]` reste disponible pour l'audit technique.
 
 | Type | Comportement client |
 |---|---|

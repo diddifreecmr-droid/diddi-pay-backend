@@ -97,6 +97,7 @@ def _response(view: PaymentView) -> PaymentIntentResponse:
         description=intent.description,
         metadata=intent.metadata,
         refunded_amount=intent.refunded_amount,
+        next_action=attempts[-1].next_action if attempts else None,
         attempts=attempts,
         created_at=intent.created_at,
         updated_at=intent.updated_at,

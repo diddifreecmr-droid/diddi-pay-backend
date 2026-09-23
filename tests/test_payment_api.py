@@ -33,6 +33,7 @@ def test_create_payment_intent_returns_provider_neutral_action(client):
     assert body["client_id"] == "diddigo"
     assert body["business_reference"] == "ride:42"
     assert body["status"] == "requires_action"
+    assert body["next_action"]["type"] == "redirect"
     assert body["attempts"][0]["status"] == "requires_action"
     assert body["attempts"][0]["next_action"]["type"] == "redirect"
     assert "provider_reference" not in body["attempts"][0]

@@ -78,6 +78,7 @@ class PaymentIntentResponse(BaseModel):
     description: str | None = None
     metadata: dict[str, Any]
     refunded_amount: int
+    next_action: NextActionResponse | None = None
     attempts: list[PaymentAttemptResponse]
     created_at: datetime
     updated_at: datetime
