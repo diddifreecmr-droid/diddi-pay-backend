@@ -42,7 +42,23 @@ le trafic et l'impact reel.
 3. Si un deploiement est suspect, suivre la procedure de rollback de la stack en conservant les
    migrations et les donnees. Ne jamais restaurer une base ancienne pour corriger des paiements.
 4. Apres stabilisation, verifier les PaymentIntents `processing` ou incertains via la
-   reconciliation. Ne pas les rejouer aveuglement.
+reconciliation. Ne pas les rejouer aveuglement.
+
+## Payment worker unhealthy
+
+Le conteneur `payment-worker` ecrit un heartbeat local apres chaque cycle. Son healthcheck exige un
+heartbeat recent et un dernier cycle sans erreur. Un worker unhealthy signifie que la
+reconciliation et/ou la livraison des callbacks peuvent etre en retard, meme si l'API HTTP reste
+disponible.
+
+1. Lire les logs `ops.payment_worker.failed` et `ops.payment_worker.cycle`.
+2. Verifier PostgreSQL, Paystack et les destinations callback sans rejouer manuellement un paiement.
+3. Controler les compteurs `pending`, `delivering` et `dead_letter`.
+4. Corriger la dependance en panne, puis confirmer un nouveau heartbeat sain.
+5. Reconcilier les intentions incertaines avant de retry les callbacks en dead letter.
+
+Le healthcheck ne doit pas etre remplace par un simple test de processus : une boucle Python peut
+rester vivante tout en echouant a chaque cycle.
 
 ## API Latency
 

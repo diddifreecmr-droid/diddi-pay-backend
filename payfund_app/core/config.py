@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     tracing_enabled: bool = False
     tracing_otlp_endpoint: str = "http://otel-collector:4318"
     tracing_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
+    payment_worker_heartbeat_path: str = "/tmp/diddipay-payment-worker-heartbeat.json"
+    payment_worker_heartbeat_max_age_seconds: int = Field(default=90, ge=30, le=600)
 
     @field_validator("metrics_token")
     @classmethod

@@ -57,6 +57,8 @@ services:
       TRACING_ENABLED: ${TRACING_ENABLED:-false}
       TRACING_OTLP_ENDPOINT: ${TRACING_OTLP_ENDPOINT:-http://otel-collector:4318}
       TRACING_SAMPLE_RATE: ${TRACING_SAMPLE_RATE:-0.1}
+      PAYMENT_WORKER_HEARTBEAT_PATH: ${PAYMENT_WORKER_HEARTBEAT_PATH:-/tmp/diddipay-payment-worker-heartbeat.json}
+      PAYMENT_WORKER_HEARTBEAT_MAX_AGE_SECONDS: ${PAYMENT_WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
       DIDDIFREEID_JWKS_URL: ${DIDDIFREEID_JWKS_URL:-https://auth-staging.diddifree.com/identity/v1/.well-known/jwks.json}
       DIDDIFREEID_ISSUER: ${DIDDIFREEID_ISSUER:-diddifree-id}
       PAYMENT_SUMMARY_AUDIENCE: ${PAYMENT_SUMMARY_AUDIENCE:-diddipay}
@@ -110,7 +112,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/payfund/v1/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/payfund/v1/ready')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -125,6 +127,12 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -m payfund_app.ops.worker_health \"$${PAYMENT_WORKER_HEARTBEAT_PATH}\" --max-age \"$${PAYMENT_WORKER_HEARTBEAT_MAX_AGE_SECONDS}\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
 
 volumes:

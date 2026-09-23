@@ -7,6 +7,7 @@ import sys
 import time
 import uuid
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.database import SessionLocal
 from payfund_app.core.security import CurrentUser
 from payfund_app.ops.maintenance import (
@@ -23,6 +24,7 @@ from payfund_app.ops.maintenance import (
     require_admin,
     run_housekeeping,
 )
+from payfund_app.ops.worker_health import record_worker_heartbeat
 from payfund_app.shared_kernel.events.bus import get_bus
 from payfund_app.shared_kernel.logging import configure_logging, emit
 
@@ -132,8 +134,16 @@ def main(argv: list[str] | None = None) -> int:
                     _emit_worker_cycle(
                         reconciliation, payout_reconciliation, delivery, queue
                     )
+                record_worker_heartbeat(
+                    get_settings().payment_worker_heartbeat_path, healthy=True
+                )
             except Exception as exc:  # noqa: BLE001 - worker must retry after transient failures
                 emit("error", "ops.payment_worker.failed", error=str(exc))
+                record_worker_heartbeat(
+                    get_settings().payment_worker_heartbeat_path,
+                    healthy=False,
+                    error=str(exc),
+                )
             time.sleep(args.interval)
 
     with SessionLocal() as session:
