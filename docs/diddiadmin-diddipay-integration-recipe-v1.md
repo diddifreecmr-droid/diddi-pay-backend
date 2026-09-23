@@ -41,6 +41,20 @@ PAYMENT_SUMMARY_LEGACY_SCOPE=
 Une liste Backoffice vide ferme toutes les routes Backoffice. Le scope historique Pilotage doit
 etre vide une fois la migration terminee.
 
+## Handshake de capacites
+
+Avant de brancher les ecrans, chaque consommateur verifie le contrat effectivement deploye :
+
+```text
+GET /payfund/v1/internal/backoffice/capabilities
+GET /payfund/v1/internal/pilotage/capabilities
+Authorization: Bearer <service_token>
+X-Client-ID: <client provisionne>
+```
+
+Ces manifestes versionnes exposent les scopes, ressources, commandes, headers d'idempotence,
+agregats, devise et timezone. Ils ne remplacent pas OpenAPI ; ils servent de handshake runtime.
+
 ## Appel de lecture Backoffice
 
 ```http

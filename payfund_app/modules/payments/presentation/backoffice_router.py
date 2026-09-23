@@ -79,6 +79,17 @@ class BackofficeCommandResponse(BaseModel):
     result: dict
 
 
+class BackofficeCapabilitiesResponse(BaseModel):
+    contract_version: Literal["backoffice.v1"] = "backoffice.v1"
+    module: Literal["diddipay"] = "diddipay"
+    authentication: Literal["diddifreeid_service_token"] = "diddifreeid_service_token"
+    read_scope: str
+    command_scope: str
+    resources: list[str]
+    commands: list[str]
+    command_headers: list[str]
+
+
 def require_backoffice_reader(
     authorization: Annotated[str | None, Header()] = None,
     client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
@@ -147,6 +158,24 @@ def _command_response(command) -> BackofficeCommandResponse:
 
 def _response(payment) -> BackofficePaymentResponse:
     return BackofficePaymentResponse.model_validate(payment, from_attributes=True)
+
+
+@router.get("/capabilities", response_model=BackofficeCapabilitiesResponse)
+def backoffice_capabilities(
+    _: Annotated[ServicePrincipal, Depends(require_backoffice_reader)],
+) -> BackofficeCapabilitiesResponse:
+    settings = get_settings()
+    return BackofficeCapabilitiesResponse(
+        read_scope=settings.backoffice_read_scope,
+        command_scope=settings.backoffice_command_scope,
+        resources=["payments", "payment_attempts", "financial_summary", "commands"],
+        commands=["retry_callback", "record_settlement"],
+        command_headers=[
+            "X-Backoffice-Actor",
+            "X-Backoffice-Command-Id",
+            "Idempotency-Key",
+        ],
+    )
 
 
 @router.get("/payments", response_model=BackofficePaymentCollection)

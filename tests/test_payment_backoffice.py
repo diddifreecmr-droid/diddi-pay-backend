@@ -60,8 +60,26 @@ def test_backoffice_routes_are_documented_and_fail_closed():
     assert f"{base}/{{payment_intent_id}}/callbacks/{{event_id}}/retry" in paths
     assert f"{base}/{{payment_intent_id}}/settlements" in paths
     assert "/payfund/v1/internal/backoffice/commands/{command_id}" in paths
+    assert "/payfund/v1/internal/backoffice/capabilities" in paths
     response = TestClient(app).get(base)
     assert response.status_code == 401
+
+
+def test_backoffice_capabilities_are_versioned(monkeypatch):
+    monkeypatch.setattr(
+        backoffice_router,
+        "get_settings",
+        lambda: SimpleNamespace(
+            backoffice_read_scope="diddipay:operations:read",
+            backoffice_command_scope="diddipay:operations:write",
+        ),
+    )
+    result = backoffice_router.backoffice_capabilities(
+        ServicePrincipal("backoffice", "service:backoffice", frozenset())
+    )
+    assert result.contract_version == "backoffice.v1"
+    assert result.commands == ["retry_callback", "record_settlement"]
+    assert "Idempotency-Key" in result.command_headers
 
 
 def test_backoffice_reader_uses_scoped_service_identity(monkeypatch):

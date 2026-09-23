@@ -80,6 +80,21 @@ def test_summary_route_is_in_openapi_and_rejects_unauthenticated_requests():
     assert pilotage_path in app.openapi()["paths"]
     response = TestClient(app).get(pilotage_path, params={"date": "2026-09-18"})
     assert response.status_code == 401
+    assert "/payfund/v1/internal/pilotage/capabilities" in app.openapi()["paths"]
+
+
+def test_pilotage_capabilities_are_versioned(monkeypatch):
+    monkeypatch.setattr(
+        summary_router,
+        "get_settings",
+        lambda: SimpleNamespace(payment_summary_scope="diddipay:payment-summary:read"),
+    )
+    result = summary_router.pilotage_capabilities(
+        ServicePrincipal("pilotage", "service:pilotage", frozenset())
+    )
+    assert result.contract_version == "pilotage.v1"
+    assert result.currency == "XOF"
+    assert result.aggregates == ["daily_summary", "health_summary"]
 
 
 def test_pilotage_v1_response_is_stable_and_financially_explicit(monkeypatch):

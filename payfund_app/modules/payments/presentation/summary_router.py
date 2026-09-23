@@ -79,6 +79,16 @@ class PilotageHealthSummaryResponse(BaseModel):
     deep_links: list[PilotageDeepLink]
 
 
+class PilotageCapabilitiesResponse(BaseModel):
+    contract_version: Literal["pilotage.v1"] = "pilotage.v1"
+    module: Literal["diddipay"] = "diddipay"
+    authentication: Literal["diddifreeid_service_token"] = "diddifreeid_service_token"
+    scope: str
+    timezone: Literal["Africa/Abidjan"] = "Africa/Abidjan"
+    currency: Literal["XOF"] = "XOF"
+    aggregates: list[str]
+
+
 def require_pilotage_service(
     authorization: Annotated[str | None, Header()] = None,
     client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
@@ -97,6 +107,16 @@ def require_pilotage_service(
         client_id_header=client_id,
         required_scopes=accepted_scopes,
         allowed_client_ids={settings.payment_summary_client_id},
+    )
+
+
+@router.get("/pilotage/capabilities", response_model=PilotageCapabilitiesResponse)
+def pilotage_capabilities(
+    _: Annotated[ServicePrincipal, Depends(require_pilotage_service)],
+) -> PilotageCapabilitiesResponse:
+    return PilotageCapabilitiesResponse(
+        scope=get_settings().payment_summary_scope,
+        aggregates=["daily_summary", "health_summary"],
     )
 
 
