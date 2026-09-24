@@ -81,55 +81,74 @@ Le manifeste machine-readable officiel est versionne dans
 `docs/manifests/diddipay-backoffice-v1.json`. Le bloc ci-dessous en est la lecture humaine ;
 le fichier JSON fait foi pour l'integration et les controles automatises.
 
+## Projection DiddiFree Pro
+
+La capability `diddipay/wallet` est declaree pour que DiddiFreeID expose un etat wallet lisible dans
+`/pro/me`. Cette projection reste volontairement coarse-grained : elle peut indiquer
+`available`, `limited`, `unavailable` ou `stale`, et l'acces global peut etre `enabled`,
+`disabled`, `suspended` ou `revoked`.
+
+Cette projection n'autorise aucune operation financiere. Les soldes, PIN, transferts, retraits,
+payouts, limites, risque et autorisations de paiement restent toujours controles par DiddiPay.
+
 ```json
-[
-  {
-    "module": "diddipay",
-    "name": "list_payments",
-    "permission": "read",
-    "description": "Consulter la file operationnelle des PaymentIntents",
-    "method": "GET",
-    "path": "/payfund/v1/internal/backoffice/payments",
-    "requires_reason": false,
-    "requires_idempotency": false,
-    "execution_mode": "interactive",
-    "service_scope": "diddipay:operations:read"
-  },
-  {
-    "module": "diddipay",
-    "name": "get_payment_detail",
-    "permission": "read",
-    "description": "Inspecter les tentatives et effets financiers d'un PaymentIntent",
-    "method": "GET",
-    "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}",
-    "requires_reason": false,
-    "requires_idempotency": false,
-    "execution_mode": "interactive",
-    "service_scope": "diddipay:operations:read"
-  },
-  {
-    "module": "diddipay",
-    "name": "retry_payment_callback",
-    "permission": "write",
-    "description": "Remettre en file un callback DiddiPay en dead letter",
-    "method": "POST",
-    "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}/callbacks/{event_id}/retry",
-    "requires_reason": true,
-    "requires_idempotency": true,
-    "execution_mode": "command",
-    "service_scope": "diddipay:operations:write"
-  },
-  {
-    "module": "diddipay",
-    "name": "record_payment_settlement",
-    "permission": "write",
-    "description": "Enregistrer un versement PSP constate par les operations",
-    "method": "POST",
-    "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}/settlements",
-    "requires_reason": true,
-    "requires_idempotency": true,
-    "execution_mode": "command",
-    "service_scope": "diddipay:operations:write"
-  }
-]
+{
+  "contract_version": "backoffice.v1",
+  "module": "diddipay",
+  "pro_capabilities": [
+    {
+      "service": "diddipay",
+      "capability_type": "wallet",
+      "projection_target": "diddifreeid/pro",
+      "projection_authorizes_financial_operations": false,
+      "financial_operations_allowed": []
+    }
+  ],
+  "commands": [
+    {
+      "name": "list_payments",
+      "permission": "read",
+      "description": "Consulter la file operationnelle des PaymentIntents",
+      "method": "GET",
+      "path": "/payfund/v1/internal/backoffice/payments",
+      "requires_reason": false,
+      "requires_idempotency": false,
+      "execution_mode": "interactive",
+      "service_scope": "diddipay:operations:read"
+    },
+    {
+      "name": "get_payment_detail",
+      "permission": "read",
+      "description": "Inspecter les tentatives et effets financiers d'un PaymentIntent",
+      "method": "GET",
+      "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}",
+      "requires_reason": false,
+      "requires_idempotency": false,
+      "execution_mode": "interactive",
+      "service_scope": "diddipay:operations:read"
+    },
+    {
+      "name": "retry_payment_callback",
+      "permission": "write",
+      "description": "Remettre en file un callback DiddiPay en dead letter",
+      "method": "POST",
+      "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}/callbacks/{event_id}/retry",
+      "requires_reason": true,
+      "requires_idempotency": true,
+      "execution_mode": "command",
+      "service_scope": "diddipay:operations:write"
+    },
+    {
+      "name": "record_payment_settlement",
+      "permission": "write",
+      "description": "Enregistrer un versement PSP constate par les operations",
+      "method": "POST",
+      "path": "/payfund/v1/internal/backoffice/payments/{payment_intent_id}/settlements",
+      "requires_reason": true,
+      "requires_idempotency": true,
+      "execution_mode": "command",
+      "service_scope": "diddipay:operations:write"
+    }
+  ]
+}
 ```

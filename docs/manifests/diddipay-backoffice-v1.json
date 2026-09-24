@@ -1,6 +1,37 @@
 {
   "contract_version": "backoffice.v1",
   "module": "diddipay",
+  "pro_capabilities": [
+    {
+      "service": "diddipay",
+      "capability_type": "wallet",
+      "owner": "diddipay",
+      "projection_target": "diddifreeid/pro",
+      "projection_authorizes_financial_operations": false,
+      "financial_operations_allowed": [],
+      "operational_statuses": [
+        "available",
+        "limited",
+        "unavailable",
+        "stale"
+      ],
+      "access_statuses": [
+        "enabled",
+        "disabled",
+        "suspended",
+        "revoked"
+      ],
+      "forbidden_by_projection": [
+        "balance_read",
+        "payment_authorization",
+        "transfer",
+        "withdrawal",
+        "pin_validation",
+        "risk_decision",
+        "limit_decision"
+      ]
+    }
+  ],
   "commands": [
     {
       "name": "list_payments",

@@ -95,6 +95,11 @@ def test_pilotage_capabilities_are_versioned(monkeypatch):
     assert result.contract_version == "pilotage.v1"
     assert result.currency == "XOF"
     assert result.aggregates == ["daily_summary", "health_summary"]
+    [wallet] = result.pro_capabilities
+    assert wallet.service == "diddipay"
+    assert wallet.capability_type == "wallet"
+    assert wallet.projection_authorizes_financial_operations is False
+    assert wallet.financial_operations_allowed == []
 
 
 def test_pilotage_v1_response_is_stable_and_financially_explicit(monkeypatch):

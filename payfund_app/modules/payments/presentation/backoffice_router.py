@@ -14,6 +14,10 @@ from payfund_app.modules.payments.application.backoffice import BackofficePaymen
 from payfund_app.modules.payments.application.backoffice_commands import (
     BackofficeCommandService,
 )
+from payfund_app.modules.payments.presentation.capability_declarations import (
+    WalletCapabilityDeclaration,
+    wallet_capability_declarations,
+)
 from payfund_app.modules.payments.infra.backoffice import SqlBackofficePaymentRepository
 from payfund_app.modules.payments.infra.backoffice_commands import (
     SqlBackofficeCommandRepository,
@@ -88,6 +92,7 @@ class BackofficeCapabilitiesResponse(BaseModel):
     resources: list[str]
     commands: list[str]
     command_headers: list[str]
+    pro_capabilities: list[WalletCapabilityDeclaration]
 
 
 def require_backoffice_reader(
@@ -175,6 +180,7 @@ def backoffice_capabilities(
             "X-Backoffice-Command-Id",
             "Idempotency-Key",
         ],
+        pro_capabilities=wallet_capability_declarations(),
     )
 
 

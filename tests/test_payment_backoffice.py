@@ -79,6 +79,13 @@ def test_backoffice_manifest_matches_openapi_and_security_contract():
     manifest = json.loads(BACKOFFICE_MANIFEST.read_text(encoding="utf-8"))
     assert manifest["contract_version"] == "backoffice.v1"
     assert manifest["module"] == "diddipay"
+    [wallet] = manifest["pro_capabilities"]
+    assert wallet["service"] == "diddipay"
+    assert wallet["capability_type"] == "wallet"
+    assert wallet["projection_authorizes_financial_operations"] is False
+    assert wallet["financial_operations_allowed"] == []
+    assert "balance_read" in wallet["forbidden_by_projection"]
+    assert "payment_authorization" in wallet["forbidden_by_projection"]
 
     openapi_paths = app.openapi()["paths"]
     expected_names = {
@@ -124,6 +131,13 @@ def test_backoffice_capabilities_are_versioned(monkeypatch):
     assert result.contract_version == "backoffice.v1"
     assert result.commands == ["retry_callback", "record_settlement"]
     assert "Idempotency-Key" in result.command_headers
+    [wallet] = result.pro_capabilities
+    assert wallet.service == "diddipay"
+    assert wallet.capability_type == "wallet"
+    assert wallet.projection_authorizes_financial_operations is False
+    assert wallet.financial_operations_allowed == []
+    assert "pin_validation" in wallet.forbidden_by_projection
+    assert "withdrawal" in wallet.forbidden_by_projection
 
 
 def test_backoffice_reader_uses_scoped_service_identity(monkeypatch):

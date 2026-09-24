@@ -58,3 +58,13 @@ intervention. Si la source ne peut pas etre lue, les compteurs valent `null` et 
 
 `GET /payfund/v1/internal/v1/payment-summary` reste disponible temporairement pour l'ancien
 collecteur. Les nouvelles integrations utilisent exclusivement le contrat `pilotage.v1`.
+
+## Projection DiddiFree Pro
+
+`GET /payfund/v1/internal/pilotage/capabilities` declare aussi la capability `diddipay/wallet`.
+Pilotage peut l'utiliser pour savoir que DiddiPay publie un etat wallet vers DiddiFreeID, mais pas
+pour inferer une autorisation financiere.
+
+La projection vers `/pro/me` n'autorise aucune operation de paiement, lecture de solde, validation
+PIN, transfert, retrait, payout, decision de risque ou decision de limite. Ces decisions restent
+portees exclusivement par DiddiPay.

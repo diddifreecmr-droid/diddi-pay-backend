@@ -23,6 +23,10 @@ from payfund_app.modules.payments.infra.daily_summary import (
 from payfund_app.modules.payments.infra.health_summary import (
     SqlPaymentHealthSummaryRepository,
 )
+from payfund_app.modules.payments.presentation.capability_declarations import (
+    WalletCapabilityDeclaration,
+    wallet_capability_declarations,
+)
 from payfund_app.modules.payments.presentation.deps import SessionDep
 
 router = APIRouter(prefix="/internal", tags=["internal-pilotage"])
@@ -87,6 +91,7 @@ class PilotageCapabilitiesResponse(BaseModel):
     timezone: Literal["Africa/Abidjan"] = "Africa/Abidjan"
     currency: Literal["XOF"] = "XOF"
     aggregates: list[str]
+    pro_capabilities: list[WalletCapabilityDeclaration]
 
 
 def require_pilotage_service(
@@ -117,6 +122,7 @@ def pilotage_capabilities(
     return PilotageCapabilitiesResponse(
         scope=get_settings().payment_summary_scope,
         aggregates=["daily_summary", "health_summary"],
+        pro_capabilities=wallet_capability_declarations(),
     )
 
 
