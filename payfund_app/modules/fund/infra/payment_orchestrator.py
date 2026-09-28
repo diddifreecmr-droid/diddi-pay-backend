@@ -17,6 +17,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentIntentRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
+from payfund_app.core.config import get_settings
 from payfund_app.modules.payments.presentation.deps import get_processor_registry
 
 
@@ -27,6 +28,7 @@ class InProcessPaymentOrchestrator:
             PaymentAttemptRepository(session),
             get_processor_registry(),
             SqlAlchemyUnitOfWork(session),
+            default_processor=get_settings().payment_processor_mode,
         )
 
     def create_collection(self, **values) -> FundPaymentResult:

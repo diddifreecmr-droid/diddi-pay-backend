@@ -82,11 +82,17 @@ class PaymentUseCases:
         attempts: PaymentAttemptRepositoryPort,
         processors: ProcessorRegistry,
         uow: UnitOfWorkPort,
+        default_processor: str | None = None,
     ) -> None:
         self.intents = intents
         self.attempts = attempts
         self.processors = processors
         self.uow = uow
+        # Which processor NEW intents prefer (typically PAYMENT_PROCESSOR_MODE). Distinct from
+        # what the registry has *registered* — the registry may hold several processors at once
+        # so that reconciliation can still resolve an attempt's own processor after this setting
+        # changes; this value only steers the choice for intents created from now on.
+        self.default_processor = default_processor
 
     def create(self, command: CreatePaymentIntentCommand) -> PaymentView:
         fingerprint = command.fingerprint()
@@ -99,6 +105,7 @@ class PaymentUseCases:
             direction=PaymentDirection.COLLECTION,
             channel=command.channel,
             network=command.network,
+            preferred_processor=self.default_processor,
         )
         intent = PaymentIntent(
             client_id=command.client_id,

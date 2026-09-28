@@ -68,6 +68,7 @@ def _use_cases(session, processors) -> PaymentUseCases:
         PaymentAttemptRepository(session),
         processors,
         SqlAlchemyUnitOfWork(session),
+        default_processor=get_settings().payment_processor_mode,
     )
 
 

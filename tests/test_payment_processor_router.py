@@ -108,6 +108,30 @@ def test_preferred_processor_must_support_requested_capability():
         )
 
 
+def test_preferred_processor_wins_even_when_alphabetically_after_others():
+    # SCRUM-511: once both sandbox and paystack are registered together, plain priority/name
+    # ordering would pick "paystack" first (alphabetically before "sandbox") for any request
+    # with no explicit preference. preferred_processor must override that ordering, so
+    # PAYMENT_PROCESSOR_MODE keeps deciding what NEW intents use.
+    registry = ProcessorRegistry()
+    registry.register(
+        processor("paystack", directions={PaymentDirection.COLLECTION}, channels={"card"})
+    )
+    registry.register(
+        processor(
+            "sandbox", directions={PaymentDirection.COLLECTION}, channels={"card"}
+        )
+    )
+
+    selected = registry.select(
+        currency="XOF",
+        direction=PaymentDirection.COLLECTION,
+        channel="card",
+        preferred_processor="sandbox",
+    )
+    assert selected.name == "sandbox"
+
+
 def test_duplicate_processor_registration_is_rejected():
     registry = ProcessorRegistry()
     adapter = processor("paystack", directions={PaymentDirection.COLLECTION})

@@ -77,13 +77,24 @@ _registry: ProcessorRegistry | None = None
 
 
 def get_processor_registry() -> ProcessorRegistry:
+    """Register every processor that's actually configured, not just the current mode.
+
+    SCRUM-511: this used to register only whichever single processor
+    `PAYMENT_PROCESSOR_MODE` named, and raise on anything else. That breaks reconciliation
+    (`ProcessorRegistry.get(attempt.processor)`) for any attempt created under a different mode
+    than whatever this process currently has — including across the app/worker process split,
+    since each builds its own registry independently. `PAYMENT_PROCESSOR_MODE` still controls
+    which processor *new* intents prefer (see `PaymentUseCases.default_processor` /
+    `preferred_processor`); it no longer gates what gets registered.
+    """
     global _registry
     if _registry is None:
         _registry = ProcessorRegistry()
         settings = get_settings()
-        if settings.payment_processor_mode == "sandbox":
-            _registry.register(SandboxPaymentProcessor())
-        elif settings.payment_processor_mode == "paystack":
+        # Free, no external credentials — always available so reconciliation can resolve any
+        # attempt stamped "sandbox", regardless of the currently configured mode.
+        _registry.register(SandboxPaymentProcessor())
+        if settings.paystack_secret_key:
             _registry.register(
                 PaystackPaymentProcessor(
                     secret_key=settings.paystack_secret_key,
@@ -91,9 +102,9 @@ def get_processor_registry() -> ProcessorRegistry:
                     webhook_secret=settings.paystack_webhook_secret or None,
                 )
             )
-        else:
+        elif settings.payment_processor_mode == "paystack":
             raise ValueError(
-                f"Unsupported PAYMENT_PROCESSOR_MODE={settings.payment_processor_mode!r}"
+                "PAYMENT_PROCESSOR_MODE=paystack but PAYSTACK_SECRET_KEY is empty."
             )
     return _registry
 
