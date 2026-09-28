@@ -20,6 +20,11 @@ from payfund_app.modules.wallet.infra.repositories import (
 
 BASE = "/payfund/v1/wallet"
 PROVIDER = "orange_money"
+# Mode de passerelle actif dans l'environnement de test (conftest force PAYMENT_GATEWAY_MODE=stub).
+# Depuis la bascule de la bucketisation du compte suspense (par processeur, pas par opérateur),
+# c'est cette valeur — pas PROVIDER — qui clé le compte technique et confirmer_operation/
+# echouer_operation.
+GATEWAY_MODE = "stub"
 
 
 def _key() -> dict[str, str]:
@@ -36,13 +41,13 @@ def _entries(session, transaction_id: str) -> list[LedgerEntry]:
 
 def _confirmer(session, transaction_id: str):
     return WalletUseCases(session).confirmer_operation(
-        uuid.UUID(transaction_id), provider=PROVIDER
+        uuid.UUID(transaction_id), gateway_mode=GATEWAY_MODE
     )
 
 
 def _echouer(session, transaction_id: str):
     return WalletUseCases(session).echouer_operation(
-        uuid.UUID(transaction_id), provider=PROVIDER
+        uuid.UUID(transaction_id), gateway_mode=GATEWAY_MODE
     )
 
 
@@ -91,8 +96,9 @@ def test_depot_confirme_credite_le_client_et_debite_le_suspense(
         for e in entries
     ) == 0
 
-    # Le compte suspense part à découvert jusqu'à réconciliation (§2).
-    suspense_id = GatewayAccountRepository(session).account_id_for(PROVIDER)
+    # Le compte suspense part à découvert jusqu'à réconciliation (§2). Bucketé par processeur
+    # (gateway_mode), pas par opérateur télécom — voir _compte_suspense.
+    suspense_id = GatewayAccountRepository(session).account_id_for(GATEWAY_MODE)
     assert AccountRepository(session).balance(suspense_id).amount == -5000
 
 

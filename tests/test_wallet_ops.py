@@ -120,7 +120,10 @@ def test_ops_reconcile_paystack_finalise_un_webhook_manque(
                 currency="XOF",
             )
 
-    monkeypatch.setattr("payfund_app.modules.wallet.presentation.routers.PaystackGateway", FakeGateway)
+    monkeypatch.setattr(
+        "payfund_app.modules.wallet.infra.gateways.gateway_for_mode",
+        lambda mode: FakeGateway(),
+    )
 
     response = client.post(f"{BASE}/ops/paystack/reconcile/{transaction.id}")
 

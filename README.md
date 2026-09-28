@@ -195,6 +195,25 @@ Le mode Paystack du wallet ne prend pas en charge les retraits. `POST /wallet/wi
 demande n'est pas celui de la sandbox Orange Money/Wave active. Un `202 pending` sous `stub` ou
 une sandbox locale ne prouve pas un versement externe.
 
+Second processeur réel, PawaPay (Mobile Money XOF — Bénin, Burkina Faso, Côte d'Ivoire,
+Sénégal), dépôt **et** retrait tous deux pris en charge :
+
+- `PAYMENT_GATEWAY_MODE=pawapay`
+- `PAWAPAY_API_TOKEN=<token>`
+- `PAWAPAY_BASE_URL` (défaut : sandbox `https://api.sandbox.pawapay.io`)
+- pas de webhook route dédiée aujourd'hui : la confirmation passe par réconciliation manuelle
+  (`POST /wallet/ops/wallet/reconcile/{transaction_id}`), voir ci-dessous.
+- opérateur MTN/Orange/Moov résolu automatiquement depuis l'indicatif téléphonique du payeur —
+  voir `wallet/infra/pawapay_gateway.py` pour la liste des combinaisons pays+opérateur actives.
+- **code prêt, pas encore activé en production** : le mode réellement déployé est celui configuré
+  dans Portainer, indépendant de ce dépôt Git.
+
+Chaque transaction wallet persiste désormais le mode qui l'a traitée
+(`Transaction.gateway_mode`), pour que la réconciliation retrouve le bon adaptateur même après un
+changement de `PAYMENT_GATEWAY_MODE` — voir `WalletUseCases.reconcile_transaction`. Le compte
+suspense (§2, "Mobile Money suspense") est lui aussi bucketé par processeur et non plus par
+opérateur télécom.
+
 La politique de step-up est indépendante du provider. Le seuil se configure avec
 `WALLET_STEP_UP_THRESHOLD_XOF` (défaut : `50000`) et un transfert de ce montant ou plus exige
 une preuve JWT DiddiFreeID avec `purpose=wallet.transfer.high_value`. Le frontend ne doit pas

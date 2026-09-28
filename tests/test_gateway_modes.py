@@ -17,6 +17,7 @@ from payfund_app.modules.wallet.infra.gateways import (
     WaveSandboxGateway,
     get_gateway,
 )
+from payfund_app.modules.wallet.infra.pawapay_gateway import PawapayGateway
 
 
 def test_stub_gateway_is_default(monkeypatch):
@@ -93,6 +94,45 @@ def test_sandbox_orange_money_rejects_other_providers(monkeypatch):
         assert "mtn_momo" in str(exc)
     else:
         raise AssertionError("Expected NotImplementedError")
+
+
+def test_stub_and_sandbox_gateways_implement_verifier_retrait(monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "stub")
+    get_settings.cache_clear()
+    stub = get_gateway()
+    operation = stub.verifier_retrait("ref-stub")
+    assert operation.status in {GatewayStatus.PENDING, GatewayStatus.COMPLETED}
+
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "sandbox_orange_money")
+    get_settings.cache_clear()
+    orange = get_gateway()
+    assert orange.verifier_retrait("ref-orange").status == GatewayStatus.PENDING
+
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "sandbox_wave")
+    get_settings.cache_clear()
+    wave = get_gateway()
+    assert wave.verifier_retrait("ref-wave").status == GatewayStatus.PENDING
+
+
+def test_paystack_verifier_retrait_not_implemented(monkeypatch):
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_not_a_real_secret")
+    get_settings.cache_clear()
+    gateway = PaystackGateway()
+
+    with pytest.raises(NotImplementedError):
+        gateway.verifier_retrait("ref-1")
+
+
+def test_pawapay_gateway_is_selectable(monkeypatch):
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "pawapay")
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
+    get_settings.cache_clear()
+
+    gateway = get_gateway()
+
+    assert isinstance(gateway, PawapayGateway)
+    assert gateway.supports_withdrawal("mtn_momo")
+    assert not gateway.supports_withdrawal("wave")
 
 
 def test_paystack_withdrawal_is_rejected_before_ledger_write(monkeypatch):

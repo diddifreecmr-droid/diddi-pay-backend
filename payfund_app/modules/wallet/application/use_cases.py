@@ -57,6 +57,7 @@ from payfund_app.modules.wallet.domain.errors import (
     WithdrawalNotSupported,
 )
 from payfund_app.modules.wallet.domain.money import Balance, InvalidAmount, Money
+from payfund_app.modules.wallet.infra import gateways
 from payfund_app.modules.wallet.infra.gateways import (
     GatewayStatus,
     PaymentGatewayPort,
@@ -102,6 +103,15 @@ class DepositResult:
     transaction: Transaction
     authorization_url: str | None
     access_code: str | None
+
+
+@dataclass
+class ReconcileOutcome:
+    transaction: Transaction | None
+    # "not_found" | "missing_provider_reference" | "already_finalized"
+    # | "amount_or_currency_mismatch" | "completed" | "failed" | "pending"
+    status: str
+    gateway_mode: str | None
 
 
 class WalletUseCases:
@@ -537,23 +547,26 @@ class WalletUseCases:
 
     # --- Dépôt et retrait ----------------------------------------------------
 
-    def _compte_suspense(self, provider: str, currency: str = "XOF") -> uuid.UUID:
-        """Compte technique de l'opérateur, créé à la première utilisation.
+    def _compte_suspense(self, gateway_mode: str, currency: str = "XOF") -> uuid.UUID:
+        """Compte technique du *processeur*, créé à la première utilisation.
 
         C'est le « compte technique "Mobile Money suspense" représentant les fonds encaissés côté
-        opérateur mais pas encore réconciliés » du §2.
+        opérateur mais pas encore réconciliés » du §2. Bucketé par processeur (`gateway_mode`,
+        ex. "paystack", "pawapay") et non par opérateur télécom sous-jacent (mtn_momo, orange_money,
+        ...) : un processeur comme PawaPay règle en une seule relation de règlement quel que soit le
+        télécom emprunté, donc c'est cette granularité qui correspond à la réalité comptable.
         """
-        existing = self.gateways.account_id_for(provider)
+        existing = self.gateways.account_id_for(gateway_mode)
         if existing is not None:
             return existing
         account = self.accounts.create(
             user_id=None,
             account_type=AccountType.TECHNICAL,
             currency=currency,
-            reference=f"gateway:{provider}",
+            reference=f"gateway:{gateway_mode}",
             allows_negative_balance=True,
         )
-        self.gateways.register(provider, account.id)
+        self.gateways.register(gateway_mode, account.id)
         return account.id
 
     def deposer(
@@ -576,7 +589,8 @@ class WalletUseCases:
         montant = to_money(amount, compte.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
-        self._compte_suspense(provider, compte.currency)
+        gateway_mode = self.gateway.mode
+        self._compte_suspense(gateway_mode, compte.currency)
         if provider == "paystack" and not email:
             raise InvalidAmountError("L'adresse e-mail est requise pour Paystack.")
 
@@ -588,6 +602,7 @@ class WalletUseCases:
             account_id=compte.id,
             money=montant,
         )
+        transaction.gateway_mode = gateway_mode
 
         try:
             operation = self.gateway.initier_depot(
@@ -606,9 +621,9 @@ class WalletUseCases:
         self.session.flush()
 
         if operation.status is GatewayStatus.COMPLETED:
-            self.confirmer_operation(transaction.id, provider=provider)
+            self.confirmer_operation(transaction.id, gateway_mode=gateway_mode)
         elif operation.status is GatewayStatus.FAILED:
-            self.echouer_operation(transaction.id, provider=provider)
+            self.echouer_operation(transaction.id, gateway_mode=gateway_mode)
 
         return DepositResult(transaction, operation.authorization_url, operation.access_code)
 
@@ -634,7 +649,8 @@ class WalletUseCases:
             raise InvalidAmountError("Le montant doit être strictement positif.")
         if not self.gateway.supports_withdrawal(provider):
             raise WithdrawalNotSupported()
-        suspense_id = self._compte_suspense(provider, compte.currency)
+        gateway_mode = self.gateway.mode
+        suspense_id = self._compte_suspense(gateway_mode, compte.currency)
 
         transaction, _ = self.ledger.transfer(
             source_account_id=compte.id,
@@ -649,6 +665,7 @@ class WalletUseCases:
         transaction.account_id = compte.id
         transaction.amount = montant.to_db()
         transaction.currency = montant.currency
+        transaction.gateway_mode = gateway_mode
         self.session.flush()
 
         try:
@@ -665,13 +682,13 @@ class WalletUseCases:
         self.session.flush()
 
         if operation.status is GatewayStatus.COMPLETED:
-            self.confirmer_operation(transaction.id, provider=provider)
+            self.confirmer_operation(transaction.id, gateway_mode=gateway_mode)
         elif operation.status is GatewayStatus.FAILED:
-            self.echouer_operation(transaction.id, provider=provider)
+            self.echouer_operation(transaction.id, gateway_mode=gateway_mode)
 
         return transaction
 
-    def confirmer_operation(self, transaction_id: uuid.UUID, *, provider: str) -> Transaction:
+    def confirmer_operation(self, transaction_id: uuid.UUID, *, gateway_mode: str) -> Transaction:
         """L'opérateur a confirmé l'opération.
 
         Dépôt : c'est ici que les deux écritures sont passées. Retrait : elles existent déjà, on
@@ -685,7 +702,7 @@ class WalletUseCases:
 
         if transaction.type == str(TransactionType.DEPOSIT):
             montant = Money.from_db(transaction.amount, transaction.currency or "XOF")
-            suspense_id = self._compte_suspense(provider)
+            suspense_id = self._compte_suspense(gateway_mode)
             self.ledger.post_sur_transaction(
                 transaction,
                 lines=[
@@ -693,13 +710,13 @@ class WalletUseCases:
                         suspense_id,
                         Direction.DEBIT,
                         montant,
-                        f"wallet:deposit:{provider}",
+                        f"wallet:deposit:{gateway_mode}",
                     ),
                     PostingLine(
                         transaction.account_id,
                         Direction.CREDIT,
                         montant,
-                        f"wallet:deposit:{provider}",
+                        f"wallet:deposit:{gateway_mode}",
                     ),
                 ],
             )
@@ -711,7 +728,7 @@ class WalletUseCases:
             )
         return transaction
 
-    def echouer_operation(self, transaction_id: uuid.UUID, *, provider: str) -> Transaction:
+    def echouer_operation(self, transaction_id: uuid.UUID, *, gateway_mode: str) -> Transaction:
         """L'opérateur a rejeté l'opération.
 
         Dépôt : aucune écriture n'avait été passée, la transaction devient simplement `failed`.
@@ -725,8 +742,71 @@ class WalletUseCases:
             return transaction
 
         if transaction.type == str(TransactionType.WITHDRAWAL):
-            self.ledger.contre_passer(transaction, reference=f"wallet:reversal:{provider}")
+            self.ledger.contre_passer(transaction, reference=f"wallet:reversal:{gateway_mode}")
             self.transactions.marquer(transaction, TransactionStatus.REVERSED)
         else:
             self.transactions.marquer(transaction, TransactionStatus.FAILED)
         return transaction
+
+    # --- Réconciliation -------------------------------------------------------
+
+    def reconcile_transaction(self, transaction_id: uuid.UUID) -> ReconcileOutcome:
+        """Cœur partagé de la réconciliation, indépendant du processeur et de l'appelant.
+
+        Utilisé à la fois par la route HTTP `/ops/wallet/reconcile/{id}` et par le sweep
+        `ops.maintenance.reconcile_pending_paystack_deposits` : un seul endroit sait comment
+        interroger un adaptateur, comparer montant/devise, et confirmer/échouer une transaction.
+        Choisit `verifier_depot` ou `verifier_retrait` selon `transaction.type`, et résout
+        l'adaptateur via `Transaction.gateway_mode` — jamais via le mode global courant, pour
+        rester correct même après un changement de PAYMENT_GATEWAY_MODE.
+        """
+        transaction = self.transactions.get(transaction_id)
+        if transaction is None:
+            return ReconcileOutcome(transaction=None, status="not_found", gateway_mode=None)
+        if transaction.provider_reference is None:
+            return ReconcileOutcome(
+                transaction=transaction, status="missing_provider_reference", gateway_mode=None
+            )
+        if transaction.status in {
+            str(TransactionStatus.COMPLETED),
+            str(TransactionStatus.FAILED),
+            str(TransactionStatus.REVERSED),
+        }:
+            return ReconcileOutcome(
+                transaction=transaction,
+                status="already_finalized",
+                gateway_mode=transaction.gateway_mode,
+            )
+
+        # Lignes historiques (avant l'ajout de gateway_mode) : seul "paystack" a jamais tourné
+        # en production, donc c'est le seul choix de repli correct.
+        gateway_mode = transaction.gateway_mode or "paystack"
+        gateway = gateways.gateway_for_mode(gateway_mode)
+        verifier = (
+            gateway.verifier_retrait
+            if transaction.type == str(TransactionType.WITHDRAWAL)
+            else gateway.verifier_depot
+        )
+        result = verifier(transaction.provider_reference)
+
+        if result.status is GatewayStatus.COMPLETED:
+            if result.amount is not None and (
+                result.amount != transaction.amount or result.currency != transaction.currency
+            ):
+                return ReconcileOutcome(
+                    transaction=transaction,
+                    status="amount_or_currency_mismatch",
+                    gateway_mode=gateway_mode,
+                )
+            self.confirmer_operation(transaction.id, gateway_mode=gateway_mode)
+            return ReconcileOutcome(
+                transaction=transaction, status="completed", gateway_mode=gateway_mode
+            )
+        if result.status is GatewayStatus.FAILED:
+            self.echouer_operation(transaction.id, gateway_mode=gateway_mode)
+            return ReconcileOutcome(
+                transaction=transaction, status="failed", gateway_mode=gateway_mode
+            )
+        return ReconcileOutcome(
+            transaction=transaction, status="pending", gateway_mode=gateway_mode
+        )

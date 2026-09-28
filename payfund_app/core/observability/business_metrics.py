@@ -45,7 +45,19 @@ OUTBOX_EVENTS = Gauge(
 )
 
 _PROVIDERS = frozenset(
-    {"paystack", "sandbox", "orange_money", "mtn_momo", "wave", "moov", "unknown"}
+    {
+        "paystack",
+        "pawapay",
+        "sandbox",
+        "stub",
+        "sandbox_orange_money",
+        "sandbox_wave",
+        "orange_money",
+        "mtn_momo",
+        "wave",
+        "moov",
+        "unknown",
+    }
 )
 _INTENT_STATUSES = frozenset(
     {"pending", "requires_action", "processing", "succeeded", "failed", "cancelled"}

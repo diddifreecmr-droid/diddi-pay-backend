@@ -155,6 +155,10 @@ class Transaction(Base):
     currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
     # Identifiant de l'opération chez l'opérateur, pour le support et la réconciliation.
     provider_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Quel adaptateur (gateways.MODES) a traité cette opération — permet de retrouver le bon
+    # adaptateur à la réconciliation même si PAYMENT_GATEWAY_MODE a changé depuis. NULL sur les
+    # lignes historiques : traité comme "paystack" par WalletUseCases.reconcile_transaction.
+    gateway_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # Lien de checkout Paystack (dépôt uniquement) — persisté pour rester récupérable après le
     # `202` initial : un rejeu de la même Idempotency-Key, ou un `GET /transactions/{id}` plus
     # tard, doivent pouvoir le retrouver au lieu de renvoyer `null`.

@@ -532,7 +532,7 @@ Pas encore a considerer comme disponible tant que les sprints correspondants ne 
 
 - payout/retrait via le nouveau coeur orchestrateur ;
 - import automatique et rapprochement global des rapports de settlement Paystack ;
-- adaptateurs directs Orange Money, Wave ou MTN MoMo ;
+- adaptateurs directs (hors agrégateur) Orange Money, Wave ou MTN MoMo ;
 - wallet comme moyen de paiement du nouvel orchestrateur.
 
 Le retrait du wallet historique `/payfund/v1/wallet/withdraw` est distinct du futur payout du
@@ -540,3 +540,19 @@ coeur PaymentIntent. Sous `PAYMENT_GATEWAY_MODE=paystack`, il retourne
 `422 WITHDRAWAL_NOT_SUPPORTED` sans réserver les fonds : l'adaptateur Paystack wallet ne sait
 initialiser que les dépôts. Les modes `stub`, `sandbox_orange_money` et `sandbox_wave` simulent
 le retrait et ne constituent pas une preuve de versement externe.
+
+Un adaptateur `PAYMENT_GATEWAY_MODE=pawapay` existe (`wallet/infra/pawapay_gateway.py`) et prend
+en charge dépôt **et** retrait réels via PawaPay Mobile Money (MTN, Orange, Moov selon le pays du
+numéro — Bénin, Burkina Faso, Côte d'Ivoire, Sénégal aujourd'hui) : la limitation
+`WITHDRAWAL_NOT_SUPPORTED` ci-dessus ne s'applique pas à ce mode. Code prêt et testé, **pas encore
+activé en production** — le réglage `PAYMENT_GATEWAY_MODE` déployé reste celui configuré dans
+Portainer, à changer explicitement pour bénéficier de PawaPay.
+
+Chaque transaction wallet persiste désormais le processeur qui l'a traitée
+(`Transaction.gateway_mode`, nullable — `NULL` sur les lignes antérieures à ce champ signifie
+`paystack`, seul mode ayant jamais tourné en production). La réconciliation manuelle
+(`POST /payfund/v1/wallet/ops/wallet/reconcile/{transaction_id}`) résout donc le bon adaptateur
+par transaction et fonctionne pour n'importe quel processeur enregistré, dépôt ou retrait — plus
+seulement Paystack en dépôt. L'ancien chemin
+`POST /payfund/v1/wallet/ops/paystack/reconcile/{transaction_id}` reste disponible, comportement
+identique, pour ne pas casser un appelant existant.

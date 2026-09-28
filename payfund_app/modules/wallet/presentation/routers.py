@@ -568,79 +568,53 @@ def admin_reset_pin(
     }
 
 
+# status renvoyé par WalletUseCases.reconcile_transaction -> (outcome de log, reason de log).
+# outcome=None signifie "reprendre transaction.status tel quel" (cas already_finalized, où le
+# statut final peut être completed/failed/reversed selon le type d'opération).
+_RECONCILE_LOG_MAPPING: dict[str, tuple[str | None, str]] = {
+    "already_finalized": (None, "already_finalized"),
+    "amount_or_currency_mismatch": ("ignored", "amount_or_currency_mismatch"),
+    "completed": ("completed", "provider_completed"),
+    "failed": ("failed", "provider_failed"),
+    "pending": ("pending", "provider_pending"),
+}
+
+
 @router.post(
     "/ops/paystack/reconcile/{transaction_id}", response_model=PaystackReconcileResponse
 )
-def reconcile_paystack_deposit(
+@router.post("/ops/wallet/reconcile/{transaction_id}", response_model=PaystackReconcileResponse)
+def reconcile_wallet_transaction(
     transaction_id: uuid.UUID,
     user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Reconciliation interne pour dépôts Paystack restés en `pending` après une webhook manquée."""
+    """Réconciliation interne pour dépôts/retraits restés en `pending` après un callback manqué.
+
+    Fonctionne pour n'importe quel processeur (Paystack, PawaPay, ...) : l'adaptateur est résolu
+    via `Transaction.gateway_mode`, jamais via le mode global courant (voir
+    `WalletUseCases.reconcile_transaction`). `/ops/paystack/reconcile/{id}` est conservé, identique
+    en tout point, pour ne pas casser un appelant existant de cette URL.
+    """
     _require_admin(user)
     use_cases = WalletUseCases(session, bus=get_bus())
-    transaction = use_cases.transactions.get(transaction_id)
-    if transaction is None:
-        return {"status": "not_found"}
-    if transaction.provider_reference is None:
-        return {"status": "missing_provider_reference"}
-    if transaction.status in {"completed", "failed", "reversed"}:
-        ReconciliationLogRepository(session).append(
-            transaction_id=transaction.id,
-            provider="paystack",
-            provider_reference=transaction.provider_reference,
-            event="manual_reconcile",
-            outcome=transaction.status,
-            reason="already_finalized",
-        )
-        return {"status": "already_finalized", "transaction_id": str(transaction.id)}
+    outcome = use_cases.reconcile_transaction(transaction_id)
 
-    gateway = PaystackGateway()
-    result = gateway.verifier_depot(transaction.provider_reference)
-    if result.status is GatewayStatus.COMPLETED:
-        if result.amount != transaction.amount or result.currency != transaction.currency:
-            ReconciliationLogRepository(session).append(
-                transaction_id=transaction.id,
-                provider="paystack",
-                provider_reference=transaction.provider_reference,
-                event="manual_reconcile",
-                outcome="ignored",
-                reason="amount_or_currency_mismatch",
-            )
-            return {
-                "status": "amount_or_currency_mismatch",
-                "transaction_id": str(transaction.id),
-            }
-        use_cases.confirmer_operation(transaction.id, provider="paystack")
-        ReconciliationLogRepository(session).append(
-            transaction_id=transaction.id,
-            provider="paystack",
-            provider_reference=transaction.provider_reference,
-            event="manual_reconcile",
-            outcome="completed",
-            reason="provider_completed",
-        )
-        return {"status": "completed", "transaction_id": str(transaction.id)}
-    if result.status is GatewayStatus.FAILED:
-        use_cases.echouer_operation(transaction.id, provider="paystack")
-        ReconciliationLogRepository(session).append(
-            transaction_id=transaction.id,
-            provider="paystack",
-            provider_reference=transaction.provider_reference,
-            event="manual_reconcile",
-            outcome="failed",
-            reason="provider_failed",
-        )
-        return {"status": "failed", "transaction_id": str(transaction.id)}
+    if outcome.status in {"not_found", "missing_provider_reference"}:
+        return {"status": outcome.status}
+
+    transaction = outcome.transaction
+    gateway_mode = outcome.gateway_mode or "paystack"
+    log_outcome, log_reason = _RECONCILE_LOG_MAPPING[outcome.status]
     ReconciliationLogRepository(session).append(
         transaction_id=transaction.id,
-        provider="paystack",
+        provider=gateway_mode,
         provider_reference=transaction.provider_reference,
         event="manual_reconcile",
-        outcome="pending",
-        reason="provider_pending",
+        outcome=log_outcome or transaction.status,
+        reason=log_reason,
     )
-    return {"status": "pending", "transaction_id": str(transaction.id)}
+    return {"status": outcome.status, "transaction_id": str(transaction.id)}
 
 
 @router.get("/ops/paystack/pending", response_model=PendingPaystackTransactionListResponse)
@@ -889,7 +863,7 @@ async def paystack_webhook(
                 "reason": "amount_or_currency_mismatch",
                 "transaction_status": transaction.status,
             }
-        use_cases.confirmer_operation(transaction.id, provider="paystack")
+        use_cases.confirmer_operation(transaction.id, gateway_mode="paystack")
         emit(
             "info",
             "paystack.webhook.processed",
@@ -913,7 +887,7 @@ async def paystack_webhook(
         }
 
     if data.get("status") in {"failed", "abandoned", "reversed"}:
-        use_cases.echouer_operation(transaction.id, provider="paystack")
+        use_cases.echouer_operation(transaction.id, gateway_mode="paystack")
         emit(
             "warning",
             "paystack.webhook.processed",

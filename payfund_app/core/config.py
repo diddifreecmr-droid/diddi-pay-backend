@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     paystack_webhook_secret: str = ""
     paystack_environment: Literal["test", "live"] = "test"
 
+    # PawaPay (Mobile Money XOF). Sélectionnable via PAYMENT_GATEWAY_MODE=pawapay
+    # (voir wallet/infra/pawapay_gateway.py et gateways.get_gateway()).
+    pawapay_api_token: str = ""
+    pawapay_base_url: str = "https://api.sandbox.pawapay.io"
+
     # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
     # the PaymentIntent API until operations configures service credentials.
     payment_service_keys: str = ""

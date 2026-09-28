@@ -63,7 +63,10 @@ def test_reconcile_paystack_deposit_completes_success(monkeypatch, session, make
         def verifier_depot(self, reference):
             return GatewayOperation(provider_reference=reference, status=GatewayStatus.COMPLETED)
 
-    monkeypatch.setattr("payfund_app.ops.maintenance.PaystackGateway", FakeGateway)
+    monkeypatch.setattr(
+        "payfund_app.modules.wallet.infra.gateways.gateway_for_mode",
+        lambda mode: FakeGateway(),
+    )
 
     result = reconcile_paystack_deposit(session, transaction_id=transaction.id)
 
@@ -102,7 +105,10 @@ def test_reconcile_pending_paystack_deposits_sweep(monkeypatch, session, make_us
         def verifier_depot(self, reference):
             return GatewayOperation(provider_reference=reference, status=GatewayStatus.COMPLETED)
 
-    monkeypatch.setattr("payfund_app.ops.maintenance.PaystackGateway", FakeGateway)
+    monkeypatch.setattr(
+        "payfund_app.modules.wallet.infra.gateways.gateway_for_mode",
+        lambda mode: FakeGateway(),
+    )
 
     result = reconcile_pending_paystack_deposits(session)
 
@@ -165,7 +171,10 @@ def test_run_housekeeping_reconciles_then_relays(session, make_user, monkeypatch
         def verifier_depot(self, reference):
             return GatewayOperation(provider_reference=reference, status=GatewayStatus.COMPLETED)
 
-    monkeypatch.setattr("payfund_app.ops.maintenance.PaystackGateway", FakeGateway)
+    monkeypatch.setattr(
+        "payfund_app.modules.wallet.infra.gateways.gateway_for_mode",
+        lambda mode: FakeGateway(),
+    )
 
     bus = InMemoryEventBus()
     result = run_housekeeping(session, bus)

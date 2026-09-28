@@ -59,7 +59,6 @@ from payfund_app.modules.wallet.domain.entities import (
     TransactionStatus,
     TransactionType,
 )
-from payfund_app.modules.wallet.infra.gateways import GatewayStatus, PaystackGateway
 from payfund_app.modules.wallet.infra.models import Transaction
 from payfund_app.modules.wallet.infra.repositories import (
     OutboxRepository,
@@ -121,45 +120,36 @@ def backfill_wallet(
     )
 
 
+_EMIT_LEVEL_BY_STATUS = {
+    "failed": "warning",
+    "amount_or_currency_mismatch": "warning",
+}
+
+
 def reconcile_paystack_deposit(session: Session, *, transaction_id: uuid.UUID) -> ReconcileResult:
+    """Réconcilie une transaction wallet, quel que soit son processeur.
+
+    Nom conservé pour compatibilité (c'était historiquement Paystack-only) ; délègue entièrement
+    à `WalletUseCases.reconcile_transaction`, le même cœur qu'utilise la route HTTP
+    `/ops/wallet/reconcile/{id}`. Le garde-fou montant/devise qui manquait ici avant (la version
+    HTTP l'avait, celle-ci non) vient donc de facto avec cette unification.
+    """
     emit("info", "ops.reconcile.start", transaction_id=str(transaction_id))
     use_cases = WalletUseCases(session)
-    transaction = use_cases.transactions.get(transaction_id)
-    if transaction is None:
+    outcome = use_cases.reconcile_transaction(transaction_id)
+    if outcome.transaction is None:
         raise ValueError(f"Transaction introuvable: {transaction_id}")
-    if transaction.provider_reference is None:
+    if outcome.status == "missing_provider_reference":
         raise ValueError("Transaction sans provider_reference.")
-
-    result = PaystackGateway().verifier_depot(transaction.provider_reference)
-    if result.status is GatewayStatus.COMPLETED:
-        use_cases.confirmer_operation(transaction.id, provider="paystack")
-        session.commit()
-        emit(
-            "info",
-            "ops.reconcile.done",
-            transaction_id=str(transaction.id),
-            status="completed",
-        )
-        return ReconcileResult(transaction_id=transaction.id, status="completed")
-    if result.status is GatewayStatus.FAILED:
-        use_cases.echouer_operation(transaction.id, provider="paystack")
-        session.commit()
-        emit(
-            "warning",
-            "ops.reconcile.done",
-            transaction_id=str(transaction.id),
-            status="failed",
-        )
-        return ReconcileResult(transaction_id=transaction.id, status="failed")
 
     session.commit()
     emit(
-        "info",
+        _EMIT_LEVEL_BY_STATUS.get(outcome.status, "info"),
         "ops.reconcile.done",
-        transaction_id=str(transaction.id),
-        status="pending",
+        transaction_id=str(outcome.transaction.id),
+        status=outcome.status,
     )
-    return ReconcileResult(transaction_id=transaction.id, status="pending")
+    return ReconcileResult(transaction_id=outcome.transaction.id, status=outcome.status)
 
 
 @dataclass(frozen=True)
@@ -168,6 +158,7 @@ class BulkReconcileResult:
     completed: int
     failed: int
     pending: int
+    mismatched: int = 0
 
 
 @dataclass(frozen=True)
@@ -183,39 +174,56 @@ class HousekeepingResult:
 
 
 def reconcile_pending_paystack_deposits(session: Session) -> BulkReconcileResult:
-    """Sweep all pending Paystack deposits that still need a final provider verdict."""
+    """Sweep toutes les transactions wallet en attente d'un verdict processeur final.
+
+    Nom conservé pour compatibilité (c'était historiquement Paystack + dépôts uniquement) ; balaie
+    désormais dépôts *et* retraits, pour n'importe quel processeur — `reconcile_paystack_deposit`
+    résout l'adaptateur transaction par transaction via `Transaction.gateway_mode`.
+    """
     emit("info", "ops.reconcile.sweep.start")
-    pending_deposits = list(
+    pending_transactions = list(
         session.scalars(
             select(Transaction).where(
-                Transaction.type == str(TransactionType.DEPOSIT),
+                Transaction.type.in_(
+                    [str(TransactionType.DEPOSIT), str(TransactionType.WITHDRAWAL)]
+                ),
                 Transaction.status == str(TransactionStatus.PENDING),
                 Transaction.provider_reference.is_not(None),
                 Transaction.origin_module == "wallet",
             )
         )
     )
-    completed = failed = pending = 0
-    for transaction in pending_deposits:
+    completed = failed = pending = mismatched = 0
+    # Métriques par processeur réel plutôt qu'un "paystack" figé : NULL (lignes historiques)
+    # compte comme "paystack", même repli que reconcile_transaction.
+    per_mode: dict[str, dict[str, int]] = {}
+    for transaction in pending_transactions:
         result = reconcile_paystack_deposit(session, transaction_id=transaction.id)
+        mode = transaction.gateway_mode or "paystack"
+        tally = per_mode.setdefault(
+            mode, {"succeeded": 0, "failed": 0, "pending": 0, "mismatched": 0}
+        )
         if result.status == "completed":
             completed += 1
+            tally["succeeded"] += 1
         elif result.status == "failed":
             failed += 1
+            tally["failed"] += 1
+        elif result.status == "amount_or_currency_mismatch":
+            mismatched += 1
+            tally["mismatched"] += 1
         else:
             pending += 1
+            tally["pending"] += 1
     summary = BulkReconcileResult(
-        scanned=len(pending_deposits),
+        scanned=len(pending_transactions),
         completed=completed,
         failed=failed,
         pending=pending,
+        mismatched=mismatched,
     )
-    observe_reconciliation_summary(
-        provider="paystack",
-        succeeded=summary.completed,
-        failed=summary.failed,
-        pending=summary.pending,
-    )
+    for mode, tally in per_mode.items():
+        observe_reconciliation_summary(provider=mode, **tally)
     return summary
 
 

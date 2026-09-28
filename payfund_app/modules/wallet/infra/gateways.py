@@ -22,7 +22,7 @@ import httpx
 from payfund_app.core.config import get_settings
 
 PROVIDERS = ("paystack", "orange_money", "mtn_momo", "wave", "moov", "card_gateway")
-MODES = ("stub", "sandbox_orange_money", "sandbox_wave")
+MODES = ("stub", "sandbox_orange_money", "sandbox_wave", "paystack", "pawapay")
 
 
 class GatewayStatus(StrEnum):
@@ -42,6 +42,11 @@ class GatewayOperation:
 
 
 class PaymentGatewayPort(Protocol):
+    # Doit correspondre à une entrée de MODES : c'est cette valeur qui est persistée sur
+    # `Transaction.gateway_mode` et qui permet à `gateway_for_mode()` de retrouver le bon
+    # adaptateur, plus tard, indépendamment du mode global courant.
+    mode: str
+
     def supports_withdrawal(self, provider: str) -> bool: ...
 
     def initier_depot(
@@ -54,6 +59,8 @@ class PaymentGatewayPort(Protocol):
 
     def verifier_depot(self, reference: str) -> GatewayOperation: ...
 
+    def verifier_retrait(self, reference: str) -> GatewayOperation: ...
+
 
 class StubGateway:
     """Passerelle simulée générique.
@@ -62,6 +69,8 @@ class StubGateway:
     `PAYMENT_GATEWAY_AUTOCONFIRM=true` la fait répondre `completed` tout de suite, pour travailler
     en local sans simuler le retour de l'opérateur.
     """
+
+    mode = "stub"
 
     def __init__(self, autoconfirm: bool | None = None) -> None:
         self.autoconfirm = (
@@ -90,6 +99,9 @@ class StubGateway:
     def verifier_depot(self, reference: str) -> GatewayOperation:
         return self._operation()
 
+    def verifier_retrait(self, reference: str) -> GatewayOperation:
+        return self._operation()
+
 
 class OrangeMoneySandboxGateway(StubGateway):
     """Sandbox explicite pour Orange Money.
@@ -98,6 +110,7 @@ class OrangeMoneySandboxGateway(StubGateway):
     futurs appels réels Orange Money puissent se brancher sans changer les use cases du wallet.
     """
 
+    mode = "sandbox_orange_money"
     provider_name = "orange_money"
 
     def supports_withdrawal(self, provider: str) -> bool:
@@ -133,6 +146,12 @@ class OrangeMoneySandboxGateway(StubGateway):
             status=GatewayStatus.PENDING if not self.autoconfirm else GatewayStatus.COMPLETED,
         )
 
+    def verifier_retrait(self, reference: str) -> GatewayOperation:
+        return GatewayOperation(
+            provider_reference=reference,
+            status=GatewayStatus.PENDING if not self.autoconfirm else GatewayStatus.COMPLETED,
+        )
+
 
 class WaveSandboxGateway(StubGateway):
     """Sandbox explicite pour Wave.
@@ -141,6 +160,7 @@ class WaveSandboxGateway(StubGateway):
     réelle sans changer les use cases du wallet.
     """
 
+    mode = "sandbox_wave"
     provider_name = "wave"
 
     def supports_withdrawal(self, provider: str) -> bool:
@@ -174,6 +194,12 @@ class WaveSandboxGateway(StubGateway):
             status=GatewayStatus.PENDING if not self.autoconfirm else GatewayStatus.COMPLETED,
         )
 
+    def verifier_retrait(self, reference: str) -> GatewayOperation:
+        return GatewayOperation(
+            provider_reference=reference,
+            status=GatewayStatus.PENDING if not self.autoconfirm else GatewayStatus.COMPLETED,
+        )
+
 
 class PaystackGateway:
     """Adapter Paystack pour les dépôts wallet.
@@ -182,6 +208,8 @@ class PaystackGateway:
     webhook signé. On garde le provider agnostique dans le wallet : la transaction DiddiPay reste
     la source de vérité.
     """
+
+    mode = "paystack"
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -234,6 +262,9 @@ class PaystackGateway:
     ) -> GatewayOperation:
         raise NotImplementedError("Paystack withdraw not implemented yet.")
 
+    def verifier_retrait(self, reference: str) -> GatewayOperation:
+        raise NotImplementedError("Paystack withdraw verification not implemented yet.")
+
     def verifier_depot(self, reference: str) -> GatewayOperation:
         with httpx.Client(timeout=20.0) as client:
             response = client.get(
@@ -276,8 +307,15 @@ class PaystackGateway:
         return amount
 
 
-def get_gateway() -> PaymentGatewayPort:
-    mode = get_settings().payment_gateway_mode
+def gateway_for_mode(mode: str) -> PaymentGatewayPort:
+    """Résout un adaptateur par mode, indépendamment du réglage global courant.
+
+    Point de généralisation clé : utilisé aussi bien pour choisir la passerelle *active*
+    (`get_gateway()`, ci-dessous) que pour retrouver, plus tard, l'adaptateur qui a traité une
+    transaction *donnée* via `Transaction.gateway_mode` — même si le mode global a changé entre
+    temps (voir `WalletUseCases.reconcile_transaction`). Ajouter un processeur = ajouter une classe
+    et une branche ici ; rien d'autre n'a besoin de connaître la liste des passerelles.
+    """
     if mode == "stub":
         return StubGateway()
     if mode == "sandbox_orange_money":
@@ -286,5 +324,15 @@ def get_gateway() -> PaymentGatewayPort:
         return WaveSandboxGateway()
     if mode == "paystack":
         return PaystackGateway()
-    # Les adaptateurs réels (Orange Money, MTN, Wave, Moov, cartes) viendront ici.
+    if mode == "pawapay":
+        # Import différé : pawapay_gateway importe GatewayOperation/GatewayStatus depuis ce
+        # module, un import en tête de fichier créerait un cycle.
+        from payfund_app.modules.wallet.infra.pawapay_gateway import PawapayGateway
+
+        return PawapayGateway()
+    # Les adaptateurs réels (MTN, Wave, Moov, cartes) viendront ici.
     raise NotImplementedError(f"Passerelle non implémentée : {mode!r}")
+
+
+def get_gateway() -> PaymentGatewayPort:
+    return gateway_for_mode(get_settings().payment_gateway_mode)
