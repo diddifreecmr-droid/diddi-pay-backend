@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     )
     payment_checkout_return_targets: dict[str, AnyHttpUrl] = Field(default_factory=dict)
     payment_callback_url_fallback_enabled: bool = True
+    # Per-S2S-client allowlist of legacy callback_url origin+path prefixes
+    # (SCRUM-462). Keyed by client_id -> list of allowed "https://host/path"
+    # prefixes. Empty for a client = legacy callback allowed but audited
+    # (transitional); configure in Portainer to enforce. Non-HTTPS / userinfo /
+    # malformed URLs are always refused regardless of this setting.
+    payment_callback_allowlist: dict[str, list[str]] = Field(default_factory=dict)
     diddifund_diddipay_callback_secret: str = ""
 
     @property
