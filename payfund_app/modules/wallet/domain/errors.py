@@ -63,6 +63,14 @@ class WithdrawalNotSupported(AppError):
     message = "Retrait indisponible pour ce moyen de paiement."
 
 
+class DepositMethodNotSupported(AppError):
+    status_code = 422
+    code = "DEPOSIT_METHOD_NOT_SUPPORTED"
+    message = "Dépôt indisponible pour ce moyen de paiement."
+
+
+
+
 class ExchangeRateUnavailable(AppError):
     """Aucune cotation connue : on refuse la conversion plutôt que d'inventer un taux."""
 

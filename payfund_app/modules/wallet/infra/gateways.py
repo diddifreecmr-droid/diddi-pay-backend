@@ -334,5 +334,29 @@ def gateway_for_mode(mode: str) -> PaymentGatewayPort:
     raise NotImplementedError(f"Passerelle non implémentée : {mode!r}")
 
 
+# Rails avec un adaptateur dédié, toujours actif indépendamment du PAYMENT_GATEWAY_MODE
+# courant. PAYMENT_GATEWAY_MODE ne pilote que le rail Mobile Money (stub/sandbox_* en dev,
+# pawapay en prod) ; Paystack (carte) reste disponible en parallèle dès que
+# PAYSTACK_SECRET_KEY est configuré, quel que soit le mode Mobile Money actif.
+_DEDICATED_PROVIDER_MODES = {
+    "paystack": "paystack",
+    "card_gateway": "paystack",
+}
+
+
+def gateway_for_provider(provider: str, *, fallback: PaymentGatewayPort) -> PaymentGatewayPort:
+    """Résout la passerelle réelle pour ce provider, indépendamment du mode Mobile Money
+    globalement configuré.
+
+    `mtn_momo`/`orange_money`/`moov`/`wave` restent sur `fallback` (le mode
+    `PAYMENT_GATEWAY_MODE` courant, ex. pawapay en prod) ; `paystack`/`card_gateway` basculent
+    toujours sur Paystack, même si le mode courant est `pawapay` -- les deux rails coexistent.
+    """
+    mode = _DEDICATED_PROVIDER_MODES.get(provider)
+    if mode is None:
+        return fallback
+    return gateway_for_mode(mode)
+
+
 def get_gateway() -> PaymentGatewayPort:
     return gateway_for_mode(get_settings().payment_gateway_mode)

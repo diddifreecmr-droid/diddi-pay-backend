@@ -375,3 +375,69 @@ def test_depot_paystack_persiste_le_lien_de_checkout(client, auth, make_user, mo
     detail = client.get(f"{BASE}/transactions/{body['transaction_id']}").json()
     assert detail["authorization_url"] == "https://checkout.paystack.com/xyz"
     assert detail["access_code"] == "xyz"
+
+
+def test_depot_paystack_fonctionne_meme_si_payment_gateway_mode_est_un_autre_rail(
+    client, auth, make_user, monkeypatch
+):
+    """Régression : PAYMENT_GATEWAY_MODE ne pilote que le rail Mobile Money (stub ici).
+
+    Avant ce correctif, `WalletUseCases.deposer()` appelait toujours la passerelle unique
+    résolue depuis `PAYMENT_GATEWAY_MODE` -- demander `provider=paystack` alors que le mode
+    global est `stub`/`pawapay` finissait soit sur un `GatewayOperation` factice du stub
+    (aucun `authorization_url`), soit sur un `NotImplementedError` masqué en 502 côté pawapay.
+    Paystack doit rester joignable en parallèle dès que `PAYSTACK_SECRET_KEY` est configuré,
+    quel que soit le mode Mobile Money actif.
+    """
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_123")
+    get_settings.cache_clear()
+    # PAYMENT_GATEWAY_MODE n'est volontairement pas modifié : conftest le force à "stub".
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": True,
+                "data": {
+                    "authorization_url": "https://checkout.paystack.com/cross-mode",
+                    "access_code": "cross-mode",
+                    "reference": "ref-cross-mode",
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            return FakeResponse()
+
+    monkeypatch.setattr("payfund_app.modules.wallet.infra.gateways.httpx.Client", FakeClient)
+
+    user_id, _ = make_user()
+    auth.as_user(user_id)
+    response = client.post(
+        f"{BASE}/deposit",
+        json={
+            "provider": "paystack",
+            "amount": 5000,
+            "phone": "+2250700000000",
+            "email": "buyer@example.com",
+        },
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    # Un stub ne renvoie jamais d'authorization_url : sa présence prouve que la requête a bien
+    # été dispatchée vers PaystackGateway, pas vers la passerelle du mode global.
+    assert body["authorization_url"] == "https://checkout.paystack.com/cross-mode"
+    assert body["access_code"] == "cross-mode"

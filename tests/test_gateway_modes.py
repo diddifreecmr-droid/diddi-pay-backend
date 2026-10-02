@@ -8,13 +8,17 @@ import pytest
 
 from payfund_app.core.config import get_settings
 from payfund_app.modules.wallet.application.use_cases import WalletUseCases
-from payfund_app.modules.wallet.domain.errors import WithdrawalNotSupported
+from payfund_app.modules.wallet.domain.errors import (
+    DepositMethodNotSupported,
+    WithdrawalNotSupported,
+)
 from payfund_app.modules.wallet.infra.gateways import (
     GatewayStatus,
     OrangeMoneySandboxGateway,
     PaystackGateway,
     StubGateway,
     WaveSandboxGateway,
+    gateway_for_provider,
     get_gateway,
 )
 from payfund_app.modules.wallet.infra.pawapay_gateway import PawapayGateway
@@ -161,3 +165,46 @@ def test_paystack_withdrawal_is_rejected_before_ledger_write(monkeypatch):
 
     assert error.value.code == "WITHDRAWAL_NOT_SUPPORTED"
     use_cases.ledger.transfer.assert_not_called()
+
+
+def test_gateway_for_provider_routes_paystack_regardless_of_fallback(monkeypatch):
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "")
+    get_settings.cache_clear()
+    fallback = SimpleNamespace(mode="pawapay")
+
+    assert isinstance(gateway_for_provider("mtn_momo", fallback=fallback), SimpleNamespace)
+    with pytest.raises(RuntimeError):
+        # PaystackGateway() raises if PAYSTACK_SECRET_KEY is unset -- proves the dedicated
+        # mode was actually resolved (not just the fallback returned unchanged).
+        gateway_for_provider("paystack", fallback=fallback)
+
+
+def test_depot_wave_sous_pawapay_renvoie_une_erreur_claire_pas_un_502(monkeypatch):
+    """Régression : un provider que la passerelle active ne gère pas (ex. wave sous le mode
+    pawapay) doit lever une erreur métier 422 lisible, pas un 502 générique qui masque la
+    vraie cause (NotImplementedError englouti par le `except Exception` de deposer())."""
+    monkeypatch.setenv("PAYMENT_GATEWAY_MODE", "pawapay")
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
+    get_settings.cache_clear()
+
+    use_cases = WalletUseCases(Mock())
+    monkeypatch.setattr(
+        use_cases, "compte_de", lambda _: SimpleNamespace(id=uuid.uuid4(), currency="XOF")
+    )
+    use_cases.transactions.get_by_idempotency_key = Mock(return_value=None)
+    use_cases.transactions.create = Mock(return_value=SimpleNamespace(id=uuid.uuid4()))
+    use_cases._compte_suspense = Mock(return_value=uuid.uuid4())
+    use_cases.session.flush = Mock()
+
+    with pytest.raises(DepositMethodNotSupported) as error:
+        use_cases.deposer(
+            user_id=uuid.uuid4(),
+            provider="wave",
+            amount=5_000,
+            phone="+2250700000000",
+            email=None,
+            idempotency_key="deposit-wave-under-pawapay",
+        )
+
+    assert error.value.code == "DEPOSIT_METHOD_NOT_SUPPORTED"
+    assert error.value.status_code == 422

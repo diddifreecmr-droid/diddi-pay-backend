@@ -41,6 +41,7 @@ from payfund_app.modules.wallet.domain.entities import (
 from payfund_app.modules.wallet.domain.errors import (
     AccountNotFound,
     CannotTransferToSelf,
+    DepositMethodNotSupported,
     GatewayUnavailable,
     IdempotencyConflict,
     InvalidAmountError,
@@ -589,7 +590,8 @@ class WalletUseCases:
         montant = to_money(amount, compte.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
-        gateway_mode = self.gateway.mode
+        gateway = gateways.gateway_for_provider(provider, fallback=self.gateway)
+        gateway_mode = gateway.mode
         self._compte_suspense(gateway_mode, compte.currency)
         if provider == "paystack" and not email:
             raise InvalidAmountError("L'adresse e-mail est requise pour Paystack.")
@@ -605,13 +607,15 @@ class WalletUseCases:
         transaction.gateway_mode = gateway_mode
 
         try:
-            operation = self.gateway.initier_depot(
+            operation = gateway.initier_depot(
                 provider=provider,
                 phone=phone,
                 email=email,
                 montant=montant.amount,
                 reference=str(transaction.id),
             )
+        except NotImplementedError as exc:
+            raise DepositMethodNotSupported(str(exc) or None) from exc
         except Exception as exc:
             raise GatewayUnavailable() from exc
 
@@ -647,9 +651,10 @@ class WalletUseCases:
         montant = to_money(amount, compte.currency)
         if not montant.is_positive():
             raise InvalidAmountError("Le montant doit être strictement positif.")
-        if not self.gateway.supports_withdrawal(provider):
+        gateway = gateways.gateway_for_provider(provider, fallback=self.gateway)
+        if not gateway.supports_withdrawal(provider):
             raise WithdrawalNotSupported()
-        gateway_mode = self.gateway.mode
+        gateway_mode = gateway.mode
         suspense_id = self._compte_suspense(gateway_mode, compte.currency)
 
         transaction, _ = self.ledger.transfer(
@@ -669,12 +674,14 @@ class WalletUseCases:
         self.session.flush()
 
         try:
-            operation = self.gateway.initier_retrait(
+            operation = gateway.initier_retrait(
                 provider=provider,
                 phone=phone,
                 montant=montant.amount,
                 reference=str(transaction.id),
             )
+        except NotImplementedError as exc:
+            raise WithdrawalNotSupported(str(exc) or None) from exc
         except Exception as exc:
             raise GatewayUnavailable() from exc
 
