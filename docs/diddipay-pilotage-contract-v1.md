@@ -17,6 +17,39 @@ La journee metier utilise `Africa/Abidjan` et l'intervalle semi-ouvert `[00:00, 
 Les montants sont des francs XOF entiers. Le service retourne `is_final=false` pour la journee en
 cours. Une correction comptable tardive peut modifier une journee historique.
 
+## Ventilation comptable v1
+
+```http
+GET /payfund/v1/internal/pilotage/accounting-summary?date=2026-09-23
+```
+
+Cette route expose le contrat `pilotage.accounting-source.v1`. Elle groupe les journaux
+financiers confirmes par service, processeur, type de flux et statut, sans exposer de nom,
+telephone ou identifiant utilisateur.
+
+Les services publies sont `diddigo`, `diddisend`, `diddifood`, `diddifund`, `diddifree` et
+`unknown`. La valeur vient de `PaymentIntent.client_id` (ou du `client_id` du payout). Le
+`flow_type` explicite de `metadata` est prioritaire. Pour les anciens appels, une reference
+contenant `topup` est classee `wallet_topup`; les autres captures sont classees
+`service_payment`. Une integration nouvelle doit toujours envoyer `metadata.flow_type`.
+
+Les captures, remboursements, frais processeur et settlements restent dans des colonnes
+distinctes. `net_expected_xof = gross_amount_xof - refund_amount_xof - processor_fees_xof` et
+`outstanding_amount_xof = net_expected_xof - settled_amount_xof`. Un payout est une ligne
+`flow_type=payout`: son montant est porte par `gross_amount_xof`, tandis que
+`net_expected_xof` et `outstanding_amount_xof` valent zero car un payout ne cree pas de creance
+sur le processeur.
+
+`is_final` vaut `false` pour la journee courante en `Africa/Abidjan`. Une journee passee reste
+recalculable: elle est finale au sens operationnel, mais une correction comptable historique
+peut modifier sa reponse. `calculated_at` est l'instant UTC du calcul. Une indisponibilite SQL
+est propagee comme erreur HTTP; elle n'est jamais convertie en agregats a zero. Une liste
+`entries` vide signifie uniquement qu'aucun journal correspondant n'existe pour la journee.
+
+Le jeton S2S doit avoir `aud=diddipay`, le scope `diddipay:payment-summary:read`,
+`sub=service:pilotage`, et son `client_id` doit etre identique au header `X-Client-ID` ainsi
+qu'au client Pilotage provisionne.
+
 ## Metriques
 
 | Nom | Unite | Definition |

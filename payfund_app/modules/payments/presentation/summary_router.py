@@ -10,12 +10,18 @@ from pydantic import BaseModel
 from payfund_app.core.config import get_settings
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.core.security import ServicePrincipal, decode_service_token
+from payfund_app.modules.payments.application.accounting_summary import (
+    PaymentAccountingSummaryUseCases,
+)
 from payfund_app.modules.payments.application.daily_summary import (
     PaymentDailySummary,
     PaymentDailySummaryUseCases,
 )
 from payfund_app.modules.payments.application.health_summary import (
     PaymentHealthSummaryUseCases,
+)
+from payfund_app.modules.payments.infra.accounting_summary import (
+    SqlPaymentAccountingSummaryRepository,
 )
 from payfund_app.modules.payments.infra.daily_summary import (
     SqlPaymentDailySummaryRepository,
@@ -72,6 +78,45 @@ class PilotageDailySummaryResponse(BaseModel):
     deep_links: list[PilotageDeepLink]
 
 
+class PilotageAccountingEntry(BaseModel):
+    service: Literal["diddigo", "diddisend", "diddifood", "diddifund", "diddifree", "unknown"]
+    processor: str
+    flow_type: Literal[
+        "service_payment",
+        "wallet_topup",
+        "refund",
+        "settlement",
+        "payout",
+        "wallet_deposit",
+        "wallet_withdrawal",
+        "wallet_transfer",
+        "adjustment",
+        "unknown",
+    ]
+    status: Literal["succeeded"]
+    transactions_count: int
+    gross_amount_xof: int
+    refund_amount_xof: int
+    processor_fees_xof: int
+    net_expected_xof: int
+    settled_amount_xof: int
+    outstanding_amount_xof: int
+
+
+class PilotageAccountingSummaryResponse(BaseModel):
+    contract_version: Literal["pilotage.accounting-source.v1"] = (
+        "pilotage.accounting-source.v1"
+    )
+    module: Literal["diddipay"] = "diddipay"
+    date: date
+    timezone: Literal["Africa/Abidjan"] = "Africa/Abidjan"
+    currency: Literal["XOF"] = "XOF"
+    is_final: bool
+    entries: list[PilotageAccountingEntry]
+    calculated_at: datetime
+    sources: list[PilotageSource]
+
+
 class PilotageHealthSummaryResponse(BaseModel):
     contract_version: str = "pilotage.v1"
     module: str = "diddipay"
@@ -106,13 +151,16 @@ def require_pilotage_service(
     accepted_scopes = {settings.payment_summary_scope}
     if settings.payment_summary_legacy_scope:
         accepted_scopes.add(settings.payment_summary_legacy_scope)
-    return decode_service_token(
+    principal = decode_service_token(
         authorization.removeprefix("Bearer ").strip(),
         audience=settings.payment_summary_audience,
         client_id_header=client_id,
         required_scopes=accepted_scopes,
         allowed_client_ids={settings.payment_summary_client_id},
     )
+    if principal.subject != "service:pilotage":
+        raise Unauthenticated("Le jeton doit appartenir au service Pilotage.")
+    return principal
 
 
 @router.get("/pilotage/capabilities", response_model=PilotageCapabilitiesResponse)
@@ -121,7 +169,7 @@ def pilotage_capabilities(
 ) -> PilotageCapabilitiesResponse:
     return PilotageCapabilitiesResponse(
         scope=get_settings().payment_summary_scope,
-        aggregates=["daily_summary", "health_summary"],
+        aggregates=["daily_summary", "accounting_summary", "health_summary"],
         pro_capabilities=wallet_capability_declarations(),
     )
 
@@ -221,6 +269,37 @@ def pilotage_daily_summary(
                 href="/backoffice/#diddipay-payments",
             )
         ],
+    )
+
+
+@router.get(
+    "/pilotage/accounting-summary",
+    response_model=PilotageAccountingSummaryResponse,
+    summary="Ventilation comptable quotidienne DiddiPay",
+    description=(
+        "Agrège les journaux financiers confirmés par service, processeur et type de flux. "
+        "Les montants sont des entiers XOF et la journée civile est Africa/Abidjan. "
+        "Aucune donnée personnelle n'est exposée. Une erreur de source est propagée et n'est "
+        "jamais remplacée par de faux zéros."
+    ),
+)
+def pilotage_accounting_summary(
+    session: SessionDep,
+    date_: Annotated[date, Query(alias="date", description="Business day in Africa/Abidjan")],
+    _: Annotated[ServicePrincipal, Depends(require_pilotage_service)],
+) -> PilotageAccountingSummaryResponse:
+    result = PaymentAccountingSummaryUseCases(
+        SqlPaymentAccountingSummaryRepository(session)
+    ).get(date_)
+    return PilotageAccountingSummaryResponse(
+        date=result.date,
+        is_final=result.is_final,
+        entries=[
+            PilotageAccountingEntry.model_validate(entry, from_attributes=True)
+            for entry in result.entries
+        ],
+        calculated_at=result.calculated_at,
+        sources=[PilotageSource(module="diddipay", record_type="financial-journals")],
     )
 
 
