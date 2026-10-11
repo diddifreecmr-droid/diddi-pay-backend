@@ -29,6 +29,18 @@ class ProcessorRegistry:
         except KeyError as exc:
             raise ProcessorRoutingError(f"processor {name!r} is not registered") from exc
 
+    def ordered(self) -> tuple[PaymentProcessorPort, ...]:
+        """All registered processors sorted by (priority, name) -- the same order `select()`
+        falls back to with no explicit preference. Exposed so callers can reason about which
+        processor would win on its own merits, e.g. to find a more specific match than the
+        globally-configured default (see PaymentUseCases.create())."""
+        return tuple(
+            processor
+            for _, processor in sorted(
+                self._processors.values(), key=lambda item: (item[0], item[1].name)
+            )
+        )
+
     def select(
         self,
         *,
@@ -38,15 +50,7 @@ class ProcessorRegistry:
         network: str | None = None,
         preferred_processor: str | None = None,
     ) -> PaymentProcessorPort:
-        if preferred_processor:
-            candidates = [self.get(preferred_processor)]
-        else:
-            candidates = [
-                processor
-                for _, processor in sorted(
-                    self._processors.values(), key=lambda item: (item[0], item[1].name)
-                )
-            ]
+        candidates = [self.get(preferred_processor)] if preferred_processor else self.ordered()
 
         for processor in candidates:
             if processor.capabilities.supports(

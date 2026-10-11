@@ -100,12 +100,41 @@ class PaymentUseCases:
         if existing:
             return self._idempotent_view(existing, fingerprint)
 
+        # default_processor (PAYMENT_PROCESSOR_MODE) is a global default, but a processor that
+        # declares an *empty* networks set (e.g. Paystack's hosted checkout, which lets the
+        # payer pick any mobile money network) is a generic fallback, not a real preference for
+        # a specific rail. A processor that explicitly lists this request's network (e.g.
+        # PawaPay for mtn/orange/moov) is the dedicated handler for it and should win over the
+        # global default -- otherwise PAYMENT_PROCESSOR_MODE=paystack would keep forcing
+        # Paystack onto mobile_money requests forever, even once a dedicated processor for that
+        # exact network is registered and capable. ProcessorRegistry.select() itself still
+        # hard-fails when an EXPLICIT preference can't be honoured -- that contract is
+        # untouched for whatever preference ends up reaching it below.
+        preferred_processor = self.default_processor
+        if command.network:
+            dedicated = next(
+                (
+                    processor
+                    for processor in self.processors.ordered()
+                    if command.network in processor.capabilities.networks
+                    and processor.capabilities.supports(
+                        currency=command.currency,
+                        direction=PaymentDirection.COLLECTION,
+                        channel=command.channel,
+                        network=command.network,
+                    )
+                ),
+                None,
+            )
+            if dedicated is not None:
+                preferred_processor = dedicated.name
+
         processor = self.processors.select(
             currency=command.currency,
             direction=PaymentDirection.COLLECTION,
             channel=command.channel,
             network=command.network,
-            preferred_processor=self.default_processor,
+            preferred_processor=preferred_processor,
         )
         intent = PaymentIntent(
             client_id=command.client_id,

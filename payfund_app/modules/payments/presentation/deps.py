@@ -15,6 +15,7 @@ from payfund_app.core.database import get_session
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.infra.pawapay_processor import PawapayPaymentProcessor
 from payfund_app.modules.payments.infra.paystack_processor import (
     PaystackPaymentProcessor,
 )
@@ -105,6 +106,19 @@ def get_processor_registry() -> ProcessorRegistry:
         elif settings.payment_processor_mode == "paystack":
             raise ValueError(
                 "PAYMENT_PROCESSOR_MODE=paystack but PAYSTACK_SECRET_KEY is empty."
+            )
+        # Shares the same PawaPay sandbox/live credentials as the legacy wallet
+        # (wallet/infra/pawapay_gateway.py) -- same account, two independent adapters.
+        # Priority 50 (< Paystack's default 100) so capability-based auto-selection prefers
+        # the direct mtn/orange/moov rail over Paystack's hosted mobile-money checkout when
+        # no preferred_processor forces otherwise -- see PaymentUseCases.create().
+        if settings.pawapay_api_token:
+            _registry.register(
+                PawapayPaymentProcessor(
+                    api_token=settings.pawapay_api_token,
+                    base_url=settings.pawapay_base_url,
+                ),
+                priority=50,
             )
     return _registry
 
