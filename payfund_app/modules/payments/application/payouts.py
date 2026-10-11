@@ -29,6 +29,12 @@ from payfund_app.modules.payments.application.processor_router import (
 )
 from payfund_app.modules.payments.domain import Money, Payout, PayoutStatus
 
+# Processors whose payouts never reach a real PSP -- fine for local/test, never for an
+# environment where a client might believe money actually moved. Checked by name rather than
+# by a dedicated capability flag because the whole point is that these report success without
+# telling the registry they're not real (see SandboxPaymentProcessor.create_payout).
+SIMULATED_PROCESSOR_NAMES = frozenset({"sandbox"})
+
 
 @dataclass(frozen=True, slots=True)
 class CreatePayoutCommand:
@@ -75,12 +81,18 @@ class PayoutUseCases:
         processors: ProcessorRegistry,
         uow: UnitOfWorkPort,
         accounting=None,
+        allow_simulated_payouts: bool = False,
     ) -> None:
         self.payouts = payouts
         self.outbox = outbox
         self.processors = processors
         self.uow = uow
         self.accounting = accounting
+        # Safe by default: a caller must explicitly opt in (local/test only, see
+        # payout_router._use_cases) before a payout is allowed to resolve to a processor that
+        # reports SUCCEEDED without ever moving real money (SandboxPaymentProcessor today --
+        # no real PSP currently implements PaymentDirection.PAYOUT at all).
+        self.allow_simulated_payouts = allow_simulated_payouts
 
     def create(self, command: CreatePayoutCommand) -> PayoutView:
         fingerprint = command.fingerprint()
@@ -92,6 +104,12 @@ class PayoutUseCases:
             currency=command.currency,
             direction=PaymentDirection.PAYOUT,
         )
+        if processor.name in SIMULATED_PROCESSOR_NAMES and not self.allow_simulated_payouts:
+            raise ProcessorRoutingError(
+                f"no real payout processor is configured for currency={command.currency!r} "
+                "(only a simulated processor matched -- refusing to report a fake payout as "
+                "successful outside local/test)"
+            )
         payout = Payout(
             client_id=command.client_id,
             business_reference=command.business_reference,

@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Query
 
+from payfund_app.core.config import get_settings
 from payfund_app.core.errors import Conflict, NotFound, UnprocessableEntity
 from payfund_app.modules.payments.application.accounting import PayoutAccountingService
 from payfund_app.modules.payments.application.errors import (
@@ -50,6 +51,7 @@ def _use_cases(session, processors) -> PayoutUseCases:
         processors,
         SqlAlchemyUnitOfWork(session),
         PayoutAccountingService(FinancialLedgerRepository(session)),
+        allow_simulated_payouts=get_settings().deployment_environment in {"local", "test"},
     )
 
 

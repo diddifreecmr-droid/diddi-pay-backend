@@ -49,6 +49,7 @@ def test_concurrent_same_key_creates_one_payout(engine):
                 processors,
                 SqlAlchemyUnitOfWork(session),
                 PayoutAccountingService(FinancialLedgerRepository(session)),
+                allow_simulated_payouts=True,
             ).create(command)
             return view.payout.id
 

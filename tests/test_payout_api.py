@@ -1,10 +1,15 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
-from payfund_app.modules.payments.application.payouts import PayoutUseCases
-from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.core.config import get_settings
+from payfund_app.modules.payments.application.payouts import CreatePayoutCommand, PayoutUseCases
+from payfund_app.modules.payments.application.processor_router import (
+    ProcessorRegistry,
+    ProcessorRoutingError,
+)
 from payfund_app.modules.payments.infra.models import (
     FinancialEntryRecord,
     FinancialJournalRecord,
@@ -98,6 +103,58 @@ def test_payout_idempotency_rejects_changed_financial_data(client):
     assert changed.status_code == 409
     assert changed.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
     assert changed_beneficiary.status_code == 409
+
+
+def test_create_refuses_simulated_processor_by_default(session):
+    """Régression : hors local/test, un payout ne doit jamais se faire passer pour réussi via
+    SandboxPaymentProcessor -- aucun PSP réel n'implémente encore PaymentDirection.PAYOUT, donc
+    sans ce garde-fou tout payout resterait silencieusement faux (SandboxPaymentProcessor.
+    create_payout renvoie toujours SUCCEEDED, sans jamais appeler un PSP)."""
+    processors = ProcessorRegistry()
+    processors.register(SandboxPaymentProcessor())
+
+    use_cases = PayoutUseCases(
+        PayoutRepository(session),
+        PaymentOutboxRepository(session),
+        processors,
+        SqlAlchemyUnitOfWork(session),
+    )
+
+    with pytest.raises(ProcessorRoutingError):
+        use_cases.create(
+            CreatePayoutCommand(
+                client_id="diddifood",
+                business_reference="diddifood:order:guard-1:restaurant-payout:v1",
+                beneficiary_reference="restaurant:rest-7",
+                amount=1_000,
+                currency="XOF",
+                idempotency_key="guard-test-1",
+            )
+        )
+    assert (
+        session.scalar(
+            select(PayoutRecord).where(PayoutRecord.idempotency_key == "guard-test-1")
+        )
+        is None
+    )
+
+
+def test_payout_endpoint_refuses_simulated_processor_outside_local_test(client, monkeypatch):
+    """Même garde-fou, bout en bout via l'API : en staging/production (sans PSP de payout
+    réel configuré), la création doit échouer explicitement plutôt que renvoyer `succeeded`."""
+    monkeypatch.setenv("DEPLOYMENT_ENVIRONMENT", "staging")
+    get_settings.cache_clear()
+    try:
+        response = client.post(
+            BASE,
+            headers={**HEADERS, "Idempotency-Key": "diddisend:delivery:guard-2:picked_up:v1"},
+            json=payload(business_reference="diddifood:order:guard-2:restaurant-payout:v1"),
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "PAYOUT_METHOD_UNAVAILABLE"
 
 
 def test_payout_is_visible_only_to_owning_module(client):
