@@ -271,6 +271,7 @@ class Payout:
     request_fingerprint: str
     processor: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    destination: dict[str, Any] | None = None
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     status: PayoutStatus = PayoutStatus.PENDING
     provider_reference: str | None = None

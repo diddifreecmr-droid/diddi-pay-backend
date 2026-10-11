@@ -233,3 +233,23 @@ def test_processing_payout_is_reconciled_and_emits_final_event(session):
         select(PaymentOutboxRecord).where(PaymentOutboxRecord.aggregate_id == payout_id)
     )
     assert event.event_type == "payout.succeeded"
+
+
+def test_beneficiary_destination_unknown_type_is_rejected_at_the_schema_boundary(client):
+    response = client.post(
+        BASE,
+        headers=HEADERS,
+        json=payload(
+            beneficiary_destination={"type": "bank_transfer", "account_number": "123"}
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+def test_beneficiary_destination_is_optional_and_defaults_to_simulated_processor(client):
+    """No destination -- the existing sandbox-only local/test behaviour is unaffected."""
+    response = client.post(BASE, headers=HEADERS, json=payload())
+
+    assert response.status_code == 201
+    assert response.json()["beneficiary_destination"] is None

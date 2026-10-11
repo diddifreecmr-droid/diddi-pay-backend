@@ -4,14 +4,16 @@ integration (`wallet/infra/pawapay_gateway.py`, verified against the real PawaPa
 SCRUM-406) but conforms to this module's own PaymentProcessorPort contract instead of the
 wallet's simpler one.
 
+Payouts (create_payout/verify_payout) use PayoutRequest.destination -- a generic, provider-
+agnostic {"type": "mobile_money", "phone": ..., "network": ...} dict (see
+presentation/schemas.py's BeneficiaryDestination). This processor is the only thing that
+knows "mobile_money" maps to PawaPay's phone+operator-family model; callers and the
+application layer never see PawaPay-specific shapes.
+
 Deliberately NOT wired here:
   * Wave -- PawaPay's docs confirm Wave uses REDIRECT_AUTH, a fundamentally different flow
     (the customer is redirected to authorise, not prompted on their phone). That needs its
     own design, not a variant of this one. See ADR/ticket before adding it.
-  * Payouts -- PaymentDirection.PAYOUT is not declared. PawaPay's payout API needs a real
-    phone number + operator family per recipient; PayoutRequest only carries an opaque
-    beneficiary_reference today (a restaurant/driver UUID for DiddiFood). Needs a contract
-    change coordinated with the calling modules before this can be real.
   * Refunds -- PawaPay has no refund concept for a mobile money push; a "refund" would have
     to be a payout back to the original payer. Deferred.
   * Webhooks -- parse_webhook raises NotImplementedError like SandboxPaymentProcessor's.
@@ -35,12 +37,19 @@ from payfund_app.modules.payments.application.errors import (
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
+    PayoutRequest,
+    PayoutResult,
     ProcessorCapabilities,
     ProviderResult,
     RefundRequest,
     RefundResult,
 )
-from payfund_app.modules.payments.domain import AttemptStatus, NextAction, NextActionType
+from payfund_app.modules.payments.domain import (
+    AttemptStatus,
+    NextAction,
+    NextActionType,
+    PayoutStatus,
+)
 
 # Generic network name (InitializePaymentRequest.network) -> PawaPay operator family.
 _PROVIDER_FAMILIES = {
@@ -80,7 +89,7 @@ class PawapayPaymentProcessor:
     name = "pawapay"
     capabilities = ProcessorCapabilities(
         currencies=frozenset({"XOF"}),
-        directions=frozenset({PaymentDirection.COLLECTION}),
+        directions=frozenset({PaymentDirection.COLLECTION, PaymentDirection.PAYOUT}),
         channels=frozenset({"mobile_money"}),
         networks=frozenset(_PROVIDER_FAMILIES),
     )
@@ -262,6 +271,93 @@ class PawapayPaymentProcessor:
             currency=str(data.get("currency") or "").upper() or None,
         )
 
+    def create_payout(self, request: PayoutRequest) -> PayoutResult:
+        destination = request.destination or {}
+        if destination.get("type") != "mobile_money":
+            # Unreachable via correct dispatch (capabilities only ever claim "mobile_money"),
+            # but a destination type this processor doesn't understand must fail loud, not
+            # silently misinterpret a field that means something else for another type.
+            raise ProcessorRequestRejected(
+                f"pawapay only supports mobile_money payout destinations, got "
+                f"type={destination.get('type')!r}"
+            )
+        phone = destination.get("phone")
+        if not phone:
+            raise ProcessorRequestRejected("destination.phone is required for a pawapay payout")
+        operator = self._resolve_operator(network=destination.get("network"), phone=phone)
+        payout_id = str(request.payout_id)
+        payload: dict[str, Any] = {
+            "payoutId": payout_id,
+            "recipient": {
+                "type": "MMO",
+                "accountDetails": {"phoneNumber": _digits_only(phone), "provider": operator},
+            },
+            "amount": str(request.money.amount),
+            "currency": request.money.currency,
+            "clientReferenceId": str(request.payout_id),
+        }
+        try:
+            response = self._request("payout", "POST", "/v2/payouts", json=payload)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProcessorCallUncertain(
+                payout_id, "pawapay payout outcome is unknown"
+            ) from exc
+
+        body = self._json(response)
+        if response.status_code >= 400:
+            return PayoutResult(
+                provider_reference=payout_id,
+                status=PayoutStatus.FAILED,
+                provider_status=f"http_{response.status_code}",
+                failure_code="PAWAPAY_PAYOUT_REJECTED",
+                failure_message=str(
+                    (body.get("failureReason") or {}).get("failureMessage")
+                    or body.get("message")
+                    or "pawapay rejected the payout"
+                )[:255],
+            )
+        provider_status = str(body.get("status") or "")
+        if provider_status == "REJECTED":
+            return PayoutResult(
+                provider_reference=payout_id,
+                status=PayoutStatus.FAILED,
+                provider_status="rejected",
+                failure_code="PAWAPAY_PAYOUT_REJECTED",
+                failure_message=str(
+                    (body.get("failureReason") or {}).get("failureMessage")
+                    or "pawapay rejected the payout"
+                )[:255],
+            )
+        return PayoutResult(
+            provider_reference=payout_id,
+            status=PayoutStatus.PROCESSING,
+            provider_status=provider_status.lower() or "accepted",
+        )
+
+    def verify_payout(self, provider_reference: str) -> PayoutResult:
+        try:
+            response = self._request("verify_payout", "GET", f"/v2/payouts/{provider_reference}")
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProcessorCallUncertain(
+                provider_reference, "pawapay payout verification is unavailable"
+            ) from exc
+        body = self._json(response)
+        if response.status_code >= 400 or body.get("status") != "FOUND":
+            return PayoutResult(
+                provider_reference=provider_reference,
+                status=PayoutStatus.PROCESSING,
+                provider_status=f"http_{response.status_code}",
+                failure_code="PAWAPAY_VERIFICATION_FAILED",
+                failure_message="pawapay payout not found",
+            )
+        data = body.get("data") or {}
+        provider_status = str(data.get("status") or "unknown").lower()
+        return PayoutResult(
+            provider_reference=str(data.get("payoutId") or provider_reference),
+            status=self._normalize_payout_status(provider_status),
+            provider_status=provider_status,
+        )
+
     def parse_webhook(self, raw_body: bytes, headers):
         raise NotImplementedError(
             "pawapay webhooks are not wired yet -- blocked on the BCEAO agreement "
@@ -297,6 +393,15 @@ class PawapayPaymentProcessor:
         if amount != amount.to_integral_value():
             raise ValueError("pawapay returned a fractional XOF deposit amount")
         return int(amount)
+
+    @staticmethod
+    def _normalize_payout_status(status: str) -> PayoutStatus:
+        if status == "completed":
+            return PayoutStatus.SUCCEEDED
+        if status == "failed":
+            return PayoutStatus.FAILED
+        # submitted, processing, accepted -> still in flight.
+        return PayoutStatus.PROCESSING
 
     @staticmethod
     def _normalize_status(status: str) -> AttemptStatus:

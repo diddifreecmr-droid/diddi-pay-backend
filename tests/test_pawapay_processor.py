@@ -10,8 +10,8 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
 )
-from payfund_app.modules.payments.application.ports import InitializePaymentRequest
-from payfund_app.modules.payments.domain import AttemptStatus, Money, NextActionType
+from payfund_app.modules.payments.application.ports import InitializePaymentRequest, PayoutRequest
+from payfund_app.modules.payments.domain import AttemptStatus, Money, NextActionType, PayoutStatus
 from payfund_app.modules.payments.infra.pawapay_processor import PawapayPaymentProcessor
 
 
@@ -214,3 +214,108 @@ def test_refund_payment_not_implemented():
                 money=RefundMoney(1_000),
             )
         )
+
+
+def payout_request(**overrides):
+    values = {
+        "payout_id": uuid.uuid4(),
+        "business_reference": "diddifood:order:1:restaurant-payout:v1",
+        "beneficiary_reference": "restaurant:rest-7",
+        "money": Money(5_000),
+        "idempotency_key": "payout-1",
+        "destination": {"type": "mobile_money", "phone": "+2250503456789", "network": "mtn"},
+    }
+    values.update(overrides)
+    return PayoutRequest(**values)
+
+
+def test_create_payout_accepted_maps_to_processing():
+    captured = {}
+
+    def handler(http_request):
+        captured["url"] = str(http_request.url)
+        captured["body"] = json.loads(http_request.content)
+        return httpx.Response(
+            200, json={"payoutId": captured["body"]["payoutId"], "status": "ACCEPTED"}
+        )
+
+    payout_id = uuid.uuid4()
+    result = processor(handler).create_payout(payout_request(payout_id=payout_id))
+
+    assert captured["url"].endswith("/v2/payouts")
+    assert captured["body"]["recipient"]["accountDetails"]["provider"] == "MTN_MOMO_CIV"
+    assert captured["body"]["recipient"]["accountDetails"]["phoneNumber"] == "2250503456789"
+    assert captured["body"]["amount"] == "5000"
+    assert captured["body"]["payoutId"] == str(payout_id)
+    assert result.status == PayoutStatus.PROCESSING
+    assert result.provider_reference == str(payout_id)
+
+
+def test_create_payout_rejects_non_mobile_money_destination():
+    def unreached(request):
+        raise AssertionError("must not call pawapay for an unsupported destination type")
+
+    with pytest.raises(ProcessorRequestRejected, match="mobile_money"):
+        processor(unreached).create_payout(
+            payout_request(destination={"type": "bank_transfer", "account_number": "123"})
+        )
+
+
+def test_create_payout_rejects_missing_phone():
+    def unreached(request):
+        raise AssertionError("must not call pawapay without a phone number")
+
+    with pytest.raises(ProcessorRequestRejected, match="phone"):
+        processor(unreached).create_payout(
+            payout_request(destination={"type": "mobile_money", "network": "mtn"})
+        )
+
+
+def test_create_payout_rejected_maps_to_failed():
+    def handler(http_request):
+        return httpx.Response(
+            200,
+            json={
+                "payoutId": json.loads(http_request.content)["payoutId"],
+                "status": "REJECTED",
+                "failureReason": {
+                    "failureCode": "AMOUNT_OUT_OF_BOUNDS",
+                    "failureMessage": "Amount out of bounds",
+                },
+            },
+        )
+
+    result = processor(handler).create_payout(payout_request())
+
+    assert result.status == PayoutStatus.FAILED
+    assert result.failure_code == "PAWAPAY_PAYOUT_REJECTED"
+
+
+def test_create_payout_transport_error_raises_processor_call_uncertain():
+    def handler(http_request):
+        raise httpx.ConnectTimeout("timed out")
+
+    with pytest.raises(ProcessorCallUncertain):
+        processor(handler).create_payout(payout_request())
+
+
+def test_verify_payout_completed():
+    def handler(http_request):
+        return httpx.Response(
+            200,
+            json={"status": "FOUND", "data": {"payoutId": "pay-1", "status": "COMPLETED"}},
+        )
+
+    result = processor(handler).verify_payout("pay-1")
+
+    assert result.status == PayoutStatus.SUCCEEDED
+
+
+def test_verify_payout_not_found():
+    def handler(http_request):
+        return httpx.Response(200, json={"status": "NOT_FOUND"})
+
+    result = processor(handler).verify_payout("pay-missing")
+
+    assert result.status == PayoutStatus.PROCESSING
+    assert result.failure_code == "PAWAPAY_VERIFICATION_FAILED"

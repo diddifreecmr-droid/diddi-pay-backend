@@ -44,6 +44,9 @@ class CreatePayoutCommand:
     amount: int
     currency: str
     idempotency_key: str
+    # {"type": "mobile_money", "phone": ..., "network": ...} today; other types added later
+    # without touching this command or any caller. None outside local/test.
+    beneficiary_destination: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def fingerprint(self) -> str:
@@ -52,6 +55,7 @@ class CreatePayoutCommand:
                 "client_id": self.client_id,
                 "business_reference": self.business_reference,
                 "beneficiary_reference": self.beneficiary_reference,
+                "beneficiary_destination": self.beneficiary_destination,
                 "amount": self.amount,
                 "currency": self.currency.upper(),
                 "metadata": self.metadata,
@@ -100,9 +104,18 @@ class PayoutUseCases:
         if existing:
             return self._idempotent_view(existing, fingerprint)
 
+        # Routing is derived from the destination, never hardcoded to a provider: a
+        # mobile_money destination's "channel"/"network" are the same generic hints
+        # InitializePaymentRequest already uses for collections. A processor that doesn't
+        # recognise a given type/network simply never matches -- see ProcessorCapabilities.
+        destination = command.beneficiary_destination or {}
+        channel = destination.get("type")
+        network = destination.get("network")
         processor = self.processors.select(
             currency=command.currency,
             direction=PaymentDirection.PAYOUT,
+            channel=channel,
+            network=network,
         )
         if processor.name in SIMULATED_PROCESSOR_NAMES and not self.allow_simulated_payouts:
             raise ProcessorRoutingError(
@@ -114,6 +127,7 @@ class PayoutUseCases:
             client_id=command.client_id,
             business_reference=command.business_reference,
             beneficiary_reference=command.beneficiary_reference,
+            destination=command.beneficiary_destination,
             money=Money(command.amount, command.currency),
             idempotency_key=command.idempotency_key,
             request_fingerprint=fingerprint,
@@ -174,6 +188,7 @@ class PayoutUseCases:
                     beneficiary_reference=payout.beneficiary_reference,
                     money=payout.money,
                     idempotency_key=payout.idempotency_key,
+                    destination=payout.destination,
                     metadata=payout.metadata,
                 )
             )

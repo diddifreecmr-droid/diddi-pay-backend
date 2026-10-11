@@ -456,6 +456,7 @@ class PayoutRepository:
                 failure_code=payout.failure_code,
                 failure_message=payout.failure_message,
                 metadata_json=payout.metadata,
+                destination=payout.destination,
                 created_at=payout.created_at,
                 updated_at=payout.updated_at,
             )
@@ -537,6 +538,7 @@ class PayoutRepository:
             failure_code=row.failure_code,
             failure_message=row.failure_message,
             metadata=row.metadata_json,
+            destination=row.destination,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

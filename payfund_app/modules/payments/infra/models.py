@@ -317,6 +317,11 @@ class PayoutRecord(Base):
     metadata_json: Mapped[dict] = mapped_column(
         "metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # {"type": "mobile_money", "phone": ..., "network": ...} -- NULL on payouts created
+    # before this column existed (always simulated back then) and on any payout that never
+    # reached a real destination-aware processor. Kept separate from beneficiary_reference
+    # (the opaque business identity) so the two can evolve independently.
+    destination: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

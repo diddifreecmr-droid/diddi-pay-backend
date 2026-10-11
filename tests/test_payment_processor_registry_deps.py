@@ -200,3 +200,50 @@ def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
 
     assert card_response.status_code == 201
     assert _processor_for(session, card_response.json()["id"]) == "paystack"
+
+
+def test_mobile_money_payout_routes_to_pawapay(monkeypatch, client):
+    """End-to-end: a real beneficiary_destination (mobile_money/mtn) now resolves to the
+    real PawaPay processor instead of 422 PAYOUT_METHOD_UNAVAILABLE -- proves the generic
+    destination dict actually reaches ProcessorCapabilities-based routing for payouts too,
+    not just collections."""
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
+    get_settings.cache_clear()
+    deps.reset_processor_registry()
+
+    def pawapay_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"payoutId": "pay-1", "status": "ACCEPTED"})
+
+    def unreached_paystack(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("mobile money payout must not reach Paystack")
+
+    _mock_outbound(
+        monkeypatch, paystack_handler=unreached_paystack, pawapay_handler=pawapay_handler
+    )
+
+    payout_key = f"payout-dispatch-{uuid.uuid4()}"
+    response = client.post(
+        "/payfund/v1/payouts",
+        headers={
+            "X-Client-ID": "diddifood",
+            "X-Service-Key": "food-service-key",
+            "Idempotency-Key": payout_key,
+        },
+        json={
+            "business_reference": f"diddifood:order:{payout_key}:restaurant-payout:v1",
+            "beneficiary_reference": "restaurant:rest-7",
+            "beneficiary_destination": {
+                "type": "mobile_money",
+                "phone": "+2250503456789",
+                "network": "mtn",
+            },
+            "amount": 4_500,
+            "currency": "XOF",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["processor"] == "pawapay"
+    assert body["status"] == "processing"
+    assert body["beneficiary_destination"]["phone"] == "+2250503456789"

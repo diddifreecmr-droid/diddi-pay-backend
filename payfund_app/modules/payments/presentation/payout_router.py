@@ -62,6 +62,7 @@ def _response(view: PayoutView) -> PayoutResponse:
         client_id=payout.client_id,
         business_reference=payout.business_reference,
         beneficiary_reference=payout.beneficiary_reference,
+        beneficiary_destination=payout.destination,
         amount=payout.money.amount,
         currency=payout.money.currency,
         status=str(payout.status),

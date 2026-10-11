@@ -120,6 +120,10 @@ class PayoutRequest:
     beneficiary_reference: str
     money: Money
     idempotency_key: str
+    # Where the money goes -- {"type": "mobile_money", "phone": ..., "network": ...} today,
+    # other types added later without changing this port. Opaque to anything above the
+    # processor that actually interprets it (see PawapayPaymentProcessor.create_payout).
+    destination: Mapping[str, Any] | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 

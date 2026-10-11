@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -134,11 +134,33 @@ class PaymentFinancialSummaryResponse(BaseModel):
     outstanding: int
 
 
+class MobileMoneyDestination(BaseModel):
+    """One beneficiary_destination type. Add a sibling model (bank transfer,
+    wallet-to-wallet, ...) and list it in BeneficiaryDestination's union to extend --
+    callers and the application layer never need to change, only processors that
+    declare support for the new type."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["mobile_money"] = "mobile_money"
+    phone: str = Field(min_length=1, max_length=32)
+    # Free-form, same spirit as InitializePaymentRequest.network: the schema layer does
+    # not know or care which processor validates this value against its own capabilities.
+    network: str = Field(min_length=1, max_length=32)
+
+
+BeneficiaryDestination = Annotated[MobileMoneyDestination, Field(discriminator="type")]
+
+
 class CreatePayoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     business_reference: str = Field(min_length=1, max_length=128)
     beneficiary_reference: str = Field(min_length=1, max_length=128)
+    # Where the money actually goes -- distinct from beneficiary_reference (the opaque
+    # business identity, e.g. a restaurant UUID). None outside local/test, where payouts
+    # resolve to a simulated processor and no real destination is needed.
+    beneficiary_destination: BeneficiaryDestination | None = None
     amount: int = Field(gt=0, description="Positive integer amount in XOF")
     currency: Literal["XOF"] = "XOF"
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -149,6 +171,7 @@ class PayoutResponse(BaseModel):
     client_id: str
     business_reference: str
     beneficiary_reference: str
+    beneficiary_destination: dict[str, Any] | None = None
     amount: int
     currency: str
     status: Literal["pending", "processing", "succeeded", "failed", "disputed"]
