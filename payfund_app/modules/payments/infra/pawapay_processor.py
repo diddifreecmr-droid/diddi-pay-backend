@@ -11,14 +11,20 @@ knows "mobile_money" maps to PawaPay's phone+operator-family model; callers and 
 application layer never see PawaPay-specific shapes.
 
 Deliberately NOT wired here:
-  * Wave -- PawaPay's docs confirm Wave uses REDIRECT_AUTH, a fundamentally different flow
-    (the customer is redirected to authorise, not prompted on their phone). That needs its
-    own design, not a variant of this one. See ADR/ticket before adding it.
-  * Refunds -- PawaPay has no refund concept for a mobile money push; a "refund" would have
-    to be a payout back to the original payer. Deferred.
+  * Wave -- not even active on this PawaPay account (checked GET /v2/active-conf: every
+    live provider uses authType=PROVIDER_AUTH, Wave isn't listed at all). REDIRECT_AUTH
+    needs a real example to design against and can't be requested until PawaPay enables it
+    on the account. See ADR/ticket before adding it.
   * Webhooks -- parse_webhook raises NotImplementedError like SandboxPaymentProcessor's.
     Blocked on the BCEAO agreement (SCRUM-555), a DiddiPay-side compliance gate, not a
-    PawaPay limitation. Confirmation goes through verify_payment / the reconciliation worker.
+    PawaPay limitation. Confirmation goes through verify_payment/verify_payout /
+    reconciliation.
+
+refund_payment (verified against the real sandbox, POST /v2/refunds) follows the same
+async ACCEPTED -> COMPLETED/FAILED shape as deposits/payouts. Note: refunds.py has no
+reconciliation path for refunds at all (RefundRepositoryPort only has add()), so a refund
+that comes back PROCESSING here has no way to ever resolve to a final status today --
+a pre-existing gap in the module, not something this file can fix alone.
 """
 
 from __future__ import annotations
@@ -49,6 +55,7 @@ from payfund_app.modules.payments.domain import (
     NextAction,
     NextActionType,
     PayoutStatus,
+    RefundStatus,
 )
 
 # Generic network name (InitializePaymentRequest.network) -> PawaPay operator family.
@@ -89,7 +96,9 @@ class PawapayPaymentProcessor:
     name = "pawapay"
     capabilities = ProcessorCapabilities(
         currencies=frozenset({"XOF"}),
-        directions=frozenset({PaymentDirection.COLLECTION, PaymentDirection.PAYOUT}),
+        directions=frozenset(
+            {PaymentDirection.COLLECTION, PaymentDirection.PAYOUT, PaymentDirection.REFUND}
+        ),
         channels=frozenset({"mobile_money"}),
         networks=frozenset(_PROVIDER_FAMILIES),
     )
@@ -263,12 +272,18 @@ class PawapayPaymentProcessor:
                 failure_code="PAWAPAY_RESPONSE_INVALID",
                 failure_message=str(exc),
             )
+        status = self._normalize_status(provider_status)
+        failure_code, failure_message = (
+            self._failure_reason(data) if status == AttemptStatus.FAILED else (None, None)
+        )
         return ProviderResult(
             provider_reference=str(data.get("depositId") or provider_reference),
-            status=self._normalize_status(provider_status),
+            status=status,
             provider_status=provider_status,
             amount=amount,
             currency=str(data.get("currency") or "").upper() or None,
+            failure_code=failure_code,
+            failure_message=failure_message,
         )
 
     def create_payout(self, request: PayoutRequest) -> PayoutResult:
@@ -352,10 +367,16 @@ class PawapayPaymentProcessor:
             )
         data = body.get("data") or {}
         provider_status = str(data.get("status") or "unknown").lower()
+        status = self._normalize_payout_status(provider_status)
+        failure_code, failure_message = (
+            self._failure_reason(data) if status == PayoutStatus.FAILED else (None, None)
+        )
         return PayoutResult(
             provider_reference=str(data.get("payoutId") or provider_reference),
-            status=self._normalize_payout_status(provider_status),
+            status=status,
             provider_status=provider_status,
+            failure_code=failure_code,
+            failure_message=failure_message,
         )
 
     def parse_webhook(self, raw_body: bytes, headers):
@@ -365,15 +386,59 @@ class PawapayPaymentProcessor:
         )
 
     def refund_payment(self, request: RefundRequest) -> RefundResult:
-        # PawaPay has no refund concept for a mobile money push -- reversing one means a
-        # payout back to the original payer, not an API call on the original deposit. Raising
-        # (rather than faking a RefundResult) keeps this honest: refunds.py's RefundUseCases
-        # does not currently catch ProcessorRequestRejected around this call (only
-        # ProcessorCallUncertain), so this surfaces as an unhandled error today -- a
-        # pre-existing gap in refunds.py, not something this change papers over.
-        raise ProcessorRequestRejected(
-            "pawapay collections cannot be refunded via this API -- reverse with a manual "
-            "payout to the original payer instead"
+        # Verified against the real PawaPay sandbox (POST /v2/refunds, GET /v2/refunds/{id}):
+        # refunds are real and follow the same async ACCEPTED/REJECTED -> COMPLETED/FAILED
+        # shape as deposits and payouts. request.provider_reference is the original deposit's
+        # depositId (see RefundUseCases.create: provider_reference=attempt.provider_reference).
+        #
+        # refunds.py has no reconciliation/verify path for refunds at all (RefundRepositoryPort
+        # only has add()) -- unlike deposits/payouts, a refund that's still PROCESSING after
+        # this call has no way to ever resolve to a final status today. That's a pre-existing
+        # gap in the module, not something added here; this just doesn't paper over it by
+        # pretending ACCEPTED means SUCCEEDED.
+        refund_id = str(request.refund_id)
+        payload: dict[str, Any] = {
+            "refundId": refund_id,
+            "depositId": request.provider_reference,
+            "amount": str(request.money.amount),
+            "currency": request.money.currency,
+        }
+        try:
+            response = self._request("refund", "POST", "/v2/refunds", json=payload)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProcessorCallUncertain(
+                refund_id, "pawapay refund outcome is unknown"
+            ) from exc
+
+        body = self._json(response)
+        if response.status_code >= 400:
+            return RefundResult(
+                provider_reference=refund_id,
+                status=RefundStatus.FAILED,
+                provider_status=f"http_{response.status_code}",
+                failure_code="PAWAPAY_REFUND_REJECTED",
+                failure_message=str(
+                    (body.get("failureReason") or {}).get("failureMessage")
+                    or body.get("message")
+                    or "pawapay rejected the refund"
+                )[:255],
+            )
+        provider_status = str(body.get("status") or "")
+        if provider_status == "REJECTED":
+            return RefundResult(
+                provider_reference=refund_id,
+                status=RefundStatus.FAILED,
+                provider_status="rejected",
+                failure_code="PAWAPAY_REFUND_REJECTED",
+                failure_message=str(
+                    (body.get("failureReason") or {}).get("failureMessage")
+                    or "pawapay rejected the refund"
+                )[:255],
+            )
+        return RefundResult(
+            provider_reference=refund_id,
+            status=RefundStatus.PROCESSING,
+            provider_status=provider_status.lower() or "accepted",
         )
 
     @staticmethod
@@ -383,6 +448,15 @@ class PawapayPaymentProcessor:
         except ValueError:
             return {}
         return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _failure_reason(data: dict[str, Any]) -> tuple[str | None, str | None]:
+        # Only present when a deposit/payout is found to have failed *asynchronously*
+        # (discovered via verify_payment/verify_payout polling) -- the immediate REJECTED
+        # response from initiate_* carries the same shape but is handled inline there.
+        reason = data.get("failureReason") or {}
+        message = reason.get("failureMessage")
+        return reason.get("failureCode"), (str(message)[:255] if message else None)
 
     @staticmethod
     def _parse_amount(value: object) -> int | None:
