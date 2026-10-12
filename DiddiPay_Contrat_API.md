@@ -526,13 +526,16 @@ Disponible :
 - outbox transactionnelle pour les evenements de succes ;
 - remboursements provider-neutral routes vers Paystack ;
 - sous-ledger double entree pour captures, frais, remboursements et settlements manuels ;
-- vue financiere par paiement et commandes ops de supervision.
+- vue financiere par paiement et commandes ops de supervision ;
+- payout/retrait via le nouveau coeur orchestrateur, agnostique au rail — voir le contrat
+  dedie [`docs/diddipay-payouts-contract-v1.md`](docs/diddipay-payouts-contract-v1.md) pour
+  le detail et les limites actuelles (seul `mobile_money` mtn/orange/moov est reellement
+  cable aujourd'hui, pas Wave).
 
 Pas encore a considerer comme disponible tant que les sprints correspondants ne sont pas livres :
 
-- payout/retrait via le nouveau coeur orchestrateur ;
 - import automatique et rapprochement global des rapports de settlement Paystack ;
-- adaptateurs directs (hors agrégateur) Orange Money, Wave ou MTN MoMo ;
+- adaptateurs directs (hors agrégateur) Orange Money, Wave ou MTN MoMo pour les collections ;
 - wallet comme moyen de paiement du nouvel orchestrateur.
 
 Le retrait du wallet historique `/payfund/v1/wallet/withdraw` est distinct du futur payout du
