@@ -201,6 +201,60 @@ def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
     assert _processor_for(session, card_response.json()["id"]) == "paystack"
 
 
+def test_wave_routes_to_paystack_not_sandbox(monkeypatch, client, session):
+    """Regression found via a real staging DiddiSend request: network=wave landed on
+    SandboxPaymentProcessor's fake sandbox.diddipay.local checkout instead of Paystack, in a
+    real staging environment with real PAYSTACK_SECRET_KEY configured. Root cause: Sandbox
+    declares networks={"orange","wave","mtn"} for local/dev convenience, and the
+    dedicated-processor-wins dispatch (built so PawaPay beats Paystack's default for
+    mtn/orange/moov) only checked "does some processor explicitly declare this network" --
+    Sandbox qualified for wave since no real processor does, hijacking it ahead of Paystack's
+    generic (empty-networks) fallback. PawaPay is registered here too, to prove it staying
+    silent on wave doesn't change the outcome."""
+    monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_not_a_real_secret")
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
+    get_settings.cache_clear()
+    deps.reset_processor_registry()
+
+    def unreached_pawapay(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("wave must not reach pawapay -- it doesn't support wave at all")
+
+    def paystack_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {
+                    "authorization_url": "https://checkout.paystack.test/wave",
+                    "access_code": "abc",
+                    "reference": "dpi_reference",
+                },
+            },
+        )
+
+    _mock_outbound(
+        monkeypatch, paystack_handler=paystack_handler, pawapay_handler=unreached_pawapay
+    )
+
+    wave_key = f"dispatch-wave-{uuid.uuid4()}"
+    response = client.post(
+        BASE,
+        headers={**HEADERS, "Idempotency-Key": wave_key},
+        json={
+            "business_reference": f"remittance:{wave_key}",
+            "amount": 835,
+            "currency": "XOF",
+            "channel": "mobile_money",
+            "network": "wave",
+            "customer_email": "payer@example.test",
+        },
+    )
+
+    assert response.status_code == 201
+    assert _processor_for(session, response.json()["id"]) == "paystack"
+
+
 def test_mobile_money_payout_routes_to_pawapay(monkeypatch, client):
     """End-to-end: a real beneficiary_destination (mobile_money/mtn) now resolves to the
     real PawaPay processor instead of 422 PAYOUT_METHOD_UNAVAILABLE -- proves the generic

@@ -12,6 +12,18 @@ class ProcessorRoutingError(LookupError):
     pass
 
 
+# Processors whose outcomes never reach a real PSP -- fine for local/test, never for an
+# environment where a client might believe money actually moved. Checked by name rather than a
+# capability flag because the whole point is that these report success without telling the
+# registry they're not real (see SandboxPaymentProcessor). Also excluded from
+# ProcessorRegistry.ordered()'s capability-based "dedicated processor" preference (see
+# PaymentUseCases.create()/PayoutUseCases.create()): SandboxPaymentProcessor declares
+# networks={"orange","wave","mtn"} for local/dev convenience, which would otherwise make it
+# look like the dedicated handler for wave (no real processor currently declares wave at all)
+# and hijack real traffic that should fall through to the generic default (Paystack) instead.
+SIMULATED_PROCESSOR_NAMES = frozenset({"sandbox"})
+
+
 class ProcessorRegistry:
     """Selects a processor before an attempt starts; it never retries an attempt."""
 

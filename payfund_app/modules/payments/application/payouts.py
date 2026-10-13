@@ -24,16 +24,11 @@ from payfund_app.modules.payments.application.ports import (
     UnitOfWorkPort,
 )
 from payfund_app.modules.payments.application.processor_router import (
+    SIMULATED_PROCESSOR_NAMES,
     ProcessorRegistry,
     ProcessorRoutingError,
 )
 from payfund_app.modules.payments.domain import Money, Payout, PayoutStatus
-
-# Processors whose payouts never reach a real PSP -- fine for local/test, never for an
-# environment where a client might believe money actually moved. Checked by name rather than
-# by a dedicated capability flag because the whole point is that these report success without
-# telling the registry they're not real (see SandboxPaymentProcessor.create_payout).
-SIMULATED_PROCESSOR_NAMES = frozenset({"sandbox"})
 
 
 @dataclass(frozen=True, slots=True)

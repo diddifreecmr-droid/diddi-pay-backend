@@ -23,7 +23,10 @@ from payfund_app.modules.payments.application.ports import (
     ProviderResult,
     UnitOfWorkPort,
 )
-from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.application.processor_router import (
+    SIMULATED_PROCESSOR_NAMES,
+    ProcessorRegistry,
+)
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
     Money,
@@ -116,7 +119,8 @@ class PaymentUseCases:
                 (
                     processor
                     for processor in self.processors.ordered()
-                    if command.network in processor.capabilities.networks
+                    if processor.name not in SIMULATED_PROCESSOR_NAMES
+                    and command.network in processor.capabilities.networks
                     and processor.capabilities.supports(
                         currency=command.currency,
                         direction=PaymentDirection.COLLECTION,
