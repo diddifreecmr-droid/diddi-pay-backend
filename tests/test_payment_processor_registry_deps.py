@@ -135,9 +135,7 @@ def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
     deps.reset_processor_registry()
 
     def pawapay_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200, json={"depositId": "dep-1", "status": "ACCEPTED"}
-        )
+        return httpx.Response(200, json={"redirectUrl": "https://paywith.pawapay.io/v2?x"})
 
     def unreached_paystack(request: httpx.Request) -> httpx.Response:
         raise AssertionError("mtn_momo must not reach Paystack")
@@ -157,6 +155,7 @@ def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
             "channel": "mobile_money",
             "network": "mtn",
             "customer_phone": "+2250503456789",
+            "callback_url": "https://go.diddifree.com/payments/return",
         },
     )
 

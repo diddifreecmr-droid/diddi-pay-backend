@@ -46,6 +46,7 @@ def request(**overrides):
         "channel": "mobile_money",
         "network": "mtn",
         "customer_phone": "+2250503456789",
+        "callback_url": "https://go.diddifree.com/payments/return",
         "metadata": {"ride_id": "42"},
     }
     values.update(overrides)
@@ -93,39 +94,47 @@ def test_inactive_operator_combo_is_rejected():
         )
 
 
-def test_initialize_accepted_maps_to_requires_action_mobile_money_prompt():
+def test_missing_callback_url_is_rejected_before_any_http_call():
+    def unreached(request):
+        raise AssertionError("must not call pawapay without a returnUrl")
+
+    with pytest.raises(ProcessorRequestRejected, match="callback_url"):
+        processor(unreached).initialize_payment(request(callback_url=None))
+
+
+def test_initialize_accepted_maps_to_requires_action_redirect():
+    """Ships via PawaPay's Payment Page, not the direct push API -- returns a real URL so
+    every consuming app's existing Paystack-style REDIRECT handling just works."""
     captured = {}
 
     def handler(http_request):
         captured["body"] = json.loads(http_request.content)
         return httpx.Response(
-            200,
-            json={"depositId": captured["body"]["depositId"], "status": "ACCEPTED"},
+            200, json={"redirectUrl": "https://paywith.pawapay.io/v2?token=abc"}
         )
 
     attempt_id = uuid.uuid4()
     result = processor(handler).initialize_payment(request(attempt_id=attempt_id))
 
-    assert captured["body"]["payer"]["accountDetails"]["provider"] == "MTN_MOMO_CIV"
-    assert captured["body"]["payer"]["accountDetails"]["phoneNumber"] == "2250503456789"
-    assert captured["body"]["amount"] == "5000"
-    assert captured["body"]["currency"] == "XOF"
+    assert captured["body"]["returnUrl"] == "https://go.diddifree.com/payments/return"
+    assert captured["body"]["phoneNumber"] == "2250503456789"
+    assert captured["body"]["country"] == "CIV"
+    assert captured["body"]["amountDetails"] == {"amount": "5000", "currency": "XOF"}
     assert captured["body"]["depositId"] == str(attempt_id)
     assert result.status == AttemptStatus.REQUIRES_ACTION
     assert result.provider_reference == str(attempt_id)
-    assert result.next_action.type == NextActionType.MOBILE_MONEY_PROMPT
-    assert result.next_action.url is None
-    assert result.next_action.instructions
+    assert result.next_action.type == NextActionType.REDIRECT
+    assert result.next_action.url == "https://paywith.pawapay.io/v2?token=abc"
 
 
 def test_initialize_is_idempotent_on_retry_same_attempt_id():
     """Unlike the wallet's fresh-uuid4-per-call, depositId is derived from attempt_id so a
-    retried HTTP call resubmits the same depositId -- pawapay documents this as safe."""
+    retried HTTP call resubmits the same session instead of minting a new one."""
     seen_deposit_ids = set()
 
     def handler(http_request):
         seen_deposit_ids.add(json.loads(http_request.content)["depositId"])
-        return httpx.Response(200, json={"depositId": "x", "status": "ACCEPTED"})
+        return httpx.Response(200, json={"redirectUrl": "https://paywith.pawapay.io/v2?x"})
 
     attempt_id = uuid.uuid4()
     req = request(attempt_id=attempt_id)
@@ -135,24 +144,14 @@ def test_initialize_is_idempotent_on_retry_same_attempt_id():
     assert seen_deposit_ids == {str(attempt_id)}
 
 
-def test_initialize_rejected_maps_to_failed():
+def test_initialize_missing_redirect_url_maps_to_failed():
     def handler(http_request):
-        return httpx.Response(
-            200,
-            json={
-                "depositId": json.loads(http_request.content)["depositId"],
-                "status": "REJECTED",
-                "failureReason": {
-                    "failureCode": "AMOUNT_OUT_OF_BOUNDS",
-                    "failureMessage": "Amount out of bounds",
-                },
-            },
-        )
+        return httpx.Response(200, json={"message": "something went wrong"})
 
     result = processor(handler).initialize_payment(request())
 
     assert result.status == AttemptStatus.FAILED
-    assert result.failure_code == "PAWAPAY_DEPOSIT_REJECTED"
+    assert result.failure_code == "PAWAPAY_PAYMENT_PAGE_REJECTED"
 
 
 def test_initialize_transport_error_raises_processor_call_uncertain():
@@ -226,11 +225,25 @@ def test_verify_payment_failed_captures_failure_reason():
     assert result.failure_message == "The recipient does not have an account."
 
 
-def test_verify_payment_not_found():
+def test_verify_payment_not_found_is_still_pending_not_a_failure():
+    """Verified live: with the Payment Page flow, the deposit genuinely does not exist in
+    PawaPay's system until the customer opens and acts on the page -- NOT_FOUND here is the
+    normal pre-completion state, not a verification failure."""
+
     def handler(http_request):
         return httpx.Response(200, json={"status": "NOT_FOUND"})
 
     result = processor(handler).verify_payment("dep-missing")
+
+    assert result.status == AttemptStatus.PROCESSING
+    assert result.failure_code is None
+
+
+def test_verify_payment_http_error_is_a_real_failure():
+    def handler(http_request):
+        return httpx.Response(500, json={})
+
+    result = processor(handler).verify_payment("dep-1")
 
     assert result.status == AttemptStatus.UNKNOWN
     assert result.failure_code == "PAWAPAY_VERIFICATION_FAILED"

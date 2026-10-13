@@ -1,8 +1,20 @@
-"""PawaPay adapter for provider-neutral PaymentIntent collections (mobile money push/PIN
-rail only: mtn_momo/orange_money/moov via POST /v2/deposits). Mirrors the proven wallet
-integration (`wallet/infra/pawapay_gateway.py`, verified against the real PawaPay sandbox,
-SCRUM-406) but conforms to this module's own PaymentProcessorPort contract instead of the
-wallet's simpler one.
+"""PawaPay adapter for provider-neutral PaymentIntent collections (mtn_momo/orange_money/moov).
+
+Collections go through PawaPay's **Payment Page** (POST /v2/paymentpage), not the direct
+push/PIN API -- deliberate choice: the Payment Page returns a real redirectUrl, so
+initialize_payment can return NextActionType.REDIRECT, which every consuming app
+(DiddiGo/DiddiSend/DiddiFood) already knows how to render for Paystack. The direct
+/v2/deposits push API (no URL, NextActionType.MOBILE_MONEY_PROMPT) is the better long-term
+UX for mobile money but needs each app to build a "check your phone" screen first -- ship
+Payment Page now, migrate to the native push per-app later once that UI exists. Both reuse
+the same wallet-proven operator/country resolution (SCRUM-406).
+
+Known Payment Page constraint (verified against the real API): there is no field to pin a
+specific operator, only `country` -- the customer could complete with a different operator
+in the same country than the one checked in _resolve_operator here. verify_payment's read of
+the real deposit afterwards is the source of truth regardless. Also verified live: the
+deposit does not exist in PawaPay's system at all until the customer opens and acts on the
+page, so NOT_FOUND from verify_payment is treated as still-pending, not a failure.
 
 Payouts (create_payout/verify_payout) use PayoutRequest.destination -- a generic, provider-
 agnostic {"type": "mobile_money", "phone": ..., "network": ...} dict (see
@@ -173,73 +185,53 @@ class PawapayPaymentProcessor:
     def initialize_payment(self, request: InitializePaymentRequest) -> ProviderResult:
         if not request.customer_phone:
             raise ProcessorRequestRejected("customer_phone is required by pawapay deposits")
+        if not request.callback_url:
+            raise ProcessorRequestRejected(
+                "callback_url is required by pawapay's Payment Page (used as returnUrl)"
+            )
 
+        # Sanity-check the intended network before sending the customer anywhere -- but note
+        # the Payment Page itself has no field to pin the exact operator (verified against the
+        # real API: only country-level restriction exists), so the customer could still
+        # complete with a different operator in the same country than the one checked here.
+        # verify_payment's eventual read of the real deposit is the source of truth either way.
         operator = self._resolve_operator(network=request.network, phone=request.customer_phone)
+        country = operator.rsplit("_", 1)[-1]
         # Deterministic from attempt_id (unlike the wallet's fresh uuid4 per call) so a retried
-        # HTTP call reuses the same depositId -- PawaPay documents POST /v2/deposits as safe to
-        # resubmit with the same depositId.
+        # HTTP call resubmits the same session instead of minting a new one.
         deposit_id = str(request.attempt_id)
         payload: dict[str, Any] = {
             "depositId": deposit_id,
-            "payer": {
-                "type": "MMO",
-                "accountDetails": {
-                    "phoneNumber": _digits_only(request.customer_phone),
-                    "provider": operator,
-                },
-            },
-            # PawaPay expects an integer XOF amount (decimalsInAmount=NONE), unlike Paystack's
-            # artificial x100.
-            "amount": str(request.money.amount),
-            "currency": request.money.currency,
-            "clientReferenceId": str(request.attempt_id),
+            "returnUrl": request.callback_url,
+            "amountDetails": {"amount": str(request.money.amount), "currency": request.money.currency},
+            "phoneNumber": _digits_only(request.customer_phone),
+            "country": country,
+            "reason": (request.business_reference or "DiddiPay payment")[:50],
         }
         try:
-            response = self._request("initialize", "POST", "/v2/deposits", json=payload)
+            response = self._request("initialize", "POST", "/v2/paymentpage", json=payload)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise ProcessorCallUncertain(
-                deposit_id, "pawapay deposit outcome is unknown"
+                deposit_id, "pawapay payment page outcome is unknown"
             ) from exc
 
         body = self._json(response)
-        if response.status_code >= 400:
+        redirect_url = body.get("redirectUrl")
+        if response.status_code >= 400 or not redirect_url:
             return ProviderResult(
                 provider_reference=deposit_id,
                 status=AttemptStatus.FAILED,
                 provider_status=f"http_{response.status_code}",
-                failure_code="PAWAPAY_DEPOSIT_REJECTED",
+                failure_code="PAWAPAY_PAYMENT_PAGE_REJECTED",
                 failure_message=str(
-                    (body.get("failureReason") or {}).get("failureMessage")
-                    or body.get("message")
-                    or "pawapay rejected the deposit"
+                    body.get("message") or "pawapay did not return a payment page"
                 )[:255],
             )
-        provider_status = str(body.get("status") or "")
-        if provider_status == "REJECTED":
-            return ProviderResult(
-                provider_reference=deposit_id,
-                status=AttemptStatus.FAILED,
-                provider_status="rejected",
-                failure_code="PAWAPAY_DEPOSIT_REJECTED",
-                failure_message=str(
-                    (body.get("failureReason") or {}).get("failureMessage")
-                    or "pawapay rejected the deposit"
-                )[:255],
-            )
-        # ACCEPTED / DUPLICATE_IGNORED: the request is queued, PawaPay pushes a PIN prompt to
-        # the payer's phone. There is no URL to redirect to -- the frontend must tell the
-        # customer to check their phone instead of rendering a checkout link.
         return ProviderResult(
             provider_reference=deposit_id,
             status=AttemptStatus.REQUIRES_ACTION,
-            provider_status=provider_status.lower() or "accepted",
-            next_action=NextAction(
-                NextActionType.MOBILE_MONEY_PROMPT,
-                instructions=(
-                    "Composez votre code PIN Mobile Money sur votre telephone pour confirmer "
-                    "le paiement."
-                ),
-            ),
+            provider_status="page_created",
+            next_action=NextAction(NextActionType.REDIRECT, url=str(redirect_url)),
         )
 
     def verify_payment(self, provider_reference: str) -> ProviderResult:
@@ -252,13 +244,24 @@ class PawapayPaymentProcessor:
                 provider_reference, "pawapay verification is unavailable"
             ) from exc
         body = self._json(response)
-        if response.status_code >= 400 or body.get("status") != "FOUND":
+        if response.status_code >= 400:
             return ProviderResult(
                 provider_reference=provider_reference,
                 status=AttemptStatus.UNKNOWN,
                 provider_status=f"http_{response.status_code}",
                 failure_code="PAWAPAY_VERIFICATION_FAILED",
-                failure_message="pawapay deposit not found",
+                failure_message="pawapay deposit verification failed",
+            )
+        if body.get("status") != "FOUND":
+            # Normal, not a failure: with the Payment Page flow, the deposit does not exist in
+            # PawaPay's system at all until the customer actually opens and acts on the hosted
+            # page (verified live) -- NOT_FOUND here just means "still waiting", same as
+            # PENDING/PROCESSING. The page link expires after 15 minutes; a genuinely abandoned
+            # session is left to the existing max-age reconciliation timeout, not detected here.
+            return ProviderResult(
+                provider_reference=provider_reference,
+                status=AttemptStatus.PROCESSING,
+                provider_status="page_not_yet_completed",
             )
         data = body.get("data") or {}
         provider_status = str(data.get("status") or "unknown").lower()
