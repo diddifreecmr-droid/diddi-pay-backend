@@ -194,6 +194,24 @@ def test_payout_requires_idempotency_and_documents_contract(client):
     assert {"X-Client-ID", "X-Service-Key", "Idempotency-Key"} <= parameter_names
 
 
+def test_payout_rejects_overlong_idempotency_key_before_hitting_the_database(client):
+    """Regression: a too-long Idempotency-Key reached the DB unvalidated and crashed with an
+    unhandled 500 (psycopg.errors.StringDataRightTruncation) instead of a clean 422 -- found
+    via a real DiddiSend request in staging."""
+    response = client.post(
+        BASE,
+        headers={
+            "X-Client-ID": "diddifood",
+            "X-Service-Key": "food-service-key",
+            "Idempotency-Key": "x" * 129,
+        },
+        json=payload(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+
+
 def test_processing_payout_is_reconciled_and_emits_final_event(session):
     payout_id = uuid.uuid4()
     session.add(

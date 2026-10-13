@@ -34,6 +34,7 @@ from payfund_app.modules.payments.presentation.deps import (
     ProcessorRegistryDep,
     SessionDep,
 )
+from payfund_app.modules.payments.presentation.idempotency import require_idempotency_key
 from payfund_app.modules.payments.presentation.schemas import (
     CreatePayoutRequest,
     PayoutFinancialSummaryResponse,
@@ -96,15 +97,12 @@ def create_payout(
     processors: ProcessorRegistryDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> PayoutResponse:
-    if not idempotency_key or not idempotency_key.strip():
-        raise UnprocessableEntity(
-            "L'en-tete Idempotency-Key est obligatoire.", code="IDEMPOTENCY_KEY_REQUIRED"
-        )
+    idempotency_key = require_idempotency_key(idempotency_key)
     try:
         view = _use_cases(session, processors).create(
             CreatePayoutCommand(
                 client_id=client.client_id,
-                idempotency_key=idempotency_key.strip(),
+                idempotency_key=idempotency_key,
                 **payload.model_dump(),
             )
         )

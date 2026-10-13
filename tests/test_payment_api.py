@@ -60,6 +60,19 @@ def test_payment_api_requires_service_credentials(client):
     assert response.status_code == 401
 
 
+def test_create_payment_intent_rejects_overlong_idempotency_key(client):
+    """Regression: a too-long Idempotency-Key reached the DB unvalidated and crashed with an
+    unhandled 500 (psycopg.errors.StringDataRightTruncation) instead of a clean 422 -- found
+    via a real DiddiSend request in staging."""
+    response = client.post(
+        BASE,
+        headers={**HEADERS, "Idempotency-Key": "x" * 129},
+        json=payload(),
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+
+
 def test_payment_is_visible_only_to_owning_module(client):
     created = client.post(BASE, headers=HEADERS, json=payload()).json()
     response = client.get(

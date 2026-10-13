@@ -47,6 +47,7 @@ from payfund_app.modules.payments.presentation.deps import (
     ProcessorRegistryDep,
     SessionDep,
 )
+from payfund_app.modules.payments.presentation.idempotency import require_idempotency_key
 from payfund_app.modules.payments.presentation.schemas import (
     CreatePaymentIntentRequest,
     CreateRefundRequest,
@@ -138,10 +139,7 @@ def create_payment_intent(
     processors: ProcessorRegistryDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> PaymentIntentResponse:
-    if not idempotency_key or not idempotency_key.strip():
-        raise UnprocessableEntity(
-            "L'en-tete Idempotency-Key est obligatoire.", code="IDEMPOTENCY_KEY_REQUIRED"
-        )
+    idempotency_key = require_idempotency_key(idempotency_key)
     try:
         command_data = payload.model_dump(exclude={"return_target", "callback_url"})
         callback_url = resolve_checkout_return_url(
@@ -153,7 +151,7 @@ def create_payment_intent(
         view = _use_cases(session, processors).create(
             CreatePaymentIntentCommand(
                 client_id=client.client_id,
-                idempotency_key=idempotency_key.strip(),
+                idempotency_key=idempotency_key,
                 callback_url=callback_url,
                 **command_data,
             )
@@ -231,11 +229,7 @@ def create_refund(
     processors: ProcessorRegistryDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> RefundResponse:
-    if not idempotency_key or not idempotency_key.strip():
-        raise UnprocessableEntity(
-            "L'en-tete Idempotency-Key est obligatoire.",
-            code="IDEMPOTENCY_KEY_REQUIRED",
-        )
+    idempotency_key = require_idempotency_key(idempotency_key)
     try:
         refund = RefundUseCases(
             PaymentIntentRepository(session),
@@ -250,7 +244,7 @@ def create_refund(
                 payment_intent_id=intent_id,
                 amount=payload.amount,
                 reason=payload.reason,
-                idempotency_key=idempotency_key.strip(),
+                idempotency_key=idempotency_key,
             )
         )
     except Exception as exc:

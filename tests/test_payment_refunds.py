@@ -96,6 +96,18 @@ def test_refund_requires_succeeded_payment(client, session):
     assert response.status_code == 409
 
 
+def test_refund_rejects_overlong_idempotency_key(client, session):
+    """Regression: a too-long Idempotency-Key reached the DB unvalidated and crashed with an
+    unhandled 500 (psycopg.errors.StringDataRightTruncation) instead of a clean 422 -- found
+    via a real DiddiSend request in staging."""
+    intent = succeeded_payment(session)
+
+    response = refund(client, intent.id, 1_000, "x" * 129)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+
+
 def test_openapi_documents_refund_request(client):
     schema = client.get("/payfund/v1/openapi.json").json()
     path = schema["paths"][f"{BASE}/{{intent_id}}/refunds"]["post"]
