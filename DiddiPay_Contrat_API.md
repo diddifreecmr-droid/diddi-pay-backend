@@ -146,15 +146,23 @@ Champs :
 | `network` | non | `orange`, `wave` ou `mtn` ; indication de routage, pas garantie d'affichage PSP |
 | `customer_email` | Paystack | Requis par le checkout Paystack actuel |
 | `customer_phone` | non | Telephone normalise, maximum 32 caracteres |
-| `return_target` | non | Nom d'une destination de retour configuree cote serveur, par exemple `app` |
+| `return_target` | PawaPay mobile money | Nom d'une destination de retour configuree cote serveur, par exemple `app` |
+| `description` | non | Libelle lisible, maximum 255 caracteres |
+| `metadata` | non | Contexte metier JSON non sensible |
 
 Le module ne fournit jamais une URL arbitraire. Les cibles sont configurees dans
 `PAYMENT_CHECKOUT_RETURN_TARGETS` avec une cle `<client_id>:<return_target>`. Le retour navigateur
 n'est pas une preuve de paiement : seul le statut DiddiPay, alimente par webhook ou reconciliation,
 fait foi. `callback_url` reste temporairement documente comme deprecie pour la migration staging et
 doit etre desactive en production avec `PAYMENT_CALLBACK_URL_FALLBACK_ENABLED=false`.
-| `description` | non | Libelle lisible, maximum 255 caracteres |
-| `metadata` | non | Contexte metier JSON non sensible |
+
+Pour `channel=mobile_money` avec `network` dans `mtn`/`orange`/`moov` (route PawaPay), l'un des
+deux (`return_target` ou `callback_url`) est desormais obligatoire : PawaPay route ces collections
+via sa Payment Page hebergee, qui exige une URL de retour reelle. Omettre les deux ne bloque pas la
+creation (toujours `201`) mais fait echouer la tentative immediatement : intent `status=failed`,
+`attempts[0].failure_code=PROCESSOR_REQUEST_REJECTED`, message `callback_url is required by
+pawapay's Payment Page`. Paystack reste insensible a cette contrainte (son propre retour par defaut
+s'applique si aucun des deux n'est fourni).
 
 Reponse `201 Created` :
 
