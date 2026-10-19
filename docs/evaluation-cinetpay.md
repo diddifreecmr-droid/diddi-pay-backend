@@ -234,9 +234,51 @@ initiation. Note d'intégration : le processeur DiddiPay n'épingle PAS `payment
 envoie `channel=ALL` (page hébergée, le payeur choisit Wave sur la page), ce qui donne un
 `INITIATED` + redirect propre, sans la tentative de push direct.
 
+**Charge directe / seamless (`direct_pay:true`) — page maison possible pour OM/MTN/Moov.**
+Testé en direct (numéros factices, on observe la forme) :
+
+| Opérateur | `direct_pay` sans OTP | Lecture |
+|---|---|---|
+| MTN_CI | `details.status: PENDING` (2002) | ✅ accepté, push vers le combiné → approbation PIN sur le téléphone ; page maison OK, pas d'OTP |
+| MOOV_CI | `details.status: PENDING` (2002) | ✅ idem |
+| OM_CI (Orange) | `details.status: FAILED` « Paiement échoué » | ⚠️ nécessite `otp_code` (code généré par l'usager via USSD `#144*82#`) |
+
+→ Le compte **supporte bien la charge directe** via `direct_pay:true` (≠ `channel=MOBILE_MONEY`
+qui, lui, renvoie OPERATION_ERROR). Un **mode seamless** pourrait renvoyer
+`NextActionType.MOBILE_MONEY_PROMPT` (MTN/Moov : « validez sur votre téléphone », puis poll
+`verify`) ou `DISPLAY_INSTRUCTIONS` (Orange : saisie de l'OTP). Coût réel = écrans par app
+(DiddiGo/DiddiSend/DiddiFood), hors périmètre du processeur seul. **Non implémenté** à ce stade
+(la v1 livrée utilise la page hébergée REDIRECT, zéro changement client). Wave reste toujours
+un deep-link/QR quel que soit le mode.
+
 **Non vérifié (impossible en l'état) :** settlement complet d'une collecte (nécessite qu'un
-client paye/autorise réellement sur Wave) et d'un payout (nécessite d'approvisionner le solde
-sandbox). Les deux endpoints sont prouvés vivants et corrects jusqu'au point de blocage.
+client paye/autorise réellement) et d'un payout (nécessite d'approvisionner le solde sandbox).
+Les endpoints sont prouvés vivants et corrects jusqu'au point de blocage.
 
 **Webhook signature** : toujours non vérifié en pratique (aucun webhook reçu) ; de toute
 façon ce n'est qu'un echo de `notify_token`, confirmation par `verify_*` + réconciliation.
+
+## 11. Activation / implémentation (à faire par l'opérateur)
+
+Le code est livré sur la branche `cinet-pay`. Pour rendre CinetPay réellement utilisable :
+
+1. **Déploiement** : merger `cinet-pay` sur `main`, puis **redéployer** le stack
+   `diddi-pay-backend` (jamais via Portainer côté agent — règle absolue).
+2. **Variables d'env** du stack (sinon le processeur ne s'enregistre pas) :
+   `CINETPAY_API_KEY` (`sk_test_…`/`sk_live_…`, base URL auto-détectée), `CINETPAY_API_PASSWORD`,
+   `CINETPAY_COUNTRY=CI`.
+3. **Routage** : CinetPay est en priorité 110 et `networks` vide → **jamais choisi par défaut**.
+   Pour qu'il serve les collectes, poser `PAYMENT_PROCESSOR_MODE=cinetpay` (il devient le
+   collecteur par défaut ; PawaPay garde ses rails dédiés mtn/orange/moov s'il est configuré).
+   **Décision opérateur au 2026-10-19 : PAS encore collecteur par défaut** — on laisse le mode
+   actuel, CinetPay reste inactif jusqu'à décision contraire.
+4. **IP + compte** : whitelister l'IP de sortie du serveur de **prod** (staging `169.58.70.37`
+   déjà whitelistée), et faire la **« Mise en production »** (compte actuellement *Non vérifié*).
+
+**Notes panel `panel.cinetpay.net` (produit API-first, PayMetrust) :**
+- **Logo page de paiement** : aucun réglage self-service trouvé sur la caisse (champs vus :
+  nom, solde, Opérations, Approbateurs, Clôturer). Compte *Non vérifié* → possiblement débloqué
+  après « Mise en production », sinon question pour le support CinetPay. À traiter plus tard.
+- **Remboursements** : présents côté panel (`Finance → Remboursements`) mais **absents de
+  l'API v1** intégrée (`refund_payment` lève `NotImplementedError`). Un refund serait donc
+  manuel via le panel, ou via une API séparée à demander.
