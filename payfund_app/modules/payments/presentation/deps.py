@@ -18,6 +18,7 @@ from payfund_app.modules.payments.application.processor_router import ProcessorR
 from payfund_app.modules.payments.infra.cinetpay_processor import (
     CinetpayPaymentProcessor,
 )
+from payfund_app.modules.payments.infra.jeko_processor import JekoPaymentProcessor
 from payfund_app.modules.payments.infra.pawapay_processor import PawapayPaymentProcessor
 from payfund_app.modules.payments.infra.paystack_processor import (
     PaystackPaymentProcessor,
@@ -140,6 +141,28 @@ def get_processor_registry() -> ProcessorRegistry:
                     base_url=settings.cinetpay_base_url or None,
                 ),
                 priority=110,
+            )
+        # Jèko (hosted payment page -> REDIRECT, + mobile-money payouts incl. Wave). Needs all
+        # three of api_key + api_key_id + store_id; a key alone can't authenticate and no call
+        # works without a store_id. Priority 120 (> Paystack 100, > CinetPay 110 = lowest
+        # precedence) so capability-based auto-selection keeps preferring the existing
+        # processors; jeko is used when explicitly chosen via preferred_processor, or as a
+        # payout fallback. Empty capability.networks means it never hijacks another processor's
+        # dedicated network (see SIMULATED_PROCESSOR_NAMES rationale in processor_router.py).
+        if (
+            settings.jeko_api_key
+            and settings.jeko_api_key_id
+            and settings.jeko_store_id
+        ):
+            _registry.register(
+                JekoPaymentProcessor(
+                    api_key=settings.jeko_api_key,
+                    api_key_id=settings.jeko_api_key_id,
+                    store_id=settings.jeko_store_id,
+                    base_url=settings.jeko_base_url,
+                    webhook_secret=settings.jeko_webhook_secret or None,
+                ),
+                priority=120,
             )
     return _registry
 

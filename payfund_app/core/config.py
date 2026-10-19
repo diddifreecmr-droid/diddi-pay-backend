@@ -96,6 +96,19 @@ class Settings(BaseSettings):
     cinetpay_base_url: str = ""
     cinetpay_country: str = "CI"
 
+    # Jèko (jeko.africa) Partner API -- hosted payment page -> REDIRECT, + mobile-money
+    # payouts incl. Wave. Auth = TWO headers: api_key (`jeko_...`) + api_key_id (its UUID);
+    # no login/JWT. Every call also needs a store_id (from GET /partner_api/stores). No
+    # sandbox: calls hit production; isolate via a dedicated test store. Registered only if
+    # api_key AND api_key_id AND store_id are all present. webhook_secret is the HMAC-SHA256
+    # signing key, wired for later (webhooks gated on BCEAO, SCRUM-555). See
+    # docs/evaluation-jeko.md.
+    jeko_api_key: str = ""
+    jeko_api_key_id: str = ""
+    jeko_store_id: str = ""
+    jeko_base_url: str = "https://api.jeko.africa"
+    jeko_webhook_secret: str = ""
+
     # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
     # the PaymentIntent API until operations configures service credentials.
     payment_service_keys: str = ""

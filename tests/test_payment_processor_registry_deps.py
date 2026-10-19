@@ -114,6 +114,36 @@ def test_all_three_processors_registered_simultaneously(monkeypatch):
     assert set(registry.names()) == {"paystack", "pawapay", "sandbox"}
 
 
+def test_jeko_registered_only_when_all_three_credentials_present(monkeypatch):
+    monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "sandbox")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "")
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "")
+    monkeypatch.setenv("JEKO_API_KEY", "jeko_not-real")
+    monkeypatch.setenv("JEKO_API_KEY_ID", "id-not-real")
+    monkeypatch.setenv("JEKO_STORE_ID", "store-not-real")
+    get_settings.cache_clear()
+
+    registry = deps.get_processor_registry()
+
+    assert set(registry.names()) == {"sandbox", "jeko"}
+
+
+def test_jeko_not_registered_when_store_id_missing(monkeypatch):
+    # A key + key_id without a store_id can't do anything (every call needs the store), so
+    # the registration is gated on all three -- not just the credential pair.
+    monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "sandbox")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "")
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "")
+    monkeypatch.setenv("JEKO_API_KEY", "jeko_not-real")
+    monkeypatch.setenv("JEKO_API_KEY_ID", "id-not-real")
+    monkeypatch.setenv("JEKO_STORE_ID", "")
+    get_settings.cache_clear()
+
+    registry = deps.get_processor_registry()
+
+    assert registry.names() == ("sandbox",)
+
+
 def _processor_for(session, intent_id) -> str:
     return session.scalar(
         select(PaymentAttemptRecord.processor).where(
