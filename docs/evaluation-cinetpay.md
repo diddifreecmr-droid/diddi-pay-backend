@@ -223,9 +223,20 @@ scripts d'exploration dans le scratchpad (jamais commités, creds via variables 
 3. `transaction_id` CinetPay est **au top-level** (ex. `ER-T-...`) → utilisé comme référence.
 4. Montants en francs entiers XOF (pas de ×100), confirmé (`amount:500`, `fee_amount:10`).
 
+**Test collecte Wave réel (numéro `0124565432` → `2250124565432`)** : `POST /v1/payment`
+avec `payment_method=WAVE_CI` → `200`, **`payment_url` émis**, `transaction_id` créé, et
+la vérif renvoie `status:INITIATED` + **`payment_method:WAVE_CI`** → la transaction existe
+bien et est liée à Wave. Le `details` de l'init affichait `FAILED / "Paiement échoué"` car
+épingler `payment_method`+`client_phone_number` déclenche une **tentative de push Wave direct**
+vers le numéro de test (non approvisionné, aucune autorisation Wave humaine) ; l'URL de
+checkout reste valide et la vérif reste `INITIATED`. → Wave confirmé bout-en-bout côté
+initiation. Note d'intégration : le processeur DiddiPay n'épingle PAS `payment_method` — il
+envoie `channel=ALL` (page hébergée, le payeur choisit Wave sur la page), ce qui donne un
+`INITIATED` + redirect propre, sans la tentative de push direct.
+
 **Non vérifié (impossible en l'état) :** settlement complet d'une collecte (nécessite qu'un
-client paye réellement la page) et d'un payout (nécessite d'approvisionner le solde sandbox).
-Les deux endpoints sont prouvés vivants et corrects jusqu'au point de blocage par le solde.
+client paye/autorise réellement sur Wave) et d'un payout (nécessite d'approvisionner le solde
+sandbox). Les deux endpoints sont prouvés vivants et corrects jusqu'au point de blocage.
 
 **Webhook signature** : toujours non vérifié en pratique (aucun webhook reçu) ; de toute
 façon ce n'est qu'un echo de `notify_token`, confirmation par `verify_*` + réconciliation.
