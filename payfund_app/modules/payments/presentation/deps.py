@@ -15,6 +15,9 @@ from payfund_app.core.database import get_session
 from payfund_app.core.errors import Unauthenticated
 from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.infra.cinetpay_processor import (
+    CinetpayPaymentProcessor,
+)
 from payfund_app.modules.payments.infra.pawapay_processor import PawapayPaymentProcessor
 from payfund_app.modules.payments.infra.paystack_processor import (
     PaystackPaymentProcessor,
@@ -119,6 +122,24 @@ def get_processor_registry() -> ProcessorRegistry:
                     base_url=settings.pawapay_base_url,
                 ),
                 priority=50,
+            )
+        # CinetPay v1 (hosted Payment Page -> REDIRECT, + mobile-money payouts incl. Wave).
+        # Needs BOTH the api_key and the api_password; an api_key alone can't authenticate.
+        # Priority 110 (> Paystack's 100 = lower precedence) so auto-selection keeps
+        # preferring the existing default; cinetpay is used when explicitly chosen via
+        # preferred_processor, or as the payout fallback for a network the direct rails
+        # (pawapay mtn/orange/moov) don't cover -- e.g. Wave. Empty capability.networks means
+        # it never hijacks another processor's dedicated network (see SIMULATED_PROCESSOR_NAMES
+        # rationale in processor_router.py).
+        if settings.cinetpay_api_key and settings.cinetpay_api_password:
+            _registry.register(
+                CinetpayPaymentProcessor(
+                    api_key=settings.cinetpay_api_key,
+                    api_password=settings.cinetpay_api_password,
+                    country=settings.cinetpay_country,
+                    base_url=settings.cinetpay_base_url or None,
+                ),
+                priority=110,
             )
     return _registry
 
