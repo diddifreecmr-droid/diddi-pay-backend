@@ -87,6 +87,15 @@ class Settings(BaseSettings):
     pawapay_api_token: str = ""
     pawapay_base_url: str = "https://api.sandbox.pawapay.io"
 
+    # CinetPay API v1 mobile money (api.cinetpay.net sandbox / api.cinetpay.co prod).
+    # Auth = api_key (sk_test_/sk_live_) + api_password -> JWT. Les DEUX sont requis ;
+    # une clé seule ne peut pas s'authentifier. base_url vide = auto-détecté depuis le
+    # préfixe de la clé. Enregistré uniquement si les deux secrets sont présents.
+    cinetpay_api_key: str = ""
+    cinetpay_api_password: str = ""
+    cinetpay_base_url: str = ""
+    cinetpay_country: str = "CI"
+
     # Format: "diddigo:key-1,diddifund:key-2". Empty means that no module can call
     # the PaymentIntent API until operations configures service credentials.
     payment_service_keys: str = ""
