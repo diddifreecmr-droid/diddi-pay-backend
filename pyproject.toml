@@ -30,6 +30,9 @@ dev = [
     # dépendance transitive de pydantic-settings, désormais nécessaire aux tests eux-mêmes.
     "python-dotenv>=1.0",
 ]
+docs = [
+    "mkdocs-material>=9.6,<10",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     backoffice_client_ids: str = ""
     backoffice_read_scope: str = "diddipay:operations:read"
     backoffice_command_scope: str = "diddipay:operations:write"
+    support_audience: str = "diddipay"
+    support_client_ids: str = ""
+    support_context_scope: str = "diddipay:support-context:read"
+    support_refund_scope: str = "diddipay:support-actions:refund-request"
     diddifreeid_step_up_max_ttl_seconds: int = Field(default=300, ge=60, le=900)
 
     redis_url: str = "redis://localhost:6379/0"
@@ -124,6 +128,8 @@ class Settings(BaseSettings):
     payment_callback_targets: dict[str, PaymentCallbackSettings] = Field(
         default_factory=dict
     )
+    payment_event_transport: Literal["http_callback", "redis_stream"] = "http_callback"
+    payment_redis_stream: str = "diddipay.payment.events.v1"
     payment_checkout_return_targets: dict[str, AnyHttpUrl] = Field(default_factory=dict)
     payment_callback_url_fallback_enabled: bool = True
     # Per-S2S-client allowlist of legacy callback_url origin+path prefixes
@@ -157,6 +163,14 @@ class Settings(BaseSettings):
         return {
             client_id.strip()
             for client_id in self.backoffice_client_ids.split(",")
+            if client_id.strip()
+        }
+
+    @property
+    def support_client_id_set(self) -> set[str]:
+        return {
+            client_id.strip()
+            for client_id in self.support_client_ids.split(",")
             if client_id.strip()
         }
 

@@ -31,6 +31,10 @@ def production_configuration_errors(settings: Settings) -> list[str]:
         errors.append("CORS_ORIGINS must be explicit")
     if settings.qr_signing_secret == "change-me-in-production":
         errors.append("QR_SIGNING_SECRET must be rotated")
+    if not settings.support_client_id_set:
+        errors.append("SUPPORT_CLIENT_IDS must not be empty")
+    if settings.payment_event_transport == "redis_stream" and not settings.payment_redis_stream.strip():
+        errors.append("PAYMENT_REDIS_STREAM must not be empty")
 
     for key, url in settings.payment_checkout_return_targets.items():
         if url.scheme != "https":

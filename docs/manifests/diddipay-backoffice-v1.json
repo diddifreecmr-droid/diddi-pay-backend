@@ -32,6 +32,28 @@
       ]
     }
   ],
+  "support_context": {
+    "contract_version": "support.payment-context.v1",
+    "method": "GET",
+    "path": "/payfund/v1/internal/support/payment/{payment_intent_id}/context",
+    "service_scope": "diddipay:support-context:read",
+    "privacy": "limited_payment_projection"
+  },
+  "support_actions": {
+    "refund_request": {
+      "method": "POST",
+      "path": "/payfund/v1/internal/support/refund-requests",
+      "service_scope": "diddipay:support-actions:refund-request",
+      "requires_case_id": true,
+      "requires_delegated_operator": true,
+      "requires_idempotency": true
+    },
+    "refund_result": {
+      "method": "GET",
+      "path": "/payfund/v1/internal/support/refund-requests/{action_id}",
+      "service_scope": "diddipay:support-context:read"
+    }
+  },
   "commands": [
     {
       "name": "list_payments",

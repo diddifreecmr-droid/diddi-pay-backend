@@ -42,6 +42,7 @@ from payfund_app.modules.payments.application.reconciliation import (
 )
 from payfund_app.modules.payments.infra.callback_delivery import (
     HttpSignedCallbackSender,
+    RedisStreamEventSender,
 )
 from payfund_app.modules.payments.infra.integrity import SqlPaymentIntegrityRepository
 from payfund_app.modules.payments.infra.repositories import (
@@ -260,10 +261,17 @@ def deliver_payment_events(
 ) -> DeliverySummary:
     """Deliver provider-neutral payment events to their owning modules."""
     if targets is None:
-        targets = {
-            client_id: CallbackTarget(str(config.url), config.secret)
-            for client_id, config in get_settings().payment_callback_targets.items()
-        }
+        settings = get_settings()
+        if settings.payment_event_transport == "redis_stream":
+            targets = {"*": CallbackTarget(settings.payment_redis_stream, "")}
+            sender = sender or RedisStreamEventSender(settings.redis_url)
+        else:
+            targets = {
+                client_id: CallbackTarget(str(config.url), config.secret)
+                for client_id, config in settings.payment_callback_targets.items()
+            }
+    if sender is None:
+        sender = HttpSignedCallbackSender()
     emit(
         "info",
         "ops.payment_events.delivery.start",
@@ -273,7 +281,7 @@ def deliver_payment_events(
     result = PaymentEventDeliveryUseCases(
         PaymentOutboxRepository(session),
         SqlAlchemyUnitOfWork(session),
-        sender or HttpSignedCallbackSender(),
+        sender,
         targets,
     ).run(limit=limit)
     emit(

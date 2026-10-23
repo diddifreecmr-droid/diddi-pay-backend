@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+import redis
 
 from payfund_app.modules.payments.application.errors import CallbackDeliveryFailed
 from payfund_app.modules.payments.application.ports import CallbackTarget
@@ -45,6 +46,9 @@ class HttpSignedCallbackSender:
             "X-DiddiPay-Event-ID": str(event_id),
             "X-DiddiPay-Signature": signature,
         }
+        request_id = payload.get("request_id")
+        if request_id:
+            headers["X-Request-ID"] = str(request_id)
         try:
             if self.client is not None:
                 response = self.client.post(target.url, content=body, headers=headers)
@@ -57,4 +61,37 @@ class HttpSignedCallbackSender:
                 )
             response.raise_for_status()
         except (httpx.HTTPError, OSError) as exc:
+            raise CallbackDeliveryFailed(str(exc)) from exc
+
+
+class RedisStreamEventSender:
+    """Publish the same durable event envelope to a Redis Stream."""
+
+    def __init__(self, url: str, *, maxlen: int = 100_000) -> None:
+        self.client = redis.Redis.from_url(url, decode_responses=True)
+        self.maxlen = maxlen
+
+    def send(
+        self,
+        target: CallbackTarget,
+        *,
+        event_id: uuid.UUID,
+        event_type: str,
+        occurred_at: datetime,
+        payload: Mapping[str, Any],
+    ) -> None:
+        envelope = {
+            "id": str(event_id),
+            "type": event_type,
+            "occurred_at": occurred_at.isoformat(),
+            "data": payload,
+        }
+        try:
+            self.client.xadd(
+                target.url,
+                {"event": json.dumps(envelope, sort_keys=True, separators=(",", ":"))},
+                maxlen=self.maxlen,
+                approximate=True,
+            )
+        except redis.RedisError as exc:
             raise CallbackDeliveryFailed(str(exc)) from exc

@@ -30,6 +30,9 @@ from payfund_app.modules.payments.presentation.routers import router as payment_
 from payfund_app.modules.payments.presentation.summary_router import (
     router as payment_summary_router,
 )
+from payfund_app.modules.payments.presentation.support_router import (
+    router as payment_support_router,
+)
 from payfund_app.modules.payments.presentation.webhook_router import (
     router as payment_webhook_router,
 )
@@ -117,6 +120,7 @@ app.include_router(payment_webhook_router, prefix=API_PREFIX)
 app.include_router(payment_summary_router, prefix=API_PREFIX)
 app.include_router(payout_router, prefix=API_PREFIX)
 app.include_router(payment_backoffice_router, prefix=API_PREFIX)
+app.include_router(payment_support_router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health", tags=["ops"])
