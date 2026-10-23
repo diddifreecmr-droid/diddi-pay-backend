@@ -1,0 +1,6 @@
+services:
+  docs:
+    environment:
+      DOCS_PUBLIC_ENABLED: "true"
+    ports:
+      - "${DOCS_BIND_HOST:-127.0.0.1}:${DOCS_PORT:-48080}:80"

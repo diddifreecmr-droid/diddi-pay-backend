@@ -279,6 +279,47 @@ class BackofficeCommandRecord(Base):
     )
 
 
+class SupportRefundActionRecord(Base):
+    __tablename__ = "support_refund_actions"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id", "idempotency_key", name="uq_support_refund_action_idempotency"
+        ),
+        UniqueConstraint("client_id", "command_id", name="uq_support_refund_action_command"),
+        CheckConstraint(
+            "status IN ('processing','succeeded','failed','unknown')",
+            name="ck_support_refund_action_status",
+        ),
+        Index("idx_support_refund_action_case", "support_case_id", "created_at"),
+        {"schema": "payments"},
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    client_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    support_case_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    operator_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    delegation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payment_intent_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    refund_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True))
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[ str ] = mapped_column(CHAR(3), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    result: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PayoutRecord(Base):
     __tablename__ = "payouts"
     __table_args__ = (

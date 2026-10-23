@@ -1,0 +1,29 @@
+FROM python:3.11-slim AS builder
+
+WORKDIR /docs
+
+COPY docs/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY mkdocs.yml ./mkdocs.yml
+COPY docs ./docs
+
+RUN mkdocs build --strict
+
+FROM nginx:1.27-alpine
+
+COPY --from=builder /docs/site /usr/share/nginx/html
+COPY docker/docs/nginx-enabled.conf /opt/diddipay-docs/nginx-enabled.conf
+COPY docker/docs/nginx-disabled.conf /opt/diddipay-docs/nginx-disabled.conf
+COPY docker/docs/start-docs.sh /usr/local/bin/diddipay-docs-start
+
+RUN chmod +x /usr/local/bin/diddipay-docs-start
+
+EXPOSE 80
+
+ENV DOCS_PUBLIC_ENABLED=false
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1
+
+ENTRYPOINT ["/usr/local/bin/diddipay-docs-start"]

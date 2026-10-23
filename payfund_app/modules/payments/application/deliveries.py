@@ -38,7 +38,7 @@ class PaymentEventDeliveryUseCases:
         self.uow.commit()
         delivered = retried = unavailable = 0
         for row in rows:
-            target = self.targets.get(row.client_id)
+            target = self.targets.get(row.client_id) or self.targets.get("*")
             if target is None:
                 self.outbox.failed(row, "callback target not configured")
                 unavailable += 1

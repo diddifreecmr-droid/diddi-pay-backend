@@ -69,6 +69,10 @@ services:
       BACKOFFICE_CLIENT_IDS: ${BACKOFFICE_CLIENT_IDS:-}
       BACKOFFICE_READ_SCOPE: ${BACKOFFICE_READ_SCOPE:-diddipay:operations:read}
       BACKOFFICE_COMMAND_SCOPE: ${BACKOFFICE_COMMAND_SCOPE:-diddipay:operations:write}
+      SUPPORT_AUDIENCE: ${SUPPORT_AUDIENCE:-diddipay}
+      SUPPORT_CLIENT_IDS: ${SUPPORT_CLIENT_IDS:-}
+      SUPPORT_CONTEXT_SCOPE: ${SUPPORT_CONTEXT_SCOPE:-diddipay:support-context:read}
+      SUPPORT_REFUND_SCOPE: ${SUPPORT_REFUND_SCOPE:-diddipay:support-actions:refund-request}
       DIDDIFREEID_STEP_UP_MAX_TTL_SECONDS: ${DIDDIFREEID_STEP_UP_MAX_TTL_SECONDS:-300}
       EVENT_BUS_CHANNEL: ${EVENT_BUS_CHANNEL:-diddifree.events}
       PAYMENT_GATEWAY_MODE: ${PAYMENT_GATEWAY_MODE:-stub}
@@ -92,6 +96,8 @@ services:
       PAYMENT_CALLBACK_URL_FALLBACK_ENABLED: ${PAYMENT_CALLBACK_URL_FALLBACK_ENABLED:-true}
       PAYMENT_PROCESSOR_MODE: ${PAYMENT_PROCESSOR_MODE:-sandbox}
       PAYMENT_CALLBACK_TARGETS: ${PAYMENT_CALLBACK_TARGETS:-{}}
+      PAYMENT_EVENT_TRANSPORT: ${PAYMENT_EVENT_TRANSPORT:-http_callback}
+      PAYMENT_REDIS_STREAM: ${PAYMENT_REDIS_STREAM:-diddipay.payment.events.v1}
       DIDDIFUND_DIDDIPAY_CALLBACK_SECRET: ${DIDDIFUND_DIDDIPAY_CALLBACK_SECRET:-}
       WALLET_STEP_UP_THRESHOLD_XOF: ${WALLET_STEP_UP_THRESHOLD_XOF:-50000}
       DEFAULT_INTEREST_RATE: ${DEFAULT_INTEREST_RATE:-6.5}
@@ -136,6 +142,21 @@ services:
       retries: 3
       start_period: 45s
     restart: unless-stopped
+
+  docs:
+    build:
+      context: .
+      dockerfile: Dockerfile.docs
+    container_name: payfund-docs
+    environment:
+      DOCS_PUBLIC_ENABLED: ${DOCS_PUBLIC_ENABLED:-false}
+    ports:
+      - "${DOCS_BIND_HOST:-127.0.0.1}:${DOCS_PORT:-48080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   payfund_pgdata:

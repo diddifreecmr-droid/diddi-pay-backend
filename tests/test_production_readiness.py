@@ -20,6 +20,7 @@ def production_settings(**overrides) -> Settings:
         "payment_service_key_fallback_enabled": False,
         "payment_callback_url_fallback_enabled": False,
         "payment_service_client_ids": "diddigo-production",
+        "support_client_ids": "diddisupport-production",
         "payment_gateway_autoconfirm": False,
         "cors_origins": "https://go.diddifree.com",
         "qr_signing_secret": "a-production-secret-managed-outside-git",

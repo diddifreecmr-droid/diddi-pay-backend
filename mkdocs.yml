@@ -1,0 +1,28 @@
+site_name: DiddiPay / DiddiFund
+site_description: Documentation backend du module de paiement DiddiFree
+site_url: https://pay-api-staging.diddifree.com
+docs_dir: docs
+strict: true
+theme:
+  name: material
+  language: fr
+nav:
+  - Accueil: index.md
+  - API:
+      - Index: api/index.md
+      - Contrat HTTP: api/API_CONTRACT.md
+      - Catalogue d'erreurs: api/error-catalog.md
+  - Guides:
+      - Support et remboursements: guides/support-refunds.md
+  - Intégrations:
+      - DiddiSupport: integrations/diddisupport.md
+  - Configuration:
+      - Variables d'environnement: configuration/environment-variables.md
+      - Portail documentaire: configuration/DOCUMENTATION_PORTAL.md
+  - Frontend:
+      - Index: frontend/index.md
+      - Brief Support: frontend/diddipay-support-brief-2026-10-23.md
+  - Référence:
+      - Statuts et permissions: reference/statuses-and-permissions.md
+  - Changelog:
+      - 2026-10-23: changelog/2026-10-23.md
