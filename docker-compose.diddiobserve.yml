@@ -1,0 +1,39 @@
+# REVIEW ONLY. Apply with docker-compose.yml, never with the legacy observability stack.
+# No platform containers, no public metrics ports, one process per scrape target.
+services:
+  app:
+    build:
+      args:
+        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?immutable revision required}
+    environment: &diddiobserve_environment
+      OBSERVABILITY_ENVIRONMENT: ${OBSERVABILITY_ENVIRONMENT:?environment required}
+      OBSERVABILITY_DEPLOYMENT_ID: ${OBSERVABILITY_DEPLOYMENT_ID:?deployment identity required}
+      OBSERVABILITY_RELEASE_SHA: ${OBSERVABILITY_RELEASE_SHA:?immutable revision required}
+      OBSERVABILITY_LOG_FILE: ""
+      METRICS_ENABLED: "true"
+      METRICS_TOKEN: ${METRICS_TOKEN:?service environment scrape secret required}
+      METRICS_ALLOWED_CIDRS: ${METRICS_ALLOWED_CIDRS:?collector source networks required}
+      TRACING_ENABLED: "true"
+      TRACING_OTLP_TRACES_ENDPOINT: ${TRACING_OTLP_TRACES_ENDPOINT:?complete OTLP traces URL required}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:?collector authentication required}
+      TRACING_ALLOW_INSECURE_LOCAL: "false"
+    # A reviewed ingress must join the approved network. Nothing is exposed on the host.
+    ports: !reset []
+    networks:
+      - default
+      - diddiobserve
+  payment-worker:
+    build:
+      args:
+        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?immutable revision required}
+    environment:
+      <<: *diddiobserve_environment
+      OBSERVABILITY_COMPONENT: worker
+    expose: ["9001"]
+    networks:
+      - default
+      - diddiobserve
+networks:
+  diddiobserve:
+    external: true
+    name: ${DIDDIOBSERVE_NETWORK:?approved private network required}

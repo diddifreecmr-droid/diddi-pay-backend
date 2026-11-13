@@ -363,16 +363,24 @@ class PaymentOutboxRepository:
         self.session = session
 
     def enqueue(self, *, client_id: str, event_type: str, aggregate_id: uuid.UUID, payload: dict):
-        row = PaymentOutboxRecord(
-            client_id=client_id,
-            event_type=event_type,
-            aggregate_id=aggregate_id,
-            payload=payload,
-            status="pending",
-        )
-        self.session.add(row)
-        self.session.flush()
-        return row
+        from opentelemetry import trace
+
+        from payfund_app.core.observability.async_context import capture_context
+
+        with trace.get_tracer("diddipay.outbox").start_as_current_span(
+            "outbox.enqueue", kind=trace.SpanKind.PRODUCER, record_exception=False
+        ):
+            row = PaymentOutboxRecord(
+                telemetry_context=capture_context(),
+                client_id=client_id,
+                event_type=event_type,
+                aggregate_id=aggregate_id,
+                payload=payload,
+                status="pending",
+            )
+            self.session.add(row)
+            self.session.flush()
+            return row
 
     def claim(
         self, limit: int = 100, *, lease_seconds: int = 300

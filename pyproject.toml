@@ -16,7 +16,7 @@ dependencies = [
     "redis>=5.2",
     "argon2-cffi>=23.1",
     "prometheus-client>=0.21",
-    "opentelemetry-sdk>=1.44,<2",
+    "opentelemetry-sdk>=1.44,<1.45",
     "opentelemetry-exporter-otlp-proto-http>=1.44,<2",
     "opentelemetry-instrumentation-fastapi>=0.65b0,<1",
     "opentelemetry-instrumentation-httpx>=0.65b0,<1",
@@ -29,6 +29,7 @@ dev = [
     # Utilisé directement par tests/conftest.py pour charger .env — jusqu'ici seulement une
     # dépendance transitive de pydantic-settings, désormais nécessaire aux tests eux-mêmes.
     "python-dotenv>=1.0",
+    "PyYAML>=6.0",
 ]
 docs = [
     "mkdocs-material>=9.6,<10",

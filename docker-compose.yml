@@ -37,6 +37,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    logging: &app_logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     container_name: payfund-app
     environment: &app_environment
       # Communication interne au réseau Compose : noms de service + ports internes fixes — pas
@@ -55,7 +60,12 @@ services:
       METRICS_ENABLED: ${METRICS_ENABLED:-false}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       TRACING_ENABLED: ${TRACING_ENABLED:-false}
-      TRACING_OTLP_ENDPOINT: ${TRACING_OTLP_ENDPOINT:-http://otel-collector:4318}
+      TRACING_OTLP_ENDPOINT: ${TRACING_OTLP_ENDPOINT:-}
+      TRACING_OTLP_TRACES_ENDPOINT: ${TRACING_OTLP_TRACES_ENDPOINT:-}
+      TRACING_ALLOW_INSECURE_LOCAL: ${TRACING_ALLOW_INSECURE_LOCAL:-false}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_EXPORTER_OTLP_CERTIFICATE: ${OTEL_EXPORTER_OTLP_CERTIFICATE:-}
+      OBSERVABILITY_DEPLOYMENT_ID: ${OBSERVABILITY_DEPLOYMENT_ID:-local}
       TRACING_SAMPLE_RATE: ${TRACING_SAMPLE_RATE:-0.1}
       PAYMENT_WORKER_HEARTBEAT_PATH: ${PAYMENT_WORKER_HEARTBEAT_PATH:-/tmp/diddipay-payment-worker-heartbeat.json}
       PAYMENT_WORKER_HEARTBEAT_MAX_AGE_SECONDS: ${PAYMENT_WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
@@ -127,11 +137,15 @@ services:
       start_period: 10s
 
   payment-worker:
+    logging: *app_logging
     build:
       context: .
       dockerfile: Dockerfile
     entrypoint: ["python", "-m", "payfund_app.ops", "payment-worker"]
-    environment: *app_environment
+    environment:
+      <<: *app_environment
+      OBSERVABILITY_COMPONENT: worker
+      WORKER_METRICS_PORT: 9001
     depends_on:
       app:
         condition: service_healthy

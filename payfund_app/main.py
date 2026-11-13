@@ -9,17 +9,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.exc import ProgrammingError
+from fastapi.responses import JSONResponse
 
 from payfund_app.core.config import get_settings
 from payfund_app.core.database import SessionLocal
 from payfund_app.core.errors import register_exception_handlers
+from payfund_app.core.observability.health import readiness
 from payfund_app.core.observability.metrics import router as metrics_router
 from payfund_app.core.observability.middleware import ObservabilityMiddleware
-from payfund_app.core.observability.tracing import configure_tracing
+from payfund_app.core.observability.tracing import configure_tracing, shutdown_tracing
 from payfund_app.core.production_readiness import production_configuration_errors
 from payfund_app.modules.fund.presentation.routers import router as fund_router
-from payfund_app.modules.payments.infra.repositories import PaymentOutboxRepository
 from payfund_app.modules.payments.presentation.backoffice_router import (
     router as payment_backoffice_router,
 )
@@ -37,11 +37,10 @@ from payfund_app.modules.payments.presentation.webhook_router import (
     router as payment_webhook_router,
 )
 from payfund_app.modules.wallet.infra import subscribers as wallet_subscribers
-from payfund_app.modules.wallet.infra.repositories import OutboxRepository
 from payfund_app.modules.wallet.presentation.routers import router as wallet_router
 from payfund_app.ops.maintenance import relay_outbox_events
 from payfund_app.shared_kernel.events.bus import RedisEventBus, get_bus
-from payfund_app.shared_kernel.logging import configure_logging
+from payfund_app.shared_kernel.logging import configure_logging, emit
 
 configure_logging()
 
@@ -81,11 +80,14 @@ async def lifespan(_: FastAPI):
         bus.start()
     with SessionLocal() as session:
         relay_outbox_events(session, bus)
-    yield
-    if isinstance(bus, RedisEventBus):
-        bus.stop()
-    if tracer_provider is not None:
-        tracer_provider.shutdown()
+    emit("info", "application.started")
+    try:
+        yield
+    finally:
+        if isinstance(bus, RedisEventBus):
+            bus.stop()
+        if tracer_provider is not None:
+            shutdown_tracing(tracer_provider)
 
 
 app = FastAPI(
@@ -128,16 +130,10 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get(f"{API_PREFIX}/ready", tags=["ops"])
-def ready() -> dict[str, str]:
+@app.get(f"{API_PREFIX}/ready", tags=["ops"], response_model=dict[str, str])
+async def ready():
     """Readiness du runtime: la base est joignable et l'outbox existe."""
-    if production_configuration_errors(get_settings()):
-        return {"status": "degraded", "configuration": "unsafe"}
-    with SessionLocal() as session:
-        try:
-            OutboxRepository(session).pending(limit=1)
-            PaymentOutboxRepository(session).status_counts()
-        except ProgrammingError:
-            session.rollback()
-            return {"status": "degraded"}
-    return {"status": "ready"}
+    status = await readiness()
+    return JSONResponse(
+        {"status": status}, status_code=503 if status == "unavailable" else 200
+    )

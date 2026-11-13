@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from payfund_app.core.observability.async_context import processing_context
 from payfund_app.modules.payments.application.errors import CallbackDeliveryFailed
 from payfund_app.modules.payments.application.ports import (
     CallbackTarget,
@@ -45,13 +46,17 @@ class PaymentEventDeliveryUseCases:
                 self.uow.commit()
                 continue
             try:
-                self.sender.send(
-                    target,
-                    event_id=row.id,
-                    event_type=row.event_type,
-                    occurred_at=row.created_at,
-                    payload=row.payload,
-                )
+                with processing_context(
+                    getattr(row, "telemetry_context", None),
+                    attempt=getattr(row, "attempts", 0) + 1,
+                ):
+                    self.sender.send(
+                        target,
+                        event_id=row.id,
+                        event_type=row.event_type,
+                        occurred_at=row.created_at,
+                        payload=row.payload,
+                    )
             except CallbackDeliveryFailed as exc:
                 self.outbox.failed(row, str(exc))
                 retried += 1

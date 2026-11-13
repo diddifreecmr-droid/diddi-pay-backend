@@ -1,0 +1,58 @@
+# Fragment to review and merge centrally; not an independently deployed collector.
+scrape_configs:
+  - job_name: diddipay-api
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    scheme: https
+    metrics_path: /internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: ${METRICS_CREDENTIALS_FILE}
+    tls_config:
+      ca_file: ${SCRAPE_CA_FILE}
+      insecure_skip_verify: false
+    static_configs:
+      - targets: ["${API_SCRAPE_TARGET}"]
+        labels:
+          service_name: diddipay
+          environment: ${OBSERVABILITY_ENVIRONMENT}
+          deployment_id: ${OBSERVABILITY_DEPLOYMENT_ID}
+          component: api
+  - job_name: diddipay-worker
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    scheme: https
+    metrics_path: /internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: ${METRICS_CREDENTIALS_FILE}
+    tls_config:
+      ca_file: ${SCRAPE_CA_FILE}
+      insecure_skip_verify: false
+    static_configs:
+      - targets: ["${WORKER_SCRAPE_TARGET}"]
+        labels:
+          service_name: diddipay
+          environment: ${OBSERVABILITY_ENVIRONMENT}
+          deployment_id: ${OBSERVABILITY_DEPLOYMENT_ID}
+          component: worker
+  - job_name: diddipay-readiness
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    metrics_path: /probe
+    params:
+      module: [diddipay_readiness]
+    static_configs:
+      - targets: ["${READINESS_PROBE_URL}"]
+        labels:
+          service_name: diddipay
+          environment: ${OBSERVABILITY_ENVIRONMENT}
+          deployment_id: ${OBSERVABILITY_DEPLOYMENT_ID}
+          component: api
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: ${BLACKBOX_TARGET}

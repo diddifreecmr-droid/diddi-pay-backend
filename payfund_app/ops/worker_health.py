@@ -16,7 +16,7 @@ def record_worker_heartbeat(path: str, *, healthy: bool, error: str | None = Non
     payload = {
         "timestamp": time.time(),
         "healthy": healthy,
-        "error": error[:255] if error else None,
+        "error": "worker_cycle_failed" if error else None,
     }
     temporary.write_text(json.dumps(payload), encoding="utf-8")
     os.replace(temporary, target)

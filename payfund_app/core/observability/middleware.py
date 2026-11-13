@@ -11,13 +11,13 @@ from typing import Any
 from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import bind_request_id, reset_request_id
 from payfund_app.core.observability.metrics import (
+    normalize_method,
     observe_application_error,
     observe_http_request,
 )
 from payfund_app.shared_kernel.logging import emit
 
-
-_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
 def _header_value(headers: list[tuple[bytes, bytes]], name: bytes) -> str | None:
@@ -30,6 +30,8 @@ def _header_value(headers: list[tuple[bytes, bytes]], name: bytes) -> str | None
 
 def _request_id(headers: list[tuple[bytes, bytes]]) -> str:
     candidate = _header_value(headers, b"x-request-id")
+    if candidate is None:
+        candidate = _header_value(headers, b"x-correlation-id")
     if candidate and _REQUEST_ID_RE.fullmatch(candidate):
         return candidate
     return uuid.uuid4().hex
@@ -38,7 +40,7 @@ def _request_id(headers: list[tuple[bytes, bytes]]) -> str:
 def _route_label(scope: dict[str, Any]) -> str:
     route = scope.get("route")
     path = getattr(route, "path", None)
-    return str(path) if path else "unmatched"
+    return str(path) if path else "/_unmatched"
 
 
 class ObservabilityMiddleware:
@@ -53,7 +55,7 @@ class ObservabilityMiddleware:
         request_id = _request_id(scope.get("headers", []))
         context_token = bind_request_id(request_id)
         started_at = time.perf_counter()
-        method = str(scope.get("method") or "UNKNOWN").upper()
+        method = normalize_method(str(scope.get("method") or "UNKNOWN").upper())
         status_code = 500
 
         async def send_with_request_id(message) -> None:

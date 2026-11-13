@@ -269,10 +269,20 @@ class OutboxRepository:
         self.session = session
 
     def enqueue(self, *, event_name: str, payload: dict) -> OutboxEvent:
-        event = OutboxEvent(event_name=event_name, payload=payload, status="pending")
-        self.session.add(event)
-        self.session.flush()
-        return event
+        from opentelemetry import trace
+
+        from payfund_app.core.observability.async_context import capture_context
+
+        with trace.get_tracer("diddipay.outbox").start_as_current_span(
+            "outbox.enqueue", kind=trace.SpanKind.PRODUCER, record_exception=False
+        ):
+            event = OutboxEvent(
+                event_name=event_name, payload=payload, status="pending",
+                telemetry_context=capture_context(),
+            )
+            self.session.add(event)
+            self.session.flush()
+            return event
 
     def pending(self, limit: int = 100) -> list[OutboxEvent]:
         return list(

@@ -311,7 +311,8 @@ def test_ops_outbox_listing_and_relay(client, auth, session, make_user):
         set_bus(InMemoryEventBus())
 
 
-def test_readiness_route_reports_ready(client):
+def test_readiness_route_reports_ready(client, monkeypatch):
+    monkeypatch.setattr("payfund_app.core.observability.health.redis.Redis.ping", lambda self: True)
     response = client.get("/payfund/v1/ready")
     assert response.status_code == 200
     assert response.json()["status"] == "ready"

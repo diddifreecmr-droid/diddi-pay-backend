@@ -39,7 +39,7 @@ def test_redaction_removes_nested_secrets_and_personal_data() -> None:
     assert safe["customer"]["phone_number"] == REDACTED
     assert safe["customer"]["display_name"] == "Awa K."
     assert "sk_test_should-never-leak" not in safe["provider_message"]
-    assert safe["shipping_address"] == "Douala"
+    assert safe["shipping_address"] == REDACTED
 
 
 def test_structured_log_envelope_includes_request_context(monkeypatch) -> None:
@@ -62,11 +62,11 @@ def test_structured_log_envelope_includes_request_context(monkeypatch) -> None:
         get_settings.cache_clear()
 
     assert payload["level"] == "info"
-    assert payload["environment"] == "test"
-    assert payload["release"] == "abc123"
+    assert payload["resource"]["deployment.environment.name"] == "test"
+    assert payload["resource"]["service.version"] == "abc123"
     assert payload["request_id"] == "req-contract-test"
-    assert payload["payment_intent_id"] == "pi_123"
-    assert payload["api_key"] == REDACTED
+    assert payload["attributes"]["payment_intent_id"] == "pi_123"
+    assert payload["attributes"]["api_key"] == REDACTED
 
 
 def test_optional_file_logs_are_bounded_and_redacted(monkeypatch, tmp_path) -> None:
@@ -90,7 +90,7 @@ def test_optional_file_logs_are_bounded_and_redacted(monkeypatch, tmp_path) -> N
         handlers[0].flush()
         lines = path.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 1
-        assert json.loads(lines[0])["api_key"] == REDACTED
+        assert json.loads(lines[0])["attributes"]["api_key"] == REDACTED
         assert "secret-value" not in lines[0]
     finally:
         for handler in logger.handlers[:]:
@@ -145,7 +145,7 @@ def test_metrics_are_protected_and_hidden_from_openapi(monkeypatch) -> None:
     assert missing.status_code == 401
     assert wrong.status_code == 401
     assert allowed.status_code == 200
-    assert "diddipay_http_requests_total" in allowed.text
+    assert "diddi_http_server_requests_total" in allowed.text
     assert "/internal/metrics" not in schema["paths"]
 
 

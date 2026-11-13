@@ -239,7 +239,7 @@ def relay_outbox_events(session: Session, bus) -> RelayResult:
         return RelayResult(scanned=0, published=0)
     published = 0
     for row in pending_events:
-        bus.publish(Event(row.event_name, row.payload))
+        bus.publish(Event(row.event_name, row.payload, telemetry_context=getattr(row, "telemetry_context", None)))
         repo.mark_published(row)
         published += 1
     session.commit()

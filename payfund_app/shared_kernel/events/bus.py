@@ -10,12 +10,15 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 from typing import Any, Protocol
 
 import redis
 
 from payfund_app.core.config import get_settings
+from payfund_app.core.observability.async_context import processing_context
+from payfund_app.core.observability.metrics import HEARTBEAT
 from payfund_app.shared_kernel.events.types import Event
 
 logger = logging.getLogger(__name__)
@@ -45,7 +48,8 @@ class InMemoryEventBus:
     def _dispatch(self, message: dict[str, Any]) -> None:
         for handler in self._handlers.get(message.get("event", ""), []):
             try:
-                handler(message)
+                with processing_context(message.get("telemetry_context")):
+                    handler(message)
             except Exception:  # un abonné en échec ne doit pas casser les autres
                 logger.exception("Handler en échec pour %s", message.get("event"))
 
@@ -70,6 +74,7 @@ class RedisEventBus:
     def start(self) -> None:
         if self._thread is not None:
             return
+        HEARTBEAT.labels("redis_subscriber").set(0)
         self._thread = threading.Thread(target=self._listen, daemon=True)
         self._thread.start()
 
@@ -82,6 +87,7 @@ class RedisEventBus:
         while not self._stop.is_set():
             message = pubsub.get_message(timeout=1.0)
             if not message:
+                HEARTBEAT.labels("redis_subscriber").set(time.time())
                 continue
             try:
                 data = json.loads(message["data"])
@@ -90,9 +96,11 @@ class RedisEventBus:
                 continue
             for handler in self._handlers.get(data.get("event", ""), []):
                 try:
-                    handler(data)
+                    with processing_context(data.get("telemetry_context")):
+                        handler(data)
                 except Exception:
                     logger.exception("Handler en échec pour %s", data.get("event"))
+            HEARTBEAT.labels("redis_subscriber").set(time.time())
 
 
 _bus: EventBusPort | None = None

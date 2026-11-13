@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import re
 import uuid
 from collections.abc import Mapping
 from datetime import datetime
@@ -11,12 +12,16 @@ from typing import Any
 import httpx
 import redis
 
+from payfund_app.core.observability.async_context import capture_context
+from payfund_app.core.observability.context import get_request_id
 from payfund_app.modules.payments.application.errors import CallbackDeliveryFailed
 from payfund_app.modules.payments.application.ports import CallbackTarget
 
 
 class HttpSignedCallbackSender:
-    def __init__(self, client: httpx.Client | None = None, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self, client: httpx.Client | None = None, *, timeout: float = 10.0
+    ) -> None:
         self.client = client
         self.timeout = timeout
 
@@ -46,8 +51,14 @@ class HttpSignedCallbackSender:
             "X-DiddiPay-Event-ID": str(event_id),
             "X-DiddiPay-Signature": signature,
         }
-        request_id = payload.get("request_id")
-        if request_id:
+        context = capture_context()
+        headers.update(
+            {k: v for k, v in context.items() if k in {"traceparent", "tracestate"}}
+        )
+        request_id = get_request_id() or payload.get("request_id")
+        if isinstance(request_id, str) and re.fullmatch(
+            r"[A-Za-z0-9._-]{1,128}", request_id
+        ):
             headers["X-Request-ID"] = str(request_id)
         try:
             if self.client is not None:
@@ -89,7 +100,12 @@ class RedisStreamEventSender:
         try:
             self.client.xadd(
                 target.url,
-                {"event": json.dumps(envelope, sort_keys=True, separators=(",", ":"))},
+                {
+                    "event": json.dumps(
+                        envelope, sort_keys=True, separators=(",", ":")
+                    ),
+                    **capture_context(),
+                },
                 maxlen=self.maxlen,
                 approximate=True,
             )

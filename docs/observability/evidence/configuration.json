@@ -1,0 +1,12 @@
+{
+  "templates_valid_yaml": [
+    "alerts.yml.template",
+    "blackbox.yml.template",
+    "prometheus.yml.template"
+  ],
+  "compose_parsed": true,
+  "public_api_worker_ports_removed": true,
+  "docker_rotation": "10m x 5",
+  "central_connection_attempted": false,
+  "deployment_performed": false
+}

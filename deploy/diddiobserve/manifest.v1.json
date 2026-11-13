@@ -1,0 +1,314 @@
+{
+  "manifest_version": "1.0.0",
+  "protocol_version": "1.0.0",
+  "service_name": "diddipay",
+  "namespace": "diddi",
+  "repository": "diddipay-fund",
+  "owner": {
+    "team": "DiddiPay",
+    "operational_contact": "${OPERATIONS_CONTACT}",
+    "assignment_status": "central-confirmation-required"
+  },
+  "identity": {
+    "version": "${OBSERVABILITY_RELEASE_SHA}",
+    "environment": "${OBSERVABILITY_ENVIRONMENT}",
+    "deployment_id": "${OBSERVABILITY_DEPLOYMENT_ID}",
+    "instance": "process PID plus random UUID; renewed on process start",
+    "allowed_environments": [
+      "development",
+      "test",
+      "staging",
+      "production"
+    ]
+  },
+  "profile": "api-and-continuous-workers",
+  "state": "inventoried",
+  "central_ingestion_verified": false,
+  "components": [
+    {
+      "name": "app",
+      "component": "api",
+      "processes_per_target": 1,
+      "internal_port": 8000,
+      "metrics_path": "/internal/metrics",
+      "liveness_path": "/payfund/v1/health",
+      "readiness_path": "/payfund/v1/ready",
+      "collect_target": "${API_SCRAPE_TARGET}",
+      "signals": [
+        "logs",
+        "http_metrics",
+        "provider_metrics",
+        "traces",
+        "redis_subscriber_heartbeat"
+      ],
+      "embedded_worker": {
+        "name": "redis_subscriber",
+        "period_seconds": 1,
+        "alert_stale_after_seconds": 90,
+        "heartbeat": "after completed poll/dispatch, including empty polls"
+      }
+    },
+    {
+      "name": "payment-worker",
+      "component": "worker",
+      "processes_per_target": 1,
+      "internal_port": 9001,
+      "metrics_path": "/internal/metrics",
+      "collect_target": "${WORKER_SCRAPE_TARGET}",
+      "health_command": "python -m payfund_app.ops.worker_health /tmp/diddipay-payment-worker-heartbeat.json --max-age 90",
+      "heartbeat_path_variable": "PAYMENT_WORKER_HEARTBEAT_PATH",
+      "period_seconds": 30,
+      "max_age_seconds": 90,
+      "signals": [
+        "logs",
+        "traces",
+        "jobs",
+        "heartbeat",
+        "provider_metrics",
+        "outbox_queues"
+      ],
+      "job_histogram_seconds": [
+        0.1,
+        0.5,
+        1,
+        5,
+        10,
+        30,
+        60,
+        120,
+        300,
+        "+Inf"
+      ]
+    }
+  ],
+  "infrastructure": [
+    {
+      "name": "db",
+      "profile": "infrastructure",
+      "internal_port": 5432,
+      "managed_by_this_contract": false
+    },
+    {
+      "name": "redis",
+      "profile": "infrastructure",
+      "internal_port": 6379,
+      "managed_by_this_contract": false
+    },
+    {
+      "name": "docs",
+      "profile": "web-edge",
+      "internal_port": 80,
+      "health_path": "/healthz",
+      "application_traces_applicable": false
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "postgresql",
+      "critical": true,
+      "probe": "read-only selection of telemetry_context from wallet/payments outbox",
+      "connect_timeout_seconds": 1,
+      "statement_timeout_ms": 700
+    },
+    {
+      "name": "redis",
+      "critical": "when PAYMENT_EVENT_TRANSPORT=redis_stream; optional for callback-oriented payment API",
+      "probe": "PING",
+      "socket_timeout_seconds": 0.4
+    },
+    {
+      "name": "payment_providers",
+      "critical_to_readiness": false,
+      "probe": "none; only actual business calls instrumented"
+    },
+    {
+      "name": "identity_jwks",
+      "critical_to_readiness": false,
+      "probe": "none; existing cached JWT validation"
+    },
+    {
+      "name": "diddiobserve",
+      "critical": false,
+      "probe": "never part of readiness"
+    }
+  ],
+  "health": {
+    "interval_seconds": 30,
+    "total_timeout_seconds": 3,
+    "implementation_deadline_seconds": 2.8,
+    "max_concurrent_dependency_checks": 1,
+    "success_cache_ttl_seconds": 0,
+    "public_details": "status only"
+  },
+  "metrics": {
+    "authentication": "Bearer, fail-closed with missing token; direct socket peer CIDR allowlist in central profile",
+    "secret_reference": "${METRICS_CREDENTIALS_FILE}",
+    "producer_secret_variable": "METRICS_TOKEN",
+    "allowed_source_networks_variable": "METRICS_ALLOWED_CIDRS",
+    "trust_forwarded_headers": false,
+    "transport": "HTTPS via reviewed private TLS gateway; plaintext only inside explicitly isolated local network",
+    "scrape_interval_seconds": 15,
+    "scrape_timeout_seconds": 5,
+    "active_series_budget_per_target": 20000,
+    "target_labels": [
+      "service_name",
+      "environment",
+      "deployment_id",
+      "component",
+      "instance"
+    ],
+    "version_metric": "diddi_build_info",
+    "canonical_source": "native producer; never add recording aliases duplicating native diddi_* families",
+    "families": [
+      "diddi_http_server_requests_total",
+      "diddi_http_server_request_duration_seconds",
+      "diddi_dependency_requests_total",
+      "diddi_dependency_request_duration_seconds",
+      "diddi_jobs_total",
+      "diddi_job_duration_seconds",
+      "diddi_worker_heartbeat_timestamp_seconds",
+      "diddi_queue_pending",
+      "diddi_queue_oldest_age_seconds",
+      "diddi_queue_dead_letter",
+      "diddi_telemetry_dropped_total"
+    ],
+    "http_histogram_seconds": [
+      0.005,
+      0.01,
+      0.025,
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      1,
+      2.5,
+      5,
+      10,
+      "+Inf"
+    ],
+    "queue_catalogue": [
+      "payments_outbox",
+      "wallet_outbox"
+    ],
+    "job_type_catalogue": [
+      "payment_maintenance"
+    ],
+    "worker_type_catalogue": [
+      "payment",
+      "redis_subscriber"
+    ],
+    "dependency_catalogue_source": "payfund_app/core/observability/business_metrics.py",
+    "loss_reasons": [
+      "serialization",
+      "queue_full",
+      "export_failed",
+      "collector_rejected",
+      "invalid_response"
+    ],
+    "additional_metrics": "Existing diddipay_* business metrics and Python runtime metrics retained; never financial source of truth",
+    "legacy_http_names": "replaced; repository dashboards/rules updated"
+  },
+  "logs": {
+    "transport": "one-line UTF-8 JSON stderr; one central Docker log pipeline per source",
+    "path": "container stdout/stderr",
+    "schema": "1.0.0",
+    "max_line_bytes": 65536,
+    "rotation": {
+      "driver": "json-file",
+      "max_size": "10m",
+      "max_files": 5
+    },
+    "central_file_mirror": false,
+    "successful_health_scrape_filter": false,
+    "redaction": "recursive sensitive keys, credentials/URLs/email/phone/IP patterns; bounded depth and breadth; no raw HTTP access line",
+    "correlation_indexing": "request_id/trace_id/span_id are JSON fields, never Loki labels",
+    "remaining_limits": "Free-form messages cannot prove universal PII removal; synthetic cases tested; manual CLI stdout excluded from deployed runtime profile"
+  },
+  "traces": {
+    "protocol": "OTLP HTTP/protobuf",
+    "endpoint": "${TRACING_OTLP_TRACES_ENDPOINT}",
+    "generic_endpoint_variable": "TRACING_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT; appends /v1/traces exactly once",
+    "specific_endpoint_variable": "TRACING_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; used verbatim",
+    "authentication_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS from secret manager",
+    "ca_reference": "OTEL_EXPORTER_OTLP_CERTIFICATE mounted file, optional for public PKI",
+    "tls_verify": true,
+    "insecure_local_opt_in": "TRACING_ALLOW_INSECURE_LOCAL; false in central profile",
+    "production_root_sample_rate": 0.1,
+    "validation_sample_rate": 1.0,
+    "sampler": "parent-based ratio",
+    "public_boundary": "central ingress must enforce trusted sampling; not yet validated",
+    "batch_delay_ms": 5000,
+    "export_timeout_seconds": 5,
+    "max_queue_spans": 2048,
+    "max_batch_spans": 256,
+    "max_span_attributes": 32,
+    "max_attribute_characters": 256,
+    "max_links": 8,
+    "raw_exception_events": false,
+    "memory_budget": "bounded item count; conservative 128 MiB telemetry process allowance to validate under real load; local measured peak in evidence/outage.json includes test harness",
+    "shutdown_deadline_seconds": 5,
+    "retry": "SDK 1.44 OTLP bounded deadline, exponential backoff/jitter; no durable producer spool; Retry-After honored across batches; OTLP partial rejections counted",
+    "delivery": "best effort; queue overflow drops oldest, failed exports counted; recovery sends new spans, lost spans not replayed",
+    "sanitization": "allowlisted method/status/route/messaging metadata; URLs, peer addresses, raw events/status text removed before queue",
+    "async": {
+      "storage": "nullable telemetry_context JSONB column in both outboxes",
+      "migration": "20261113_observability_context",
+      "policy": "new consumer trace per attempt with link to original publication; HTTP client child propagated to callback; Redis stream metadata separate from signed event; inbound Redis PubSub extracts metadata",
+      "compatibility": "signed callback body unchanged; legacy rows without metadata create unlinked spans; consumers outside this repository require coordinated validation"
+    }
+  },
+  "required_environment": [
+    "OBSERVABILITY_RELEASE_SHA",
+    "OBSERVABILITY_ENVIRONMENT",
+    "OBSERVABILITY_DEPLOYMENT_ID",
+    "METRICS_TOKEN",
+    "METRICS_ALLOWED_CIDRS",
+    "TRACING_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "DIDDIOBSERVE_NETWORK"
+  ],
+  "central_values_required": [
+    "API_SCRAPE_TARGET",
+    "WORKER_SCRAPE_TARGET",
+    "METRICS_CREDENTIALS_FILE",
+    "SCRAPE_CA_FILE",
+    "TRACING_OTLP_TRACES_ENDPOINT",
+    "OTLP credentials and CA if private PKI",
+    "METRICS_ALLOWED_CIDRS",
+    "DIDDIOBSERVE_NETWORK",
+    "OPERATIONS_CONTACT",
+    "OPERATIONS_OWNER",
+    "RUNBOOK_URL",
+    "approved environment/deployment ID",
+    "SLO and routing ownership",
+    "READINESS_PROBE_URL",
+    "BLACKBOX_TARGET"
+  ],
+  "retention_days": {
+    "staging": {
+      "logs": 14,
+      "traces": 7,
+      "metrics": 30
+    },
+    "production": {
+      "logs": 30,
+      "traces": 14,
+      "metrics": 90
+    },
+    "backup_exports": "central expiration policy required; not implemented here"
+  },
+  "slo": "not defined or approved for v1; legacy example SLO rules are not central policy",
+  "runbook": "docs/observability/README.md",
+  "not_applicable": [
+    "No scheduler container or recurring cron jobs declared; next execution/deadline not applicable to continuous worker",
+    "WebSocket metrics: no WebSocket routes",
+    "Redis Stream consumer backlog: this module publishes only, consumers belong to other modules; its durable delivery backlog is payments_outbox"
+  ],
+  "blocking_external_validation": [
+    "Private network/TLS gateway/ingress filtering",
+    "C06/C07 cross-service traversal on deployed revision",
+    "C10 representative business load on isolated staging",
+    "C11 storage arrival/Grafana correlation/no-data",
+    "C12 central retention/backups/alert routing/ownership and cardinality capacity measurement"
+  ]
+}

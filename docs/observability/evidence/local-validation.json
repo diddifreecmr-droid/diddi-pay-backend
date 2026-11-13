@@ -1,0 +1,15 @@
+{
+  "python": "3.11.9",
+  "opentelemetry_sdk": "1.44.0",
+  "opentelemetry_otlp_http": "1.44.0",
+  "fastapi": "0.141.1",
+  "pytest": "8.4.2",
+  "postgresql": "16-alpine local isolated container",
+  "full_suite": "501 passed, 12 deprecation warnings",
+  "command": "python -m pytest -q --tb=short",
+  "environment": "test; explicit isolated TEST_DATABASE_URL; tracing disabled except dedicated tracing tests",
+  "credentials": "synthetic only; omitted",
+  "ruff": "targeted changed observability, runtime integration, scripts and v1 tests: passed",
+  "compileall": "passed",
+  "git_diff_check": "passed"
+}
