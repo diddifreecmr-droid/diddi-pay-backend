@@ -1,0 +1,22 @@
+{
+  "implementation_commit": "99a3b059316f2760aebeaa5c11a858a66090dbeb",
+  "implementation_tree": "cf25f8b8afcd135e4a9a965c5536d107d9a8fb3b",
+  "base_commit": "276a85d",
+  "recorded_at": "2026-11-17T12:50:01.355770+00:00",
+  "scope": "diddipay-fund only",
+  "validation": {
+    "targeted_pytest": "26 passed, 1 deselected, 1 existing warning",
+    "deselected": "durable outbox PostgreSQL test; isolated database unavailable",
+    "ruff": "passed",
+    "python_compilation": "passed",
+    "git_diff_check": "passed",
+    "compose_synthetic_render_and_assertions": "passed"
+  },
+  "limitations": [
+    "Docker daemon unavailable: no image build or runtime Linux permission tests",
+    "No central ingestion, Alloy rotation/positions, Grafana or distributed DIDDI proof",
+    "Historical 501-test suite and 300-second OTLP outage not rerun on this revision"
+  ],
+  "deployment": "not performed",
+  "state": "inventoried"
+}
