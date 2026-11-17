@@ -8,11 +8,11 @@ import re
 import sys
 import threading
 from datetime import UTC, datetime
-from logging.handlers import RotatingFileHandler
 from typing import Any
 
 from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import get_request_id
+from payfund_app.core.observability.file_logging import BoundedFileHandler
 from payfund_app.core.observability.redaction import redact
 from payfund_app.core.observability.tracing import current_trace_fields
 
@@ -77,15 +77,27 @@ def configure_logging() -> None:
 
     initialize_identity()
     path = settings.observability_log_file
-    if path and not any(
-        getattr(handler, "_diddipay_file", None) == path for handler in logger.handlers
-    ):
-        file_handler = RotatingFileHandler(
-            path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8", delay=True
+    for handler in list(logger.handlers):
+        if isinstance(handler, BoundedFileHandler) and (
+            handler._diddipay_file != path or handler.stopping.is_set()
+        ):
+            logger.removeHandler(handler)
+            root.removeHandler(handler)
+            handler.close()
+    for handler in list(root.handlers):
+        if isinstance(handler, BoundedFileHandler) and handler not in logger.handlers:
+            root.removeHandler(handler)
+            handler.close()
+    if path:
+        file_handler = next(
+            (h for h in logger.handlers if isinstance(h, BoundedFileHandler)), None
         )
-        file_handler.setFormatter(JsonFormatter())
-        file_handler._diddipay_file = path  # type: ignore[attr-defined]
-        logger.addHandler(file_handler)
+        if file_handler is None:
+            file_handler = BoundedFileHandler(path)
+            file_handler.setFormatter(JsonFormatter())
+            logger.addHandler(file_handler)
+        # payfund does not propagate; each event reaches this shared sink once.
+        root.addHandler(file_handler)
 
 
 def build_log_payload(

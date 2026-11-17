@@ -20,5 +20,5 @@ def resource_attributes() -> dict[str, str]:
         else settings.observability_environment,
         "diddi.deployment.id": settings.observability_deployment_id,
         "diddi.component": settings.observability_component,
-        "diddi.observability.version": "1.0.0",
+        "diddi.observability.version": "1.1.1",
     }

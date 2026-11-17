@@ -1,5 +1,7 @@
 # Rapport de validation — DIDDI Observability 1.0.0
 
+Rapport historique du 13 novembre. Pour les adaptations et limites actuelles du protocole 1.1.1, consulter [VALIDATION-v1.1.1.md](VALIDATION-v1.1.1.md). Les résultats ci-dessous ne constituent pas une nouvelle exécution sur la révision 1.1.1.
+
 Date : 13 novembre 2026, UTC. Environnement : Windows/Python 3.11, PostgreSQL 16 dans un conteneur local temporaire exclusivement dédié aux tests. Aucun accès à DiddiObserve, aucun déploiement, aucune transaction réelle et aucune notification d'alerte.
 
 Révision initiale : `8f49eda54ebdb0a1663ef228b0c2e75b35369a20`. La révision d'implémentation validée est inscrite dans `evidence/revision.json`. Ce rapport ne représente pas la version actuellement déployée.

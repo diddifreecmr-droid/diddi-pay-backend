@@ -1,6 +1,6 @@
 {
-  "manifest_version": "1.0.0",
-  "protocol_version": "1.0.0",
+  "manifest_version": "1.1.1",
+  "protocol_version": "1.1.1",
   "service_name": "diddipay",
   "namespace": "diddi",
   "repository": "diddipay-fund",
@@ -46,7 +46,11 @@
         "period_seconds": 1,
         "alert_stale_after_seconds": 90,
         "heartbeat": "after completed poll/dispatch, including empty polls"
-      }
+      },
+      "registry_id": "${API_REGISTRY_ID}",
+      "metrics_secret_reference": "${API_METRICS_TOKEN}",
+      "otlp_traces_endpoint": "${API_OTLP_TRACES_ENDPOINT}",
+      "otlp_headers_secret_reference": "${API_OTLP_HEADERS}"
     },
     {
       "name": "payment-worker",
@@ -78,7 +82,11 @@
         120,
         300,
         "+Inf"
-      ]
+      ],
+      "registry_id": "${WORKER_REGISTRY_ID}",
+      "metrics_secret_reference": "${WORKER_METRICS_TOKEN}",
+      "otlp_traces_endpoint": "${WORKER_OTLP_TRACES_ENDPOINT}",
+      "otlp_headers_secret_reference": "${WORKER_OTLP_HEADERS}"
     }
   ],
   "infrastructure": [
@@ -142,8 +150,8 @@
   },
   "metrics": {
     "authentication": "Bearer, fail-closed with missing token; direct socket peer CIDR allowlist in central profile",
-    "secret_reference": "${METRICS_CREDENTIALS_FILE}",
-    "producer_secret_variable": "METRICS_TOKEN",
+    "secret_reference": "${API_METRICS_CREDENTIALS_FILE} / ${WORKER_METRICS_CREDENTIALS_FILE} per component",
+    "producer_secret_variable": "API_METRICS_TOKEN / WORKER_METRICS_TOKEN mapped to METRICS_TOKEN",
     "allowed_source_networks_variable": "METRICS_ALLOWED_CIDRS",
     "trust_forwarded_headers": false,
     "transport": "HTTPS via reviewed private TLS gateway; plaintext only inside explicitly isolated local network",
@@ -203,34 +211,75 @@
       "queue_full",
       "export_failed",
       "collector_rejected",
-      "invalid_response"
+      "invalid_response",
+      "file_write_failed",
+      "file_queue_full",
+      "file_shutdown",
+      "file_incomplete_line"
     ],
     "additional_metrics": "Existing diddipay_* business metrics and Python runtime metrics retained; never financial source of truth",
     "legacy_http_names": "replaced; repository dashboards/rules updated"
   },
   "logs": {
-    "transport": "one-line UTF-8 JSON stderr; one central Docker log pipeline per source",
-    "path": "container stdout/stderr",
+    "transport": "file-jsonl",
+    "path": "/var/log/diddipay",
     "schema": "1.0.0",
     "max_line_bytes": 65536,
     "rotation": {
-      "driver": "json-file",
-      "max_size": "10m",
-      "max_files": 5
+      "max_bytes": 10485760,
+      "backup_count": 5,
+      "strategy": "rename-and-reopen"
     },
     "central_file_mirror": false,
     "successful_health_scrape_filter": false,
     "redaction": "recursive sensitive keys, credentials/URLs/email/phone/IP patterns; bounded depth and breadth; no raw HTTP access line",
     "correlation_indexing": "request_id/trace_id/span_id are JSON fields, never Loki labels",
-    "remaining_limits": "Free-form messages cannot prove universal PII removal; synthetic cases tested; manual CLI stdout excluded from deployed runtime profile"
+    "remaining_limits": "Free-form messages cannot prove universal PII removal; synthetic cases tested; manual CLI stdout excluded from deployed runtime profile",
+    "volume_name": "${OBSERVABILITY_LOG_VOLUME_NAME}",
+    "docker_environment": "${DOCKER_ENVIRONMENT}",
+    "environment": "${OBSERVABILITY_ENVIRONMENT}",
+    "deployment_id": "${OBSERVABILITY_DEPLOYMENT_ID}",
+    "active_files": [
+      {
+        "path": "/var/log/diddipay/observability-api.jsonl",
+        "component": "api",
+        "registry_id": "${API_REGISTRY_ID}"
+      },
+      {
+        "path": "/var/log/diddipay/observability-worker.jsonl",
+        "component": "worker",
+        "registry_id": "${WORKER_REGISTRY_ID}"
+      }
+    ],
+    "archives": "<active path>.1 through .5; never collect archives or .lock files",
+    "writer_model": "one daemon writer per process, one process per component, nonblocking OS exclusive lock per fixed file; no replicas with these paths",
+    "permissions": {
+      "producer_uid": 10001,
+      "shared_gid": "${OBSERVABILITY_LOG_GID}",
+      "directory": "2750",
+      "new_files": "0640 subject to process umask",
+      "collector": "read-only mount; shared GID membership required"
+    },
+    "total_disk_budget_bytes": 126091264,
+    "disk_budget_details": "two writers: 2 * (6 * 10 MiB + 64 KiB event margin); lock files empty; Docker stderr budget separate",
+    "queue_capacity_per_process": 256,
+    "max_queue_payload_bytes_per_process": 16777216,
+    "shutdown_deadline_seconds": 1,
+    "orphan_cleanup": "fixed API/worker filenames survive restarts, no instance-named files; no automatic deletion of legacy files; inventory and remove obsolete paths manually after retention review before activation",
+    "initial_read_position": "beginning of active files only, synthetic/new deployment; any existing history requires explicit approval before enabling collection",
+    "restart_recovery": "append to active file; Alloy persists positions in its own volume; pending memory queue may be lost on crash; no replay guarantee for archives; incomplete trailing line discarded and counted as file_incomplete_line before next append",
+    "central_duplicate_transport": false,
+    "owner_contact": "${OPERATIONS_CONTACT}",
+    "failure_policy": "nonblocking enqueue; bounded queue; file_write_failed/file_queue_full/file_shutdown counters; local JSON stderr remains independent fallback",
+    "collector_requirements": "same Docker host; external volume read-only; exact active .jsonl paths (historical *.log pattern is incompatible); separate trusted component registry identities; no Docker socket"
   },
   "traces": {
     "protocol": "OTLP HTTP/protobuf",
-    "endpoint": "${TRACING_OTLP_TRACES_ENDPOINT}",
+    "endpoint": "per-component API_OTLP_TRACES_ENDPOINT / WORKER_OTLP_TRACES_ENDPOINT",
     "generic_endpoint_variable": "TRACING_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT; appends /v1/traces exactly once",
     "specific_endpoint_variable": "TRACING_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; used verbatim",
-    "authentication_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS from secret manager",
-    "ca_reference": "OTEL_EXPORTER_OTLP_CERTIFICATE mounted file, optional for public PKI",
+    "authentication_secret_reference": "API_OTLP_HEADERS / WORKER_OTLP_HEADERS: authorization=Basic <centrally supplied encoded credentials>; injected into OTEL_EXPORTER_OTLP_HEADERS",
+    "ca_reference": "public HTTPS via central Nginx Proxy Manager; standard trust store, no private CA or client certificate required by v1.1.1",
     "tls_verify": true,
     "insecure_local_opt_in": "TRACING_ALLOW_INSECURE_LOCAL; false in central profile",
     "production_root_sample_rate": 0.1,
@@ -261,19 +310,21 @@
     "OBSERVABILITY_RELEASE_SHA",
     "OBSERVABILITY_ENVIRONMENT",
     "OBSERVABILITY_DEPLOYMENT_ID",
-    "METRICS_TOKEN",
     "METRICS_ALLOWED_CIDRS",
-    "TRACING_OTLP_TRACES_ENDPOINT",
-    "OTEL_EXPORTER_OTLP_HEADERS",
-    "DIDDIOBSERVE_NETWORK"
+    "DIDDIOBSERVE_NETWORK",
+    "OBSERVABILITY_LOG_VOLUME_NAME",
+    "OBSERVABILITY_LOG_GID",
+    "API_METRICS_TOKEN",
+    "WORKER_METRICS_TOKEN",
+    "API_OTLP_TRACES_ENDPOINT",
+    "WORKER_OTLP_TRACES_ENDPOINT",
+    "API_OTLP_HEADERS",
+    "WORKER_OTLP_HEADERS"
   ],
   "central_values_required": [
     "API_SCRAPE_TARGET",
     "WORKER_SCRAPE_TARGET",
-    "METRICS_CREDENTIALS_FILE",
     "SCRAPE_CA_FILE",
-    "TRACING_OTLP_TRACES_ENDPOINT",
-    "OTLP credentials and CA if private PKI",
     "METRICS_ALLOWED_CIDRS",
     "DIDDIOBSERVE_NETWORK",
     "OPERATIONS_CONTACT",
@@ -282,7 +333,13 @@
     "approved environment/deployment ID",
     "SLO and routing ownership",
     "READINESS_PROBE_URL",
-    "BLACKBOX_TARGET"
+    "BLACKBOX_TARGET",
+    "API_REGISTRY_ID",
+    "WORKER_REGISTRY_ID",
+    "DOCKER_ENVIRONMENT",
+    "same-host volume confirmation and Alloy read-only shared GID",
+    "API/WORKER HTTPS OTLP traces URLs and dedicated Basic ingest secrets",
+    "API/WORKER Bearer scrape secrets and collector credential file paths"
   ],
   "retention_days": {
     "staging": {
@@ -309,6 +366,7 @@
     "C06/C07 cross-service traversal on deployed revision",
     "C10 representative business load on isolated staging",
     "C11 storage arrival/Grafana correlation/no-data",
-    "C12 central retention/backups/alert routing/ownership and cardinality capacity measurement"
+    "C12 central retention/backups/alert routing/ownership and cardinality capacity measurement",
+    "C12 actual Linux UID/GID and Alloy read-only mount, rotation under collector load, persisted positions across collector/producer restart, measured loss/duplicates"
   ]
 }

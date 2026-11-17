@@ -4,7 +4,7 @@ Statut : **inventoried**, pas `connected` ni `conformant-v1`. Aucun déploiement
 
 ## Livrables et périmètre
 
-- Manifeste : `deploy/diddiobserve/manifest.v1.json`, version 1.0.0. Les `${...}` sont des références à renseigner, jamais des valeurs de secrets.
+- Manifeste : `deploy/diddiobserve/manifest.v1.json`, version 1.1.1. Les `${...}` sont des références à renseigner, jamais des valeurs de secrets.
 - Proposition de déploiement : `docker-compose.diddiobserve.yml`, à combiner avec `docker-compose.yml` **après revue**. Elle retire les publications de ports hôte de l'API et demande un réseau privé existant. Vérifier le chemin d'accès de l'ingress avant application : cette suppression peut couper l'accès existant sans raccordement préalable.
 - Fragments de collecte/alertes : `deploy/diddiobserve/*.yml.template`. Les rendre avec les valeurs validées puis les transmettre à DiddiObserve ; aucun collector central n'est créé ici.
 - Migration additive : `20261113_observability_context`, deux colonnes JSONB nullables. Revoir et appliquer avant démarrage de la nouvelle API/du worker. Les anciennes lignes restent compatibles, sans corrélation rétroactive inventée.
@@ -42,13 +42,13 @@ L'équipe centrale et le responsable DiddiPay doivent fournir :
 
 1. Environnement, installation, SHA/image immuable, contact opérationnel et propriétaire des alertes.
 2. Nom du réseau privé, adresses des deux cibles de scrape et CIDR **des pairs socket** autorisés. `X-Forwarded-For` n'est jamais utilisé pour autoriser la collecte. Exclure les proxies publics de ces CIDR ; refuser `/internal/metrics` à l'ingress public.
-3. Secret Bearer propre au service/environnement (32 caractères minimum), son chemin côté Prometheus et sa rotation. Sans token, le producteur refuse la collecte. Le profil historique sans CIDR reste authentifié mais n'est pas une preuve d'isolation réseau.
-4. URL OTLP exacte, en-têtes d'authentification issus du gestionnaire de secrets et CA éventuelle. Les monter/injecter à l'exécution ; ne pas les enregistrer dans Git, dans un manifeste rendu, ou dans les preuves de validation.
+3. Secrets Bearer distincts par entrée API/worker et environnement (32 caractères minimum), son chemin côté Prometheus et sa rotation. Sans token, le producteur refuse la collecte. Le profil historique sans CIDR reste authentifié mais n'est pas une preuve d'isolation réseau.
+4. URLs OTLP HTTPS exactes distinctes API/worker, en-têtes Basic issus du gestionnaire de secrets. Le profil 1.1.1 utilise Nginx Proxy Manager et la confiance publique standard, sans CA privée ni certificat client à fournir. Les monter/injecter à l'exécution ; ne pas les enregistrer dans Git, dans un manifeste rendu, ou dans les preuves de validation.
 5. Passerelle TLS privée pour les ports HTTP internes 8000/9001, ou approbation documentée d'un transport local réellement isolé. Les templates utilisent HTTPS avec vérification de certificat. Les serveurs Python n'assurent pas eux-mêmes la terminaison TLS.
-6. Chaîne unique de collecte Docker, labels de cible, politique de sampling à la frontière publique, stockage de traces et liens Grafana logs ↔ traces.
+6. Collecte unique des fichiers JSONL : volume externe sur le même hôte, montage Alloy en lecture seule, groupe partagé et chemins actifs exacts par composant. Voir le raccordement 1.1.1 ci-dessous. Aucun socket Docker ni collecte stdout centrale.
 7. Rétention, expiration des backups/exports, capacité mesurée, runbook publié, routage/déduplication des alertes et SLO approuvé. Les anciens exemples SLO locaux ne sont pas une décision métier v1.
 
-La rotation Docker proposée est 10 MiB × 5 fichiers par conteneur. Logs : 14 j staging/30 j production ; traces : 7/14 j ; métriques : 30/90 j. Ces rétentions sont des obligations **centrales à configurer**, pas une configuration appliquée par ce dépôt. Ne pas activer simultanément la collecte Docker centrale et le miroir fichier/Alloy historique. Ne pas appliquer l'overlay `docker-compose.observability.yml` avec le nouveau profil.
+La rotation Docker locale est 10 MiB × 5 fichiers par conteneur ; elle ne constitue pas le transport central. Le transport fichier est décrit ci-dessous. Logs : 14 j staging/30 j production ; traces : 7/14 j ; métriques : 30/90 j. Ces rétentions sont des obligations **centrales à configurer**, pas une configuration appliquée par ce dépôt. Ne pas activer simultanément la collecte Docker centrale et le miroir fichier/Alloy historique. Ne pas appliquer l'overlay `docker-compose.observability.yml` avec le nouveau profil.
 
 ## Validation et passage à connected
 
@@ -67,3 +67,28 @@ Enfin conserver des preuves horodatées de réception au stockage, consultation 
 - **Rollback** : rétablir l'ancienne image/configuration après revue, conserver les colonnes nullables (compatibles avec l'ancien code). Restaurer les noms de métriques/dashboards ensemble ; garantir une seule chaîne de collecte. Ne pas exécuter de downgrade destructif pendant la livraison de messages.
 
 L'affectation nominative, l'URL publiée de ce runbook et l'astreinte restent à renseigner dans le manifeste rendu.
+
+
+## Raccordement 1.1.1 — fichiers API et worker
+
+La proposition Compose monte un volume nommé explicitement par `OBSERVABILITY_LOG_VOLUME_NAME` dans `/var/log/diddipay`. Choisir un nom propre au service, environnement et déploiement. `OBSERVABILITY_LOG_GID` est un GID numérique confirmé avec l'équipe centrale ; Alloy doit appartenir à ce groupe. Un conteneur d'initialisation sans réseau prépare uniquement la racine de ce volume (UID 10001, GID partagé, mode 2750). API et worker s'exécutent comme UID 10001, sans privilèges root. Revoir les permissions de tout volume préexistant ; l'initialisation ne change pas récursivement ses fichiers. Vérifier aussi migrations, accès à l'image et heartbeat sous cet UID en recette avant activation.
+
+Deux chemins fixes : `observability-api.jsonl` et `observability-worker.jsonl`. Chaque processus utilise une file de 256 lignes JSON déjà nettoyées (64 KiB maximum chacune), puis un écrivain daemon. Un verrou OS non bloquant protège chaque fichier contre une seconde rotation concurrente. Pas de scale/répliques avec ces chemins : prévoir un volume par installation ou des chemins explicitement distincts et un budget associé avant réplication. Les migrations de démarrage ferment leur écrivain avant le lancement de l'API ; le logger est réinstallé après la configuration Alembic.
+
+Rotation par renommage/réouverture à 10 MiB, 5 archives par fichier, fichiers nouveaux 0640 (sous réserve de l'umask), budget disque total 126091264 octets incluant une marge par événement. Le volume fixe et les deux noms fixes évitent des fichiers orphelins à chaque redémarrage. Ne pas supprimer les fichiers `.lock` pendant qu'un producteur tourne. Inventorier les anciens chemins avant activation et faire approuver leur purge selon la rétention. Les archives sont un tampon local borné, sans garantie de rejeu central.
+
+Les échecs disque et la contention de verrou incrémentent `diddi_telemetry_dropped_total{signal="logs",reason="file_write_failed"}` ; saturation : `file_queue_full` ; abandon à l'arrêt : `file_shutdown`. Les labels réels du compteur sont définis dans le module métriques. L'écriture disque n'est jamais attendue par le métier. L'arrêt attend au plus une seconde ; un événement en cours d'écriture au moment de l'arrêt forcé peut rester d'issue inconnue. Le crash perd la file en mémoire. Les logs JSON stderr locaux restent le diagnostic de secours, sans récursion du logger et avec leur rotation Docker indépendante.
+
+### À fournir avant raccordement
+
+- IDs de registre distincts API/worker, même service canonique `diddipay`, avec environnement et installation confirmés.
+- `API_OTLP_TRACES_ENDPOINT` et `WORKER_OTLP_TRACES_ENDPOINT` : URLs HTTPS complètes confirmées, normalement route `/otlp/<registry-id>/v1/traces`. Aucun domaine n'est déduit.
+- `API_OTLP_HEADERS` et `WORKER_OTLP_HEADERS` : `authorization=Basic <identifiants encodés fournis par la centrale>`, injectés dans `OTEL_EXPORTER_OTLP_HEADERS`. Ne jamais mettre la valeur dans Git ou dans les preuves. Les secrets de DiddiSend/ID ne sont pas réutilisés.
+- `API_METRICS_TOKEN`, `WORKER_METRICS_TOKEN` et leurs fichiers secrets côté Prometheus (`API_METRICS_CREDENTIALS_FILE`, `WORKER_METRICS_CREDENTIALS_FILE`). Les templates restent à rendre/revoir avec les vrais chemins et cibles.
+- Hôte Docker commun (`DOCKER_ENVIRONMENT` dans le manifeste rendu), volume, GID partagé, réseau/CIDR de scrape et contact d'exploitation. Si Alloy est sur un autre hôte, ce montage ne fonctionne pas : prévoir un transport réseau explicitement validé.
+
+### Demande à transmettre à DiddiObserve
+
+Déclarer ce volume comme externe, le monter en lecture seule ; associer chaque chemin actif à son entrée de registre/composant. Collecter uniquement les deux fichiers `.jsonl`, jamais `.1`–`.5` ni `.lock`. Le motif historique `*.log` ne convient pas. Conserver les positions de lecture dans le volume propre à Alloy. Au premier démarrage sur volume neuf/synthétique : lire les fichiers actifs depuis le début. Pour un volume contenant déjà des données, faire approuver explicitement la portée historique avant collecte. À la reprise : utiliser les positions persistées ; mesurer pertes/doublons lors des rotations et redémarrages. Ne pas activer OTLP logs ou collecte Docker en parallèle. Les traces restent exportées par OTLP.
+
+Aucune configuration de la plateforme centrale n'est modifiée ici. L'état reste `inventoried` jusqu'aux preuves C11/C12. Le document `ONBOARDING-READY` des autres modules ne prouve pas le raccordement de DiddiPay.

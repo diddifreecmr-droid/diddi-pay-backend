@@ -1,8 +1,8 @@
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from alembic import context
 from payfund_app.core.config import get_settings
 from payfund_app.core.database import Base
 
@@ -16,6 +16,9 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+    from payfund_app.shared_kernel.logging import configure_logging
+
+    configure_logging()
 
 target_metadata = Base.metadata
 

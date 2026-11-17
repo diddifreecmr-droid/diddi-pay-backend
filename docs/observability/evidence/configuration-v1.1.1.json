@@ -1,0 +1,10 @@
+{
+  "synthetic_values_only": true,
+  "compose_valid": true,
+  "api_worker_no_host_ports": true,
+  "nonroot_uid_shared_gid": true,
+  "init_dependency_and_volume_mounts": true,
+  "distinct_component_files_and_credentials": true,
+  "docker_engine_available": false,
+  "runtime_permissions_and_alloy_ingestion_verified": false
+}
