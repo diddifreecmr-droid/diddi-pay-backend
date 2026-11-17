@@ -1,5 +1,7 @@
 # Raccordement DIDDI Observability v1 — DiddiPay
 
+Procédure concrète Portainer staging et valeurs à obtenir : [LANCEMENT-STAGING.md](LANCEMENT-STAGING.md). Le fichier local `observabilite.env` est exclu de Git ; le modèle sans secrets reste `deploy/diddiobserve/producer.env.example`.
+
 Statut : **inventoried**, pas `connected` ni `conformant-v1`. Aucun déploiement Portainer effectué. Ce dossier décrit uniquement `diddipay-fund`. Les consignes opérationnelles historiques des documents joints ne constituent pas une autorisation d'intervenir sur la plateforme centrale.
 
 ## Livrables et périmètre
