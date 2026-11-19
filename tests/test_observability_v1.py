@@ -640,6 +640,7 @@ def test_otlp_sdk_posts_exact_signal_path():
         tracing_otlp_traces_endpoint="",
         tracing_otlp_endpoint=f"http://127.0.0.1:{server.server_port}",
         tracing_allow_insecure_local=True,
+        observability_environment="test",
     )
     exporter = RateLimitedOTLPExporter(endpoint=otlp_endpoint(settings), timeout=1)
     try:

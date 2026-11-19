@@ -150,6 +150,8 @@ def otlp_endpoint(settings):
     generic = settings.tracing_otlp_endpoint or os.getenv(
         "OTEL_EXPORTER_OTLP_ENDPOINT", ""
     )
+    if not specific and not generic:
+        return ""
     endpoint = specific or (generic.rstrip("/") + "/v1/traces" if generic else "")
     parsed = urlparse(endpoint)
     if (
@@ -163,7 +165,9 @@ def otlp_endpoint(settings):
             "OTLP endpoint must be configured without credentials or query"
         )
     if parsed.scheme != "https" and not (
-        parsed.scheme == "http" and settings.tracing_allow_insecure_local
+        parsed.scheme == "http"
+        and settings.tracing_allow_insecure_local
+        and settings.observability_environment != "production"
     ):
         raise ValueError(
             "OTLP requires HTTPS or an explicitly isolated local transport"
@@ -216,7 +220,9 @@ def configure_tracing(
     """Instrument inbound and outbound HTTP when tracing is enabled."""
 
     settings = get_settings()
-    if not settings.tracing_enabled:
+    if not settings.tracing_enabled or (
+        exporter is None and not otlp_endpoint(settings)
+    ):
         return None
 
     provider = TracerProvider(

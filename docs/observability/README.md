@@ -1,96 +1,68 @@
-# Raccordement DIDDI Observability v1 — DiddiPay
+# DIDDI Observability 2.0.0 — diddipay-fund
 
-Procédure concrète Portainer staging et valeurs à obtenir : [LANCEMENT-STAGING.md](LANCEMENT-STAGING.md). Le fichier local `observabilite.env` est exclu de Git ; le modèle sans secrets reste `deploy/diddiobserve/producer.env.example`.
+État : **inventoried**, ingestion centrale non vérifiée. Aucun déploiement exécuté. Cette version remplace le raccordement fichier 1.1.1. Logs et traces utilisent exclusivement OTLP HTTP/protobuf vers les routes publiques authentifiées ; aucun volume partagé, socket Docker, réseau commun avec DiddiObserve ou CA privée n'est requis. La console locale reste disponible et conserve sa rotation Docker.
 
-Statut : **inventoried**, pas `connected` ni `conformant-v1`. Aucun déploiement Portainer effectué. Ce dossier décrit uniquement `diddipay-fund`. Les consignes opérationnelles historiques des documents joints ne constituent pas une autorisation d'intervenir sur la plateforme centrale.
+## Variables standard effectivement lues
 
-## Livrables et périmètre
+| Variable conteneur | Application / priorité |
+| --- | --- |
+| OTEL_SERVICE_NAME | `observability_service_name`, alias historique OBSERVABILITY_SERVICE_NAME ; valeur canonique diddipay |
+| ENVIRONMENT | `observability_environment`, prioritaire sur OBSERVABILITY_ENVIRONMENT ; ne change pas DEPLOYMENT_ENVIRONMENT métier |
+| DEPLOYMENT_ID | `observability_deployment_id`, prioritaire sur OBSERVABILITY_DEPLOYMENT_ID |
+| OTEL_EXPORTER_OTLP_PROTOCOL | http/protobuf uniquement ; grpc refusé |
+| OTEL_EXPORTER_OTLP_ENDPOINT | Base traces, prioritaire sur TRACING_OTLP_ENDPOINT ; ajout unique /v1/traces |
+| OTEL_EXPORTER_OTLP_TRACES_ENDPOINT | URL complète prioritaire sur la base et sur TRACING_OTLP_TRACES_ENDPOINT ; utilisée telle quelle |
+| OTEL_EXPORTER_OTLP_LOGS_ENDPOINT | URL complète obligatoire si logs activés ; utilisée telle quelle |
+| OTEL_EXPORTER_OTLP_HEADERS | Authentification OTLP dédiée, interprétée par le SDK ; jamais token métriques |
+| OTEL_LOGS_ENABLED | false : aucun exporteur logs ; true : handler JSON OTLP activé |
+| METRICS_BEARER_TOKEN | Secret existant, prioritaire sur l'alias METRICS_TOKEN ; aucune rotation |
 
-- Manifeste : `deploy/diddiobserve/manifest.v1.json`, version 1.1.1. Les `${...}` sont des références à renseigner, jamais des valeurs de secrets.
-- Proposition de déploiement : `docker-compose.diddiobserve.yml`, à combiner avec `docker-compose.yml` **après revue**. Elle retire les publications de ports hôte de l'API et demande un réseau privé existant. Vérifier le chemin d'accès de l'ingress avant application : cette suppression peut couper l'accès existant sans raccordement préalable.
-- Fragments de collecte/alertes : `deploy/diddiobserve/*.yml.template`. Les rendre avec les valeurs validées puis les transmettre à DiddiObserve ; aucun collector central n'est créé ici.
-- Migration additive : `20261113_observability_context`, deux colonnes JSONB nullables. Revoir et appliquer avant démarrage de la nouvelle API/du worker. Les anciennes lignes restent compatibles, sans corrélation rétroactive inventée.
-- Preuves : `docs/observability/evidence/`, tests `test_observability_v1.py` et suites existantes. Le rapport précise la révision et les limites.
+OBSERVABILITY_RELEASE_SHA conserve le SHA réellement construit ; OBSERVABILITY_COMPONENT vaut api/worker selon le conteneur. L'instance est générée par processus. Schéma JSON toujours 1.0.0 ; contrat implémenté 2.0.0, sans déclaration de conformité centrale.
 
-## Écarts examinés et adaptations
+TRACING_ENABLED=false interdit les traces ; sinon une base ou URL spécifique non vide est nécessaire. Le réglage applicatif par défaut est true, mais le Compose prépare explicitement false tant que les routes centrales ne sont pas confirmées. Aucune destination localhost implicite. Pas de commutateur global OTEL_ENABLED. OBSERVABILITY_ENABLED ne contrôle que la fonction applicative emit(), pas les messages des bibliothèques ; les interrupteurs de transport ci-dessus sont déterminants.
 
-Le dépôt disposait déjà d'un middleware ASGI mesurant la fin de traitement, de compteurs/histogrammes, d'un endpoint Bearer fermé sans secret, de nettoyage récursif, de traces FastAPI/httpx et d'un fichier de heartbeat. Ces éléments sont réutilisés.
+## Correspondance Portainer → Compose → conteneurs
 
-Les logs utilisent maintenant l'enveloppe 1.0.0, UTC `Z`, huit attributs de ressource et des attributs séparés. Les identifiants absents sont omis. Les bibliothèques, Uvicorn et Alembic passent par le formatter JSON ; les lignes d'accès brutes ne transportent plus URLs/IP. Les lignes sont limitées à 64 KiB, les données imbriquées sont bornées et les erreurs de sérialisation comptées sans exception métier. Le nettoyage est testé avec secrets synthétiques ; il ne constitue pas une preuve exhaustive pour toute nouvelle chaîne libre ajoutée à l'avenir. Éviter tout nouveau log de corps HTTP, objet utilisateur ou exception de provider contenant des données brutes.
+Le Compose accepte les variables communes directement. Pour préserver des paramètres déjà installés, il accepte aussi :
 
-L'identité est partagée entre logs, ressource OTel et `diddi_build_info`. `service.name=diddipay`, composant API ou worker, instance PID+UUID renouvelée au démarrage. `local` reste un alias de configuration pour `development`. Le déploiement doit fournir un SHA immuable (ni `unknown`, ni `latest`, ni un placeholder) et un identifiant d'installation ; la proposition Compose les exige mais leur valeur doit être revue. L'image reçoit le label OCI de révision via `VCS_REF`.
+| Portainer existant | Conteneur API | Conteneur worker |
+| --- | --- | --- |
+| API_OTLP_LOGS_ENDPOINT / WORKER_OTLP_LOGS_ENDPOINT | OTEL_EXPORTER_OTLP_LOGS_ENDPOINT depuis API_ | depuis WORKER_ |
+| API_OTLP_TRACES_ENDPOINT / WORKER_OTLP_TRACES_ENDPOINT | OTEL_EXPORTER_OTLP_TRACES_ENDPOINT depuis API_ | depuis WORKER_ |
+| API_OTLP_HEADERS / WORKER_OTLP_HEADERS | OTEL_EXPORTER_OTLP_HEADERS depuis API_ | depuis WORKER_ |
+| API_METRICS_TOKEN / WORKER_METRICS_TOKEN | METRICS_BEARER_TOKEN depuis API_ | depuis WORKER_ |
 
-Les métriques HTTP canoniques remplacent leurs anciens noms `diddipay_http_*`. Les dashboards/règles locaux du dépôt sont adaptés. Les métriques métier existantes sont conservées ; les familles de dépendances sont alimentées au même point que les appels providers existants. Pas de double instrumentation des appels HTTP. Méthodes hors catalogue → `OTHER`, route inconnue → `/_unmatched`, routes connues → template FastAPI. Aucun identifiant individuel dans les labels. Une cible correspond à **un processus** ; ne pas ajouter `uvicorn --workers` ou `WEB_CONCURRENCY` sans agrégation Prometheus multiprocess revue. Ne pas scraper plusieurs registres derrière un répartiteur aléatoire.
+Pour chaque signal, un préfixe non vide prime sur la valeur commune. Sans préfixe, le Compose reprend la variable standard ; pour les métriques il reprend ensuite METRICS_TOKEN historique. Une variable commune vide n'efface donc pas un token historique non vide. Ne pas importer de ligne de secret vide dans Portainer ; conserver les valeurs déjà présentes. Les aliases OTLP historiques hérités du Compose de base sont vidés pour éviter une destination concurrente. Supprimer/reconcilier les anciens overrides API_/WORKER_ d'URL s'ils contredisent la remise 2.0.0, sans modifier leurs secrets implicitement.
 
-Le worker expose son propre `/internal/metrics` sur 9001, sans publication hôte. Jobs et durée portent sur un cycle complet de maintenance. Le heartbeat n'avance qu'après succès ; les files exposent attente, messages loués, dead letters et âge du plus ancien. Le subscriber Redis embarqué dans l'API expose son heartbeat après poll/dispatch terminé, y compris à vide. Les erreurs de collecte des files ne doivent pas empêcher les cycles métier suivants. Les CLI manuelles ne sont pas des tâches planifiées déployées : leur sortie console historique n'est pas déclarée comme signal conforme ni durable.
+## Métriques : cibles et CIDR
 
-Liveness ne contacte aucune dépendance. Readiness fait des lectures PostgreSQL et un PING Redis, avec une seule vérification simultanée et réponse avant 3 s. Aucune réussite passée n'est mise en cache. DB indisponible ou schéma absent → 503 ; Redis absent → `degraded` en callbacks, 503 en transport Redis Stream. Ce choix s'applique au rôle essentiel d'orchestrateur de paiement ; le bus wallet historique est une capacité dégradée explicitement distincte. Les providers et DiddiObserve ne retirent pas l'API du trafic.
+| Composant | Écoute dans le module | Publication / cible |
+| --- | --- | --- |
+| API, service app | 0.0.0.0:8000/internal/metrics | Le mapping existant `${APP_BIND_HOST:-0.0.0.0}:${APP_PORT:-48213}:8000` reste inchangé. Sur le réseau propre du module : http://app:8000/internal/metrics. Utiliser la cible réellement installée, pas supposer que le port par défaut est utilisé. |
+| worker, service payment-worker | 0.0.0.0:9001/internal/metrics | http://payment-worker:9001/internal/metrics depuis le réseau propre au module. Aucun port hôte publié. Une passerelle ou un routage dédié est nécessaire pour un collecteur externe ; expose:9001 ne publie rien sur l'hôte. |
 
-## Traces, confidentialité et asynchrone
+Les noms DNS app/payment-worker ne sont pas supposés résolus sur le réseau central. L'export sortant des logs/traces ne rend pas le worker accessible au scrape. La cible externe exacte du worker doit être fournie par infrastructure ; ce dépôt n'invente ni IP, ni port hôte libre, ni réseau commun. La fiche centrale du 19 novembre indique `service-diddipay` UP : c'est une déclaration centrale datée, pas une preuve locale du scrape distinct des deux composants.
 
-OTLP HTTP/protobuf utilise soit une base générique (ajout unique de `/v1/traces`), soit un endpoint spécifique utilisé tel quel. Aucune adresse par défaut. TLS vérifié, authentification par `OTEL_EXPORTER_OTLP_HEADERS`, certificat optionnel via `OTEL_EXPORTER_OTLP_CERTIFICATE`. Une base finissant déjà par `/v1/traces` est refusée pour éviter les chemins doubles. Le mode HTTP nécessite l'opt-in explicite `TRACING_ALLOW_INSECURE_LOCAL` ; il reste désactivé dans la proposition centrale.
+METRICS_ALLOWED_CIDRS est une liste IPv4/IPv6 séparée par virgules. Non vide : l'API compare `request.client.host` et le worker `self.client_address[0]` à cette liste avant le contrôle Bearer. Le lancement Uvicorn livré utilise `--no-proxy-headers` : X-Forwarded-For ne peut pas réécrire le pair socket. Tout autre lanceur Uvicorn doit conserver ce réglage. Cela signifie aussi que l'application ne reconstruit plus IP/schéma d'origine depuis ces en-têtes ; contrôler les éventuelles redirections derrière le proxy en recette.
 
-Exporter asynchrone, 2 048 spans en file, lots de 256, délai 5 s, export borné à 5 s et arrêt à 5 s. Le SDK OTLP gère les reprises bornées avec backoff/jitter ; aucun stockage producteur illimité. Les pertes de file et d'export sont comptées. La comptabilisation de saturation s'appuie sur l'interne SDK 1.44, épinglé à cette série et couvert par test ; toute mise à niveau exige de rejouer ce test. Les pertes sont définitives, la reprise prouve l'envoi de nouvelles données, pas la restitution des spans perdus.
+CIDR vide : pas de restriction IP supplémentaire, mais Bearer obligatoire. Pair non autorisé : 401 ; token absent/faux : 401 ; token non configuré : 503 pour un pair autorisé ; bon token et pair autorisé : 200. API désactivée via METRICS_ENABLED=false : 404 ; worker désactivé : 503. Derrière une passerelle, autoriser son IP socket réellement observée, puis filtrer les sources externes à la passerelle. Ne pas se fier à X-Forwarded-For ni élargir à 0.0.0.0/0 pour masquer une erreur.
 
-Avant la file d'export, une liste autorisée conserve méthode, route, statut et métadonnées messaging. URLs, IP, messages/stack d'exception, noms libres de spans et descriptions libres de statut sont supprimés. Les événements bruts d'exception ne sont pas exportés. Le budget de spans et d'attributs borne la structure ; la consommation réelle doit être mesurée sous charge représentative. Un budget provisoire de 128 MiB par processus pour la télémétrie est déclaré, pas une limite RSS garantie.
+## Logs, résilience et migration
 
-Le sampler respecte le parent et échantillonne 10 % des nouvelles traces ; régler `TRACING_SAMPLE_RATE=1` pour les validations. L'ingress public doit contrôler le sampling entrant pour qu'un client ne force pas une collecte illimitée. Cette protection reste à vérifier avec l'équipe centrale.
+Le même formatter nettoie les logs applicatifs et bibliothèques avant mise en file. Le handler OTLP partagé est attaché au logger payfund (propagate=false) et à la racine : un seul export par événement. La configuration est idempotente et réinstallée après Alembic ; tests après configuration Uvicorn pour API et worker. Texte ordinaire et messages structurés sont couverts. Les diagnostics opentelemetry/urllib3/requests restent uniquement locaux pour éviter la récursion d'export.
 
-Le contexte W3C est stocké dans `telemetry_context`, séparément du payload signé. Chaque tentative différée crée sa propre trace de consommation et un **lien** vers la publication. Les appels callbacks propagent leur contexte HTTP et un request ID validé. Les métadonnées Redis Stream sont des champs distincts de `event` ; Redis PubSub utilise `telemetry_context`. Les consommateurs externes doivent confirmer ces champs et leurs liens avant C07 de bout en bout. La télémétrie ne change ni les IDs d'événements, ni les signatures, ni l'idempotence/lease, ni le nombre de tentatives métier.
+Corps OTLP : enveloppe JSON complète 1.0.0 limitée à 64 KiB ; ressource commune, timestamp source et véritables trace_id/span_id conservés. File SDK logs 256 événements, lots 64, délai 1 seconde, export/retries bornés à 5 secondes et arrêt borné à 5 secondes. Capacité brute des corps en file : 16 MiB, hors surcoût SDK. Pertes queue_full/export_failed/collector_rejected/invalid_response/serialization dans diddi_telemetry_dropped_total. Crash ou deadline d'arrêt peut perdre des événements en mémoire ; aucune promesse de livraison exactement une fois. Traces : instrumentation et file bornée existantes conservées.
 
-## Valeurs à fournir et revue de déploiement
+OBSERVABILITY_LOG_FILE est vide dans le profil central. Le handler fichier historique reste optionnel pour dépannage local, jamais comme transport central. Faire désactiver toute collecte fichier/stdout existante avant activation générale OTLP ; vérifier un canari isolé, documenter fenêtre de bascule/pertes/doublons. Ne pas supprimer automatiquement les anciens volumes ou archives.
 
-L'équipe centrale et le responsable DiddiPay doivent fournir :
+## Valeurs connues et activation
 
-1. Environnement, installation, SHA/image immuable, contact opérationnel et propriétaire des alertes.
-2. Nom du réseau privé, adresses des deux cibles de scrape et CIDR **des pairs socket** autorisés. `X-Forwarded-For` n'est jamais utilisé pour autoriser la collecte. Exclure les proxies publics de ces CIDR ; refuser `/internal/metrics` à l'ingress public.
-3. Secrets Bearer distincts par entrée API/worker et environnement (32 caractères minimum), son chemin côté Prometheus et sa rotation. Sans token, le producteur refuse la collecte. Le profil historique sans CIDR reste authentifié mais n'est pas une preuve d'isolation réseau.
-4. URLs OTLP HTTPS exactes distinctes API/worker, en-têtes Basic issus du gestionnaire de secrets. Le profil 1.1.1 utilise Nginx Proxy Manager et la confiance publique standard, sans CA privée ni certificat client à fournir. Les monter/injecter à l'exécution ; ne pas les enregistrer dans Git, dans un manifeste rendu, ou dans les preuves de validation.
-5. Passerelle TLS privée pour les ports HTTP internes 8000/9001, ou approbation documentée d'un transport local réellement isolé. Les templates utilisent HTTPS avec vérification de certificat. Les serveurs Python n'assurent pas eux-mêmes la terminaison TLS.
-6. Collecte unique des fichiers JSONL : volume externe sur le même hôte, montage Alloy en lecture seule, groupe partagé et chemins actifs exacts par composant. Voir le raccordement 1.1.1 ci-dessous. Aucun socket Docker ni collecte stdout centrale.
-7. Rétention, expiration des backups/exports, capacité mesurée, runbook publié, routage/déduplication des alertes et SLO approuvé. Les anciens exemples SLO locaux ne sont pas une décision métier v1.
+Remise publique du 19 novembre : ENVIRONMENT=staging, DEPLOYMENT_ID=diddipay-staging ; base https://logs-otel.diddifree.com/otlp/diddipay ; logs /v1/logs et traces /v1/traces sur cette base. Les routes sont préparées mais non déclarées déployées/vérifiées. Secret OTLP : remise privée centrale, non copié dans ce dépôt. Conserver les secrets métriques existants.
 
-La rotation Docker locale est 10 MiB × 5 fichiers par conteneur ; elle ne constitue pas le transport central. Le transport fichier est décrit ci-dessous. Logs : 14 j staging/30 j production ; traces : 7/14 j ; métriques : 30/90 j. Ces rétentions sont des obligations **centrales à configurer**, pas une configuration appliquée par ce dépôt. Ne pas activer simultanément la collecte Docker centrale et le miroir fichier/Alloy historique. Ne pas appliquer l'overlay `docker-compose.observability.yml` avec le nouveau profil.
+Fichier local ignoré : observabilite.env. Modèle public : deploy/diddiobserve/producer.env.example. Les exports restent désactivés jusqu'à confirmation des routes. Voir [LANCEMENT-STAGING.md](LANCEMENT-STAGING.md). Manifeste : deploy/diddiobserve/manifest.v1.json, version 2.0.0. Les références historiques 1.0/1.1.1 sont des preuves anciennes, pas les consignes de raccordement actuelles.
 
-## Validation et passage à connected
+## Validations encore nécessaires
 
-Exécuter les tests avec une base PostgreSQL **de test isolée** ; `tests/conftest.py` migre et nettoie cette base. Définir explicitement `TEST_DATABASE_URL`, `DEPLOYMENT_ENVIRONMENT=test`, `OBSERVABILITY_ENVIRONMENT=test`, `TRACING_ENABLED=false`. Lancer `python -m pytest -q`. Le scénario `python -m scripts.validate_observability_outage` dure cinq minutes et n'appelle que son récepteur OTLP local et une opération HTTP synthétique en mémoire.
+Réception réelle Loki/Tempo, corrélation Grafana, deux cibles métriques UP, contrôle d'accès via le routage réel, parcours HTTP/asynchrone de bout en bout, panne collecteur cinq minutes pour les deux signaux sous charge représentative, arrêt/reprise, rétention/backups/alertes. Aucun critère C01–C12 entier n'est non applicable ; sous-profils absents inchangés : WebSocket, scheduler/cron et consommateur Redis Stream.
 
-Sur une recette autorisée après revue/déploiement : vérifier le refus sans token, avec token invalide et depuis le réseau public, puis scraper chaque processus depuis le réseau autorisé. Couper DB/Redis de recette, observer liveness/readiness et les heartbeats. Faire un parcours synthétique API → outbox → worker → second service, avec échec/reprise, vérifier les liens et l'absence de double effet métier. Couper le collector pendant cinq minutes sous charge métier synthétique puis le rétablir.
-
-Enfin conserver des preuves horodatées de réception au stockage, consultation Grafana, logs → trace → logs, comportement `no data`, séries actives, rétention et alertes. Aucun test de notification n'est autorisé implicitement par ce document. `connected` nécessite une ingestion démontrée ; `conformant-v1` exige tous les critères applicables sur la révision effectivement déployée.
-
-## Runbook opérationnel
-
-- **Collecte absente** : conserver l'état `unknown`, vérifier découverte, DNS, réseau, TLS, expiration du token et réponse de `/internal/metrics`. Ne pas déduire zéro erreur d'une absence de séries.
-- **Worker stale** : vérifier processus, dernier heartbeat, DB/Redis, timeout provider et âge de l'outbox. Préserver les leases et IDs ; ne pas recréer une intention pour débloquer l'observabilité.
-- **Readiness 503** : vérifier migration et accès DB, puis Redis si transport Stream. Le détail n'est pas public ; utiliser les logs autorisés. Ne pas retirer le service pour une panne DiddiObserve.
-- **Pertes de télémétrie** : examiner saturation, indisponibilité et authentification OTLP. Réduire le sampling après décision versionnée, jamais augmenter indéfiniment les files. Reprendre la collecte sans modifier les transactions.
-- **Rollback** : rétablir l'ancienne image/configuration après revue, conserver les colonnes nullables (compatibles avec l'ancien code). Restaurer les noms de métriques/dashboards ensemble ; garantir une seule chaîne de collecte. Ne pas exécuter de downgrade destructif pendant la livraison de messages.
-
-L'affectation nominative, l'URL publiée de ce runbook et l'astreinte restent à renseigner dans le manifeste rendu.
-
-
-## Raccordement 1.1.1 — fichiers API et worker
-
-La proposition Compose monte un volume nommé explicitement par `OBSERVABILITY_LOG_VOLUME_NAME` dans `/var/log/diddipay`. Choisir un nom propre au service, environnement et déploiement. `OBSERVABILITY_LOG_GID` est un GID numérique confirmé avec l'équipe centrale ; Alloy doit appartenir à ce groupe. Un conteneur d'initialisation sans réseau prépare uniquement la racine de ce volume (UID 10001, GID partagé, mode 2750). API et worker s'exécutent comme UID 10001, sans privilèges root. Revoir les permissions de tout volume préexistant ; l'initialisation ne change pas récursivement ses fichiers. Vérifier aussi migrations, accès à l'image et heartbeat sous cet UID en recette avant activation.
-
-Deux chemins fixes : `observability-api.jsonl` et `observability-worker.jsonl`. Chaque processus utilise une file de 256 lignes JSON déjà nettoyées (64 KiB maximum chacune), puis un écrivain daemon. Un verrou OS non bloquant protège chaque fichier contre une seconde rotation concurrente. Pas de scale/répliques avec ces chemins : prévoir un volume par installation ou des chemins explicitement distincts et un budget associé avant réplication. Les migrations de démarrage ferment leur écrivain avant le lancement de l'API ; le logger est réinstallé après la configuration Alembic.
-
-Rotation par renommage/réouverture à 10 MiB, 5 archives par fichier, fichiers nouveaux 0640 (sous réserve de l'umask), budget disque total 126091264 octets incluant une marge par événement. Le volume fixe et les deux noms fixes évitent des fichiers orphelins à chaque redémarrage. Ne pas supprimer les fichiers `.lock` pendant qu'un producteur tourne. Inventorier les anciens chemins avant activation et faire approuver leur purge selon la rétention. Les archives sont un tampon local borné, sans garantie de rejeu central.
-
-Les échecs disque et la contention de verrou incrémentent `diddi_telemetry_dropped_total{signal="logs",reason="file_write_failed"}` ; saturation : `file_queue_full` ; abandon à l'arrêt : `file_shutdown`. Les labels réels du compteur sont définis dans le module métriques. L'écriture disque n'est jamais attendue par le métier. L'arrêt attend au plus une seconde ; un événement en cours d'écriture au moment de l'arrêt forcé peut rester d'issue inconnue. Le crash perd la file en mémoire. Les logs JSON stderr locaux restent le diagnostic de secours, sans récursion du logger et avec leur rotation Docker indépendante.
-
-### À fournir avant raccordement
-
-- IDs de registre distincts API/worker, même service canonique `diddipay`, avec environnement et installation confirmés.
-- `API_OTLP_TRACES_ENDPOINT` et `WORKER_OTLP_TRACES_ENDPOINT` : URLs HTTPS complètes confirmées, normalement route `/otlp/<registry-id>/v1/traces`. Aucun domaine n'est déduit.
-- `API_OTLP_HEADERS` et `WORKER_OTLP_HEADERS` : `authorization=Basic <identifiants encodés fournis par la centrale>`, injectés dans `OTEL_EXPORTER_OTLP_HEADERS`. Ne jamais mettre la valeur dans Git ou dans les preuves. Les secrets de DiddiSend/ID ne sont pas réutilisés.
-- `API_METRICS_TOKEN`, `WORKER_METRICS_TOKEN` et leurs fichiers secrets côté Prometheus (`API_METRICS_CREDENTIALS_FILE`, `WORKER_METRICS_CREDENTIALS_FILE`). Les templates restent à rendre/revoir avec les vrais chemins et cibles.
-- Hôte Docker commun (`DOCKER_ENVIRONMENT` dans le manifeste rendu), volume, GID partagé, réseau/CIDR de scrape et contact d'exploitation. Si Alloy est sur un autre hôte, ce montage ne fonctionne pas : prévoir un transport réseau explicitement validé.
-
-### Demande à transmettre à DiddiObserve
-
-Déclarer ce volume comme externe, le monter en lecture seule ; associer chaque chemin actif à son entrée de registre/composant. Collecter uniquement les deux fichiers `.jsonl`, jamais `.1`–`.5` ni `.lock`. Le motif historique `*.log` ne convient pas. Conserver les positions de lecture dans le volume propre à Alloy. Au premier démarrage sur volume neuf/synthétique : lire les fichiers actifs depuis le début. Pour un volume contenant déjà des données, faire approuver explicitement la portée historique avant collecte. À la reprise : utiliser les positions persistées ; mesurer pertes/doublons lors des rotations et redémarrages. Ne pas activer OTLP logs ou collecte Docker en parallèle. Les traces restent exportées par OTLP.
-
-Aucune configuration de la plateforme centrale n'est modifiée ici. L'état reste `inventoried` jusqu'aux preuves C11/C12. Le document `ONBOARDING-READY` des autres modules ne prouve pas le raccordement de DiddiPay.
+Runbook : si ingestion absente vérifier activation, présence des paramètres sans afficher secrets, DNS/TLS, authentification et compteurs de perte. Une panne collecteur ne doit pas rendre readiness négative. Worker stale : vérifier processus, heartbeat, DB/Redis et backlog sans recréer d'opération métier. Rollback : restaurer image/config approuvées et une seule chaîne centrale ; garder les colonnes outbox compatibles et ne pas rejouer les archives implicitement.

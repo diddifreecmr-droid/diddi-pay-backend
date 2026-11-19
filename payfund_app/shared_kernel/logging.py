@@ -98,6 +98,32 @@ def configure_logging() -> None:
             logger.addHandler(file_handler)
         # payfund does not propagate; each event reaches this shared sink once.
         root.addHandler(file_handler)
+    from payfund_app.core.observability.otlp_logging import (
+        OTLPJsonHandler,
+        logs_endpoint,
+    )
+
+    endpoint = logs_endpoint(settings) if settings.otel_logs_enabled else ""
+    for handler in list(logger.handlers):
+        if isinstance(handler, OTLPJsonHandler) and (
+            handler.stopped or handler.endpoint != endpoint
+        ):
+            logger.removeHandler(handler)
+            root.removeHandler(handler)
+            handler.close()
+    for handler in list(root.handlers):
+        if isinstance(handler, OTLPJsonHandler) and handler not in logger.handlers:
+            root.removeHandler(handler)
+            handler.close()
+    if endpoint:
+        handler = next(
+            (h for h in logger.handlers if isinstance(h, OTLPJsonHandler)), None
+        )
+        if handler is None:
+            handler = OTLPJsonHandler(endpoint)
+            handler.setFormatter(JsonFormatter())
+            logger.addHandler(handler)
+        root.addHandler(handler)
 
 
 def build_log_payload(

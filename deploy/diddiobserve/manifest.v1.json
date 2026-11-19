@@ -1,6 +1,6 @@
 {
-  "manifest_version": "1.1.1",
-  "protocol_version": "1.1.1",
+  "manifest_version": "2.0.0",
+  "protocol_version": "2.0.0",
   "service_name": "diddipay",
   "namespace": "diddi",
   "repository": "diddipay-fund",
@@ -11,8 +11,8 @@
   },
   "identity": {
     "version": "${OBSERVABILITY_RELEASE_SHA}",
-    "environment": "${OBSERVABILITY_ENVIRONMENT}",
-    "deployment_id": "${OBSERVABILITY_DEPLOYMENT_ID}",
+    "environment": "${ENVIRONMENT}",
+    "deployment_id": "${DEPLOYMENT_ID}",
     "instance": "process PID plus random UUID; renewed on process start",
     "allowed_environments": [
       "development",
@@ -47,10 +47,11 @@
         "alert_stale_after_seconds": 90,
         "heartbeat": "after completed poll/dispatch, including empty polls"
       },
-      "registry_id": "${API_REGISTRY_ID}",
-      "metrics_secret_reference": "${API_METRICS_TOKEN}",
-      "otlp_traces_endpoint": "${API_OTLP_TRACES_ENDPOINT}",
-      "otlp_headers_secret_reference": "${API_OTLP_HEADERS}"
+      "registry_id": "diddipay",
+      "metrics_secret_reference": "existing per-component token if configured, else existing shared METRICS_BEARER_TOKEN or METRICS_TOKEN",
+      "otlp_traces_endpoint": "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}",
+      "otlp_headers_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS (or existing per-component API_OTLP_HEADERS / WORKER_OTLP_HEADERS)",
+      "otlp_logs_endpoint": "${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}"
     },
     {
       "name": "payment-worker",
@@ -83,10 +84,11 @@
         300,
         "+Inf"
       ],
-      "registry_id": "${WORKER_REGISTRY_ID}",
-      "metrics_secret_reference": "${WORKER_METRICS_TOKEN}",
-      "otlp_traces_endpoint": "${WORKER_OTLP_TRACES_ENDPOINT}",
-      "otlp_headers_secret_reference": "${WORKER_OTLP_HEADERS}"
+      "registry_id": "diddipay",
+      "metrics_secret_reference": "existing per-component token if configured, else existing shared METRICS_BEARER_TOKEN or METRICS_TOKEN",
+      "otlp_traces_endpoint": "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}",
+      "otlp_headers_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS (or existing per-component API_OTLP_HEADERS / WORKER_OTLP_HEADERS)",
+      "otlp_logs_endpoint": "${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}"
     }
   ],
   "infrastructure": [
@@ -149,12 +151,12 @@
     "public_details": "status only"
   },
   "metrics": {
-    "authentication": "Bearer, fail-closed with missing token; direct socket peer CIDR allowlist in central profile",
-    "secret_reference": "${API_METRICS_CREDENTIALS_FILE} / ${WORKER_METRICS_CREDENTIALS_FILE} per component",
-    "producer_secret_variable": "API_METRICS_TOKEN / WORKER_METRICS_TOKEN mapped to METRICS_TOKEN",
-    "allowed_source_networks_variable": "METRICS_ALLOWED_CIDRS",
+    "authentication": "existing Bearer preserved; missing token 503; wrong/absent token 401; configured CIDR failure 401; direct socket peer only; Uvicorn proxy header rewriting disabled",
+    "secret_reference": "existing central scrape credential file(s); preserve token values, no new secret required",
+    "producer_secret_variable": "METRICS_BEARER_TOKEN, alias METRICS_TOKEN; Compose keeps API_METRICS_TOKEN / WORKER_METRICS_TOKEN if already configured, otherwise shared standard/legacy secret",
+    "allowed_source_networks_variable": "METRICS_ALLOWED_CIDRS (optional additional allowlist; empty = no IP restriction, Bearer still mandatory)",
     "trust_forwarded_headers": false,
-    "transport": "HTTPS via reviewed private TLS gateway; plaintext only inside explicitly isolated local network",
+    "transport": "existing API ingress unchanged; /internal/metrics on API 8000 and worker 9001; worker has no host publication; confirm routed targets independently of outbound OTLP",
     "scrape_interval_seconds": 15,
     "scrape_timeout_seconds": 5,
     "active_series_budget_per_target": 20000,
@@ -221,65 +223,31 @@
     "legacy_http_names": "replaced; repository dashboards/rules updated"
   },
   "logs": {
-    "transport": "file-jsonl",
-    "path": "/var/log/diddipay",
+    "transport": "otlp-http/protobuf",
+    "endpoint": "${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}",
     "schema": "1.0.0",
     "max_line_bytes": 65536,
-    "rotation": {
-      "max_bytes": 10485760,
-      "backup_count": 5,
-      "strategy": "rename-and-reopen"
-    },
-    "central_file_mirror": false,
-    "successful_health_scrape_filter": false,
-    "redaction": "recursive sensitive keys, credentials/URLs/email/phone/IP patterns; bounded depth and breadth; no raw HTTP access line",
-    "correlation_indexing": "request_id/trace_id/span_id are JSON fields, never Loki labels",
-    "remaining_limits": "Free-form messages cannot prove universal PII removal; synthetic cases tested; manual CLI stdout excluded from deployed runtime profile",
-    "volume_name": "${OBSERVABILITY_LOG_VOLUME_NAME}",
-    "docker_environment": "${DOCKER_ENVIRONMENT}",
-    "environment": "${OBSERVABILITY_ENVIRONMENT}",
-    "deployment_id": "${OBSERVABILITY_DEPLOYMENT_ID}",
-    "active_files": [
-      {
-        "path": "/var/log/diddipay/observability-api.jsonl",
-        "component": "api",
-        "registry_id": "${API_REGISTRY_ID}"
-      },
-      {
-        "path": "/var/log/diddipay/observability-worker.jsonl",
-        "component": "worker",
-        "registry_id": "${WORKER_REGISTRY_ID}"
-      }
-    ],
-    "archives": "<active path>.1 through .5; never collect archives or .lock files",
-    "writer_model": "one daemon writer per process, one process per component, nonblocking OS exclusive lock per fixed file; no replicas with these paths",
-    "permissions": {
-      "producer_uid": 10001,
-      "shared_gid": "${OBSERVABILITY_LOG_GID}",
-      "directory": "2750",
-      "new_files": "0640 subject to process umask",
-      "collector": "read-only mount; shared GID membership required"
-    },
-    "total_disk_budget_bytes": 126091264,
-    "disk_budget_details": "two writers: 2 * (6 * 10 MiB + 64 KiB event margin); lock files empty; Docker stderr budget separate",
-    "queue_capacity_per_process": 256,
-    "max_queue_payload_bytes_per_process": 16777216,
-    "shutdown_deadline_seconds": 1,
-    "orphan_cleanup": "fixed API/worker filenames survive restarts, no instance-named files; no automatic deletion of legacy files; inventory and remove obsolete paths manually after retention review before activation",
-    "initial_read_position": "beginning of active files only, synthetic/new deployment; any existing history requires explicit approval before enabling collection",
-    "restart_recovery": "append to active file; Alloy persists positions in its own volume; pending memory queue may be lost on crash; no replay guarantee for archives; incomplete trailing line discarded and counted as file_incomplete_line before next append",
+    "queue_capacity": 256,
+    "batch_size": 64,
+    "schedule_delay_ms": 1000,
+    "export_timeout_seconds": 5,
+    "shutdown_deadline_seconds": 5,
+    "max_queue_payload_bytes": 16777216,
+    "delivery": "best effort, SDK bounded retries; overflow/failures counted; pending records can be lost on crash/deadline",
+    "logger_path": "payfund propagate=false and root share one idempotent OTLP handler; Uvicorn/Alembic reconfiguration restored; exporter diagnostics excluded to avoid recursion",
+    "local_copies": "stderr with existing Docker rotation; optional legacy file only for troubleshooting; no central file/Docker collection",
     "central_duplicate_transport": false,
-    "owner_contact": "${OPERATIONS_CONTACT}",
-    "failure_policy": "nonblocking enqueue; bounded queue; file_write_failed/file_queue_full/file_shutdown counters; local JSON stderr remains independent fallback",
-    "collector_requirements": "same Docker host; external volume read-only; exact active .jsonl paths (historical *.log pattern is incompatible); separate trusted component registry identities; no Docker socket"
+    "shared_volume_required": false,
+    "sensitive_data": "existing JSON redaction before enqueue; no raw exception/exporter diagnostic forwarded",
+    "authentication_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS from private central handoff; existing API_/WORKER_ overrides mapped by Compose"
   },
   "traces": {
     "protocol": "OTLP HTTP/protobuf",
-    "endpoint": "per-component API_OTLP_TRACES_ENDPOINT / WORKER_OTLP_TRACES_ENDPOINT",
+    "endpoint": "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT} or ${OTEL_EXPORTER_OTLP_ENDPOINT} + /v1/traces",
     "generic_endpoint_variable": "TRACING_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT; appends /v1/traces exactly once",
     "specific_endpoint_variable": "TRACING_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; used verbatim",
-    "authentication_secret_reference": "API_OTLP_HEADERS / WORKER_OTLP_HEADERS: authorization=Basic <centrally supplied encoded credentials>; injected into OTEL_EXPORTER_OTLP_HEADERS",
-    "ca_reference": "public HTTPS via central Nginx Proxy Manager; standard trust store, no private CA or client certificate required by v1.1.1",
+    "authentication_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS (existing component overrides mapped in Compose)",
+    "ca_reference": "system public CA store; no private CA/client certificate",
     "tls_verify": true,
     "insecure_local_opt_in": "TRACING_ALLOW_INSECURE_LOCAL; false in central profile",
     "production_root_sample_rate": 0.1,
@@ -307,39 +275,24 @@
     }
   },
   "required_environment": [
+    "OTEL_SERVICE_NAME",
+    "ENVIRONMENT",
+    "DEPLOYMENT_ID",
     "OBSERVABILITY_RELEASE_SHA",
-    "OBSERVABILITY_ENVIRONMENT",
-    "OBSERVABILITY_DEPLOYMENT_ID",
-    "METRICS_ALLOWED_CIDRS",
-    "DIDDIOBSERVE_NETWORK",
-    "OBSERVABILITY_LOG_VOLUME_NAME",
-    "OBSERVABILITY_LOG_GID",
-    "API_METRICS_TOKEN",
-    "WORKER_METRICS_TOKEN",
-    "API_OTLP_TRACES_ENDPOINT",
-    "WORKER_OTLP_TRACES_ENDPOINT",
-    "API_OTLP_HEADERS",
-    "WORKER_OTLP_HEADERS"
+    "OTEL_EXPORTER_OTLP_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_LOGS_ENABLED",
+    "METRICS_BEARER_TOKEN"
   ],
   "central_values_required": [
-    "API_SCRAPE_TARGET",
-    "WORKER_SCRAPE_TARGET",
-    "SCRAPE_CA_FILE",
-    "METRICS_ALLOWED_CIDRS",
-    "DIDDIOBSERVE_NETWORK",
-    "OPERATIONS_CONTACT",
-    "OPERATIONS_OWNER",
-    "RUNBOOK_URL",
-    "approved environment/deployment ID",
-    "SLO and routing ownership",
-    "READINESS_PROBE_URL",
-    "BLACKBOX_TARGET",
-    "API_REGISTRY_ID",
-    "WORKER_REGISTRY_ID",
-    "DOCKER_ENVIRONMENT",
-    "same-host volume confirmation and Alloy read-only shared GID",
-    "API/WORKER HTTPS OTLP traces URLs and dedicated Basic ingest secrets",
-    "API/WORKER Bearer scrape secrets and collector credential file paths"
+    "OTLP credentials from private onboarding handoff",
+    "central route activation confirmation",
+    "existing metrics token references (preserve values)",
+    "actual API/worker scrape URLs and peer CIDRs if filtering desired",
+    "operational owner and contact",
+    "approved routing to worker port 9001 without requiring shared platform network",
+    "retention/backup/alert ownership"
   ],
   "retention_days": {
     "staging": {
@@ -362,11 +315,27 @@
     "Redis Stream consumer backlog: this module publishes only, consumers belong to other modules; its durable delivery backlog is payments_outbox"
   ],
   "blocking_external_validation": [
-    "Private network/TLS gateway/ingress filtering",
-    "C06/C07 cross-service traversal on deployed revision",
-    "C10 representative business load on isolated staging",
-    "C11 storage arrival/Grafana correlation/no-data",
-    "C12 central retention/backups/alert routing/ownership and cardinality capacity measurement",
-    "C12 actual Linux UID/GID and Alloy read-only mount, rotation under collector load, persisted positions across collector/producer restart, measured loss/duplicates"
-  ]
+    "central POST authentication and real logs/traces receipt",
+    "API and worker actual metrics target URLs, firewall and CIDR peers",
+    "C06/C07 actual distributed traversal",
+    "C10 representative five-minute logs AND traces outage/recovery",
+    "C11 Grafana correlation/no-data",
+    "C12 central retention/backups/alerts and coordinated legacy collector disable"
+  ],
+  "activation": {
+    "logs": "OTEL_LOGS_ENABLED=true and explicit full logs URL",
+    "traces": "TRACING_ENABLED=false vetoes export; otherwise configured standard specific/base endpoint required, empty disables; standalone settings default true, Compose default false pending central routes",
+    "global": "OBSERVABILITY_ENABLED controls application emit() only; no global OTEL_ENABLED switch; libraries controlled by handler",
+    "precedence": "standard setting names override legacy aliases; component-prefixed Compose values override shared standard value for that component"
+  },
+  "shared_docker_network_required": false,
+  "public_handoff": {
+    "source": "diddi-dashboard/docs/teams/DIDDIPAY-ONBOARDING.md dated 2026-11-19",
+    "environment": "staging",
+    "deployment_id": "diddipay-staging",
+    "base_url": "https://logs-otel.diddifree.com/otlp/diddipay",
+    "logs_url": "https://logs-otel.diddifree.com/otlp/diddipay/v1/logs",
+    "traces_url": "https://logs-otel.diddifree.com/otlp/diddipay/v1/traces",
+    "status": "prepared not deployed; no ingestion proof"
+  }
 }

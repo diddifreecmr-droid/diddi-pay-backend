@@ -1,69 +1,42 @@
-# REVIEW ONLY. Apply with docker-compose.yml, never with the legacy observability stack.
-# No platform containers, no public metrics ports, one process per scrape target.
+# REVIEW ONLY: merge with docker-compose.yml. No shared logs/network required.
+# Keep existing metrics secrets and API ingress/host port configuration.
 services:
-  observability-log-init:
-    image: busybox:1.37
-    user: "0:0"
-    restart: "no"
-    network_mode: none
-    environment:
-      LOG_GID: ${OBSERVABILITY_LOG_GID:?shared group readable by Alloy required}
-    command: ["sh", "-ec", "chown 10001:$$LOG_GID /logs && chmod 2750 /logs"]
-    volumes:
-      - observability_logs:/logs
   app:
-    user: "10001:${OBSERVABILITY_LOG_GID:?shared group readable by Alloy required}"
-    depends_on:
-      observability-log-init:
-        condition: service_completed_successfully
-    volumes:
-      - observability_logs:/var/log/diddipay
     build:
       args:
-        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?immutable revision required}
-    environment: &diddiobserve_environment
-      OBSERVABILITY_ENVIRONMENT: ${OBSERVABILITY_ENVIRONMENT:?environment required}
-      OBSERVABILITY_DEPLOYMENT_ID: ${OBSERVABILITY_DEPLOYMENT_ID:?deployment identity required}
-      OBSERVABILITY_RELEASE_SHA: ${OBSERVABILITY_RELEASE_SHA:?immutable revision required}
-      OBSERVABILITY_LOG_FILE: /var/log/diddipay/observability-api.jsonl
+        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?actual built revision required}
+    environment: &otel_environment
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-diddipay}
+      ENVIRONMENT: ${ENVIRONMENT:?telemetry environment required}
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:?deployment identity required}
+      OBSERVABILITY_RELEASE_SHA: ${OBSERVABILITY_RELEASE_SHA:?actual built revision required}
       OBSERVABILITY_COMPONENT: api
-      METRICS_ENABLED: "true"
-      METRICS_TOKEN: ${API_METRICS_TOKEN:?API scrape secret required}
-      METRICS_ALLOWED_CIDRS: ${METRICS_ALLOWED_CIDRS:?collector source networks required}
-      TRACING_ENABLED: "true"
-      TRACING_OTLP_TRACES_ENDPOINT: ${API_OTLP_TRACES_ENDPOINT:?complete API OTLP HTTPS URL required}
-      OTEL_EXPORTER_OTLP_HEADERS: ${API_OTLP_HEADERS:?API Basic authentication header required}
+      OBSERVABILITY_LOG_FILE: ""
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${API_OTLP_LOGS_ENDPOINT:-${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${API_OTLP_TRACES_ENDPOINT:-${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_HEADERS: ${API_OTLP_HEADERS:-${OTEL_EXPORTER_OTLP_HEADERS:-}}
+      OTEL_LOGS_ENABLED: ${OTEL_LOGS_ENABLED:-false}
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
       TRACING_ALLOW_INSECURE_LOCAL: "false"
-    # A reviewed ingress must join the approved network. Nothing is exposed on the host.
-    ports: !reset []
-    networks:
-      - default
-      - diddiobserve
+      # Clear legacy endpoints inherited from base Compose: standard variables own routing.
+      TRACING_OTLP_ENDPOINT: ""
+      TRACING_OTLP_TRACES_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_CERTIFICATE: ""
+      METRICS_ENABLED: "true"
+      # Existing API_/WORKER_ or shared token is reused verbatim; never generate/rotate here.
+      METRICS_BEARER_TOKEN: ${API_METRICS_TOKEN:-${METRICS_BEARER_TOKEN:-${METRICS_TOKEN:?existing metrics secret required}}}
+      METRICS_ALLOWED_CIDRS: ${METRICS_ALLOWED_CIDRS:-}
   payment-worker:
-    user: "10001:${OBSERVABILITY_LOG_GID:?shared group readable by Alloy required}"
-    depends_on:
-      observability-log-init:
-        condition: service_completed_successfully
-    volumes:
-      - observability_logs:/var/log/diddipay
     build:
       args:
-        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?immutable revision required}
+        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?actual built revision required}
     environment:
-      <<: *diddiobserve_environment
+      <<: *otel_environment
       OBSERVABILITY_COMPONENT: worker
-      OBSERVABILITY_LOG_FILE: /var/log/diddipay/observability-worker.jsonl
-      METRICS_TOKEN: ${WORKER_METRICS_TOKEN:?worker scrape secret required}
-      TRACING_OTLP_TRACES_ENDPOINT: ${WORKER_OTLP_TRACES_ENDPOINT:?complete worker OTLP HTTPS URL required}
-      OTEL_EXPORTER_OTLP_HEADERS: ${WORKER_OTLP_HEADERS:?worker Basic authentication header required}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${WORKER_OTLP_LOGS_ENDPOINT:-${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${WORKER_OTLP_TRACES_ENDPOINT:-${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_HEADERS: ${WORKER_OTLP_HEADERS:-${OTEL_EXPORTER_OTLP_HEADERS:-}}
+      METRICS_BEARER_TOKEN: ${WORKER_METRICS_TOKEN:-${METRICS_BEARER_TOKEN:-${METRICS_TOKEN:?existing metrics secret required}}}
     expose: ["9001"]
-    networks:
-      - default
-      - diddiobserve
-networks:
-  diddiobserve:
-    external: true
-    name: ${DIDDIOBSERVE_NETWORK:?approved private network required}
-volumes:
-  observability_logs:
-    name: ${OBSERVABILITY_LOG_VOLUME_NAME:?unique service environment deployment log volume required}
