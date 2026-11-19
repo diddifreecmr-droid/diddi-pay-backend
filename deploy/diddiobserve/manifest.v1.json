@@ -88,7 +88,13 @@
       "metrics_secret_reference": "existing per-component token if configured, else existing shared METRICS_BEARER_TOKEN or METRICS_TOKEN",
       "otlp_traces_endpoint": "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}",
       "otlp_headers_secret_reference": "OTEL_EXPORTER_OTLP_HEADERS (or existing per-component API_OTLP_HEADERS / WORKER_OTLP_HEADERS)",
-      "otlp_logs_endpoint": "${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}"
+      "otlp_logs_endpoint": "${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}",
+      "external_metrics_route": {
+        "url": "https://pay-api-staging.diddifree.com/worker/internal/metrics",
+        "status": "planned-deferred-by-owner",
+        "configured": false,
+        "blocks_otlp_activation": false
+      }
     }
   ],
   "infrastructure": [
@@ -337,5 +343,12 @@
     "logs_url": "https://logs-otel.diddifree.com/otlp/diddipay/v1/logs",
     "traces_url": "https://logs-otel.diddifree.com/otlp/diddipay/v1/traces",
     "status": "prepared not deployed; no ingestion proof"
-  }
+  },
+  "deferred_work": [
+    {
+      "item": "External worker metrics route and central scrape validation",
+      "decision": "Owner explicitly deferred; proceed with API metrics and API/worker OTLP logs/traces",
+      "impact": "Worker metrics receipt/UP remains unvalidated; full protocol conformance not claimed"
+    }
+  ]
 }
