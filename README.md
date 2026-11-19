@@ -201,8 +201,11 @@ Sénégal), dépôt **et** retrait tous deux pris en charge :
 - `PAYMENT_GATEWAY_MODE=pawapay`
 - `PAWAPAY_API_TOKEN=<token>`
 - `PAWAPAY_BASE_URL` (défaut : sandbox `https://api.sandbox.pawapay.io`)
-- pas de webhook route dédiée aujourd'hui : la confirmation passe par réconciliation manuelle
-  (`POST /wallet/ops/wallet/reconcile/{transaction_id}`), voir ci-dessous.
+- payout callback : `POST /payfund/v1/webhooks/pawapay/payouts` ; l'ancien chemin
+  `/webhooks/pawapay/payouts` reste disponible pendant la migration de staging.
+- `PAWAPAY_CALLBACK_URL` doit correspondre exactement à l'URL configurée dans PawaPay ; activer
+  `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true` et configurer `PAWAPAY_PUBLIC_KEYS_URL` avant la
+  production. La reconciliation reste le filet de sécurité.
 - opérateur MTN/Orange/Moov résolu automatiquement depuis l'indicatif téléphonique du payeur —
   voir `wallet/infra/pawapay_gateway.py` pour la liste des combinaisons pays+opérateur actives.
 - **code prêt, pas encore activé en production** : le mode réellement déployé est celui configuré

@@ -155,6 +155,9 @@ class ProviderEventRecord(Base):
     payment_attempt_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("payments.payment_attempts.id")
     )
+    payout_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("payments.payouts.id")
+    )
     error_message: Mapped[str | None] = mapped_column(String(255))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

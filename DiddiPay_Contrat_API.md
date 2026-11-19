@@ -234,6 +234,7 @@ Toutes les requetes ci-dessous sont exposees dans Swagger, corps et headers comp
 | `POST` | `/payment-intents/{intent_id}/refunds` | backend module | demander un remboursement idempotent |
 | `GET` | `/payment-intents/{intent_id}/financial-summary` | backend module | lire capture, frais, settlement et reste attendu |
 | `POST` | `/payments/webhooks/paystack` | Paystack | confirmer un evenement provider signe |
+| `POST` | `/webhooks/pawapay/payouts` | PawaPay | confirmer un payout, idempotent et verifie par API provider |
 
 Ces chemins sont relatifs a `/payfund/v1`. Les anciennes routes `/wallet/*` sont documentees dans
 le contrat legacy et ne font pas partie du nouveau coeur PaymentIntent.

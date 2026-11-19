@@ -16,7 +16,10 @@ COPY alembic ./alembic
 RUN pip install --no-cache-dir .
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Git checkouts on Windows may materialize this shell script as CRLF. Normalize it in the
+# Linux image so Docker starts reliably from both developer machines and CI/Portainer.
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Port interne fixe : seul le port hôte (APP_PORT, dans docker-compose.yml) doit être choisi en
 # fonction de ce qui est déjà pris sur le serveur — le port interne au réseau Docker n'entre

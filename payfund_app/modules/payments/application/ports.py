@@ -91,6 +91,22 @@ class ProviderEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class PayoutProviderEvent:
+    """Validated provider callback data for a payout."""
+
+    event_key: str
+    event_type: str
+    provider_reference: str | None
+    status: PayoutStatus | None
+    provider_status: str | None = None
+    amount: int | None = None
+    currency: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    sanitized_payload: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class CallbackTarget:
     url: str
     secret: str
@@ -162,6 +178,10 @@ class PayoutRepositoryPort(Protocol):
 
     def get_by_business_reference(self, client_id: str, reference: str) -> Payout | None: ...
 
+    def get_by_provider_reference(
+        self, processor: str, provider_reference: str, *, for_update: bool = False
+    ) -> Payout | None: ...
+
     def save(self, payout: Payout) -> Payout: ...
 
     def pending_for_reconciliation(
@@ -212,6 +232,16 @@ class ProviderEventRepositoryPort(Protocol):
         event_type: str,
         payload_hash: str,
         payload: dict,
+    ): ...
+
+    def mark(
+        self,
+        row,
+        *,
+        status: str,
+        payment_attempt_id: uuid.UUID | None = None,
+        payout_id: uuid.UUID | None = None,
+        error_message: str | None = None,
     ): ...
 
 

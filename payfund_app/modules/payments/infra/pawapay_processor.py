@@ -22,15 +22,20 @@ presentation/schemas.py's BeneficiaryDestination). This processor is the only th
 knows "mobile_money" maps to PawaPay's phone+operator-family model; callers and the
 application layer never see PawaPay-specific shapes.
 
+Known callback behavior:
+  * PawaPay sends payout callbacks asynchronously. The callback is an inbox signal; the
+    authenticated GET /v2/payouts/{payoutId} remains the source of truth before accounting.
+  * Signed callbacks are supported when PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true. Unsigned
+    staging callbacks remain supported explicitly so an existing sandbox callback can be
+    migrated without taking the payout API offline.
+
 Deliberately NOT wired here:
   * Wave -- not even active on this PawaPay account (checked GET /v2/active-conf: every
     live provider uses authType=PROVIDER_AUTH, Wave isn't listed at all). REDIRECT_AUTH
     needs a real example to design against and can't be requested until PawaPay enables it
     on the account. See ADR/ticket before adding it.
-  * Webhooks -- parse_webhook raises NotImplementedError like SandboxPaymentProcessor's.
-    Blocked on the BCEAO agreement (SCRUM-555), a DiddiPay-side compliance gate, not a
-    PawaPay limitation. Confirmation goes through verify_payment/verify_payout /
-    reconciliation.
+  * Deposit callbacks -- the payout callback is wired here; deposits still use
+    verify_payment/reconciliation until their own callback contract is needed.
 
 refund_payment (verified against the real sandbox, POST /v2/refunds) follows the same
 async ACCEPTED -> COMPLETED/FAILED shape as deposits/payouts. Note: refunds.py has no
@@ -41,9 +46,15 @@ a pre-existing gap in the module, not something this file can fix alone.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import re
+import threading
 import time
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -51,10 +62,12 @@ from payfund_app.core.observability.business_metrics import observe_provider_cal
 from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
+    ProcessorWebhookRejected,
 )
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
+    PayoutProviderEvent,
     PayoutRequest,
     PayoutResult,
     ProcessorCapabilities,
@@ -121,12 +134,21 @@ class PawapayPaymentProcessor:
         api_token: str,
         base_url: str = "https://api.sandbox.pawapay.io",
         client: httpx.Client | None = None,
+        callback_url: str | None = None,
+        callback_signature_required: bool = False,
+        public_keys_url: str | None = None,
     ) -> None:
         if not api_token:
             raise ValueError("PAWAPAY_API_TOKEN is required to register the pawapay processor")
         self._api_token = api_token
         self._base_url = base_url.rstrip("/")
         self._client = client
+        self.callback_url = callback_url.rstrip("/") if callback_url else None
+        self._callback_signature_required = callback_signature_required
+        self._public_keys_url = public_keys_url or f"{self._base_url}/v2/public-key/http"
+        self._public_key_cache: dict[str, tuple[Any, float]] = {}
+        self._public_keys_fetched_at = 0.0
+        self._public_key_lock = threading.Lock()
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -382,11 +404,234 @@ class PawapayPaymentProcessor:
             failure_message=failure_message,
         )
 
+    def parse_payout_webhook(
+        self,
+        raw_body: bytes,
+        headers,
+        *,
+        callback_url: str | None = None,
+    ) -> PayoutProviderEvent:
+        """Validate and normalize the official PawaPay payout callback payload."""
+        self._verify_callback_signature(
+            raw_body,
+            headers,
+            callback_url=callback_url or self.callback_url,
+        )
+        try:
+            body = httpx.Response(200, content=raw_body).json()
+        except ValueError as exc:
+            raise ProcessorWebhookRejected("pawapay callback body is not valid JSON") from exc
+        if not isinstance(body, dict):
+            raise ProcessorWebhookRejected("pawapay callback body must be an object")
+
+        payout_id = str(body.get("payoutId") or "")
+        if not payout_id or len(payout_id) > 160:
+            raise ProcessorWebhookRejected("pawapay callback payoutId is missing or invalid")
+        provider_status = str(body.get("status") or "").upper()
+        status_map = {
+            "COMPLETED": PayoutStatus.SUCCEEDED,
+            "FAILED": PayoutStatus.FAILED,
+            "PROCESSING": PayoutStatus.PROCESSING,
+            "ENQUEUED": PayoutStatus.PROCESSING,
+            "ACCEPTED": PayoutStatus.PROCESSING,
+        }
+        status = status_map.get(provider_status)
+        if status is None:
+            raise ProcessorWebhookRejected(
+                f"pawapay callback status is unsupported: {provider_status!r}"
+            )
+        try:
+            amount = self._parse_amount(body.get("amount"))
+        except (TypeError, ValueError) as exc:
+            raise ProcessorWebhookRejected("pawapay callback amount is invalid") from exc
+        if amount is None or amount <= 0:
+            raise ProcessorWebhookRejected("pawapay callback amount is required")
+        currency = str(body.get("currency") or "").upper()
+        if not currency:
+            raise ProcessorWebhookRejected("pawapay callback currency is required")
+
+        failure_code, failure_message = (
+            self._failure_reason(body) if status == PayoutStatus.FAILED else (None, None)
+        )
+        sanitized_payload = {
+            key: body[key]
+            for key in (
+                "payoutId",
+                "status",
+                "amount",
+                "currency",
+                "country",
+                "created",
+                "providerTransactionId",
+            )
+            if key in body
+        }
+        if failure_code or failure_message:
+            sanitized_payload["failureReason"] = {
+                "failureCode": failure_code,
+                "failureMessage": failure_message,
+            }
+        return PayoutProviderEvent(
+            event_key=f"payout:{payout_id}:{provider_status.lower()}",
+            event_type=f"payout.{provider_status.lower()}",
+            provider_reference=payout_id,
+            status=status,
+            provider_status=provider_status.lower(),
+            amount=amount,
+            currency=currency,
+            failure_code=failure_code,
+            failure_message=failure_message,
+            sanitized_payload=sanitized_payload,
+        )
+
     def parse_webhook(self, raw_body: bytes, headers):
         raise NotImplementedError(
-            "pawapay webhooks are not wired yet -- blocked on the BCEAO agreement "
-            "(SCRUM-555); use verify_payment / reconciliation instead"
+            "pawapay deposit webhooks are not wired yet (BCEAO compliance gate); "
+            "use verify_payment / reconciliation"
         )
+
+    def _verify_callback_signature(
+        self,
+        raw_body: bytes,
+        headers,
+        *,
+        callback_url: str | None,
+    ) -> None:
+        normalized = {str(key).lower(): str(value) for key, value in headers.items()}
+        signature_input = normalized.get("signature-input")
+        signature = normalized.get("signature")
+        digest = normalized.get("content-digest")
+        signed = any((signature_input, signature, digest))
+        if not signed:
+            if self._callback_signature_required:
+                raise ProcessorWebhookRejected("pawapay callback signature headers are required")
+            return
+        if not callback_url or not signature_input or not signature or not digest:
+            raise ProcessorWebhookRejected("pawapay callback signature headers are incomplete")
+
+        expected_digest = base64.b64encode(hashlib.sha512(raw_body).digest()).decode("ascii")
+        digest_match = re.fullmatch(r"sha-512=:([^:]+):", digest)
+        if digest_match is None or not hmac.compare_digest(
+            digest_match.group(1), expected_digest
+        ):
+            raise ProcessorWebhookRejected("pawapay callback content digest is invalid")
+
+        input_match = re.match(
+            r"(?P<label>[A-Za-z0-9_-]+)=(?P<params>\([^)]*\)(?:;[^,]+)?)",
+            signature_input,
+        )
+        if input_match is None:
+            raise ProcessorWebhookRejected("pawapay callback signature-input is invalid")
+        label = input_match.group("label")
+        signature_params = input_match.group("params")
+        components = re.findall(r'"([^"]+)"', signature_params.split(";", 1)[0])
+        required = {"@method", "@authority", "@path", "signature-date", "content-digest"}
+        if not required.issubset(components):
+            raise ProcessorWebhookRejected("pawapay callback signature coverage is incomplete")
+        expires_match = re.search(r";expires=(\d+)", signature_params)
+        if expires_match and time.time() > int(expires_match.group(1)):
+            raise ProcessorWebhookRejected("pawapay callback signature has expired")
+        key_id_match = re.search(r';keyid="([^"]+)"', signature_params)
+        if key_id_match is None:
+            raise ProcessorWebhookRejected("pawapay callback signature keyid is missing")
+        signature_match = re.search(
+            rf"(?:^|,)\s*{re.escape(label)}=:([^:]+):", signature
+        )
+        if signature_match is None:
+            raise ProcessorWebhookRejected("pawapay callback signature value is missing")
+        try:
+            signature_bytes = base64.b64decode(signature_match.group(1), validate=True)
+        except (ValueError, base64.binascii.Error) as exc:
+            raise ProcessorWebhookRejected("pawapay callback signature value is invalid") from exc
+
+        url = urlsplit(callback_url)
+        header_values = normalized
+        signature_base: list[str] = []
+        for component in components:
+            if component == "@method":
+                value = "POST"
+            elif component == "@authority":
+                value = url.netloc
+            elif component == "@path":
+                value = url.path or "/"
+            elif component == "@query":
+                value = f"?{url.query}" if url.query else "?"
+            else:
+                value = header_values.get(component.lower())
+                if value is None:
+                    raise ProcessorWebhookRejected(
+                        f"pawapay callback signed component is missing: {component}"
+                    )
+            signature_base.append(f'"{component}": {value}')
+        signature_base.append(f'"@signature-params": {signature_params}')
+
+        public_key = self._get_callback_public_key(key_id_match.group(1))
+        try:
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.asymmetric import ec
+
+            public_key.verify(
+                signature_bytes,
+                "\n".join(signature_base).encode("utf-8"),
+                ec.ECDSA(hashes.SHA256()),
+            )
+        except ImportError as exc:
+            raise ProcessorWebhookRejected(
+                "cryptography is required to verify pawapay callbacks"
+            ) from exc
+        except InvalidSignature as exc:
+            raise ProcessorWebhookRejected("pawapay callback signature is invalid") from exc
+
+    def _get_callback_public_key(self, key_id: str):
+        now = time.time()
+        with self._public_key_lock:
+            cached = self._public_key_cache.get(key_id)
+            if cached and cached[1] > now:
+                return cached[0]
+            if now - self._public_keys_fetched_at < 300 and not cached:
+                raise ProcessorWebhookRejected("pawapay callback public key is unavailable")
+            try:
+                response = self._fetch_callback_public_keys()
+                if response.status_code >= 400:
+                    raise ProcessorWebhookRejected(
+                        "pawapay callback public keys could not be loaded"
+                    )
+                body = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                raise ProcessorWebhookRejected(
+                    "pawapay callback public keys could not be loaded"
+                ) from exc
+            self._public_keys_fetched_at = now
+            keys = body.get("keys", []) if isinstance(body, dict) else body
+            if not isinstance(keys, list):
+                raise ProcessorWebhookRejected("pawapay callback public key response is invalid")
+            try:
+                from cryptography.hazmat.primitives.serialization import (
+                    load_pem_public_key,
+                )
+
+                for item in keys:
+                    if not isinstance(item, dict) or not item.get("id") or not item.get("key"):
+                        continue
+                    self._public_key_cache[str(item["id"])] = (
+                        load_pem_public_key(str(item["key"]).encode("ascii")),
+                        now + 86400,
+                    )
+            except (ImportError, ValueError, TypeError) as exc:
+                raise ProcessorWebhookRejected(
+                    "pawapay callback public key response is invalid"
+                ) from exc
+            cached = self._public_key_cache.get(key_id)
+            if cached is None:
+                raise ProcessorWebhookRejected("pawapay callback keyid is unknown")
+            return cached[0]
+
+    def _fetch_callback_public_keys(self) -> httpx.Response:
+        if self._client is not None:
+            return self._client.get(self._public_keys_url, headers={})
+        with httpx.Client(timeout=10.0) as client:
+            return client.get(self._public_keys_url)
 
     def refund_payment(self, request: RefundRequest) -> RefundResult:
         # Verified against the real PawaPay sandbox (POST /v2/refunds, GET /v2/refunds/{id}):
@@ -458,6 +703,8 @@ class PawapayPaymentProcessor:
         # (discovered via verify_payment/verify_payout polling) -- the immediate REJECTED
         # response from initiate_* carries the same shape but is handled inline there.
         reason = data.get("failureReason") or {}
+        if not isinstance(reason, dict):
+            return None, None
         message = reason.get("failureMessage")
         return reason.get("failureCode"), (str(message)[:255] if message else None)
 

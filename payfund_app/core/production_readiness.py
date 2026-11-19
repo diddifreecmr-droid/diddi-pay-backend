@@ -35,6 +35,15 @@ def production_configuration_errors(settings: Settings) -> list[str]:
         errors.append("SUPPORT_CLIENT_IDS must not be empty")
     if settings.payment_event_transport == "redis_stream" and not settings.payment_redis_stream.strip():
         errors.append("PAYMENT_REDIS_STREAM must not be empty")
+    if settings.pawapay_api_token:
+        if not settings.pawapay_callback_signature_required:
+            errors.append("PAWAPAY_CALLBACK_SIGNATURE_REQUIRED must be true")
+        callback_url = urlparse(settings.pawapay_callback_url)
+        if callback_url.scheme != "https" or not callback_url.netloc:
+            errors.append("PAWAPAY_CALLBACK_URL must be an HTTPS URL")
+        public_keys_url = urlparse(settings.pawapay_public_keys_url)
+        if settings.pawapay_public_keys_url and public_keys_url.scheme != "https":
+            errors.append("PAWAPAY_PUBLIC_KEYS_URL must use HTTPS")
 
     for key, url in settings.payment_checkout_return_targets.items():
         if url.scheme != "https":
