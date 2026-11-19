@@ -2560,6 +2560,41 @@
         "title": "PayoutResponse",
         "type": "object"
       },
+      "PayoutWebhookResponse": {
+        "properties": {
+          "event_key": {
+            "title": "Event Key",
+            "type": "string"
+          },
+          "payout_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout Id"
+          },
+          "status": {
+            "enum": [
+              "processed",
+              "duplicate",
+              "ignored",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "event_key"
+        ],
+        "title": "PayoutWebhookResponse",
+        "type": "object"
+      },
       "PaystackReconcileResponse": {
         "properties": {
           "status": {
@@ -3684,6 +3719,41 @@
           "updated_at"
         ],
         "title": "RefundResponse",
+        "type": "object"
+      },
+      "RefundWebhookResponse": {
+        "properties": {
+          "event_key": {
+            "title": "Event Key",
+            "type": "string"
+          },
+          "refund_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refund Id"
+          },
+          "status": {
+            "enum": [
+              "processed",
+              "duplicate",
+              "ignored",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "event_key"
+        ],
+        "title": "RefundWebhookResponse",
         "type": "object"
       },
       "RepayRequest": {
@@ -9084,6 +9154,248 @@
         "summary": "Withdraw",
         "tags": [
           "wallet-legacy"
+        ]
+      }
+    },
+    "/payfund/v1/webhooks/pawapay/deposits": {
+      "post": {
+        "description": "Provider-only endpoint for PaymentIntent deposits. The signed callback is stored in the provider inbox before the PaymentIntent and financial ledger are updated. Missed callbacks remain recoverable through payment reconciliation.",
+        "operationId": "pawapay_deposit_webhook_payfund_v1_webhooks_pawapay_deposits_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "country": "CIV",
+                "currency": "XOF",
+                "depositId": "00000000-0000-0000-0000-000000000001",
+                "depositedAmount": "5000",
+                "requestedAmount": "5000",
+                "status": "COMPLETED"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive a PawaPay deposit callback",
+        "tags": [
+          "payment-webhooks"
+        ]
+      }
+    },
+    "/payfund/v1/webhooks/pawapay/payouts": {
+      "post": {
+        "description": "Provider-only endpoint. PawaPay callback signatures are verified when enabled; the payout status is then confirmed with PawaPay before DiddiPay posts accounting. Both the canonical API path and the legacy root path are exposed for migration.",
+        "operationId": "pawapay_payout_webhook_payfund_v1_webhooks_pawapay_payouts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "5000",
+                "country": "CIV",
+                "currency": "XOF",
+                "payoutId": "00000000-0000-0000-0000-000000000001",
+                "status": "COMPLETED"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive a PawaPay payout callback",
+        "tags": [
+          "payment-webhooks"
+        ]
+      }
+    },
+    "/payfund/v1/webhooks/pawapay/refunds": {
+      "post": {
+        "description": "Provider-only endpoint for asynchronous PawaPay refunds. The callback is validated, deduplicated and applied to the refund state and financial ledger exactly once.",
+        "operationId": "pawapay_refund_webhook_payfund_v1_webhooks_pawapay_refunds_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "5000",
+                "country": "CIV",
+                "currency": "XOF",
+                "refundId": "00000000-0000-0000-0000-000000000002",
+                "status": "COMPLETED"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive a PawaPay refund callback",
+        "tags": [
+          "payment-webhooks"
+        ]
+      }
+    },
+    "/webhooks/pawapay/deposits": {
+      "post": {
+        "description": "Provider-only endpoint for PaymentIntent deposits. The signed callback is stored in the provider inbox before the PaymentIntent and financial ledger are updated. Missed callbacks remain recoverable through payment reconciliation.",
+        "operationId": "pawapay_deposit_webhook_webhooks_pawapay_deposits_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "country": "CIV",
+                "currency": "XOF",
+                "depositId": "00000000-0000-0000-0000-000000000001",
+                "depositedAmount": "5000",
+                "requestedAmount": "5000",
+                "status": "COMPLETED"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive a PawaPay deposit callback",
+        "tags": [
+          "payment-webhooks"
+        ]
+      }
+    },
+    "/webhooks/pawapay/payouts": {
+      "post": {
+        "description": "Provider-only endpoint. PawaPay callback signatures are verified when enabled; the payout status is then confirmed with PawaPay before DiddiPay posts accounting. Both the canonical API path and the legacy root path are exposed for migration.",
+        "operationId": "pawapay_payout_webhook_webhooks_pawapay_payouts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "5000",
+                "country": "CIV",
+                "currency": "XOF",
+                "payoutId": "00000000-0000-0000-0000-000000000001",
+                "status": "COMPLETED"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive a PawaPay payout callback",
+        "tags": [
+          "payment-webhooks"
+        ]
+      }
+    },
+    "/webhooks/pawapay/refunds": {
+      "post": {
+        "description": "Provider-only endpoint for asynchronous PawaPay refunds. The callback is validated, deduplicated and applied to the refund state and financial ledger exactly once.",
+        "operationId": "pawapay_refund_webhook_webhooks_pawapay_refunds_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "5000",
+                "country": "CIV",
+                "currency": "XOF",
+                "refundId": "00000000-0000-0000-0000-000000000002",
+                "status": "COMPLETED"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive a PawaPay refund callback",
+        "tags": [
+          "payment-webhooks"
         ]
       }
     }

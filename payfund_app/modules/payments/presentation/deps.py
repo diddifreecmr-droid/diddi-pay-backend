@@ -198,19 +198,50 @@ PaystackWebhookProcessorDep = Annotated[
 ]
 
 
-def get_pawapay_webhook_processor() -> PawapayPaymentProcessor:
+def _pawapay_webhook_processor(callback_url: str | None) -> PawapayPaymentProcessor:
     settings = get_settings()
     if not settings.pawapay_api_token:
         raise Unauthenticated("Webhook PawaPay non configure.")
     return PawapayPaymentProcessor(
         api_token=settings.pawapay_api_token,
         base_url=settings.pawapay_base_url,
-        callback_url=settings.pawapay_callback_url or None,
+        callback_url=callback_url or settings.pawapay_callback_url or None,
         callback_signature_required=settings.pawapay_callback_signature_required,
         public_keys_url=settings.pawapay_public_keys_url or None,
     )
 
 
+def get_pawapay_webhook_processor() -> PawapayPaymentProcessor:
+    settings = get_settings()
+    return _pawapay_webhook_processor(
+        settings.pawapay_payout_callback_url or settings.pawapay_callback_url
+    )
+
+
 PawapayWebhookProcessorDep = Annotated[
     PawapayPaymentProcessor, Depends(get_pawapay_webhook_processor)
+]
+
+
+def get_pawapay_deposit_webhook_processor() -> PawapayPaymentProcessor:
+    settings = get_settings()
+    return _pawapay_webhook_processor(
+        settings.pawapay_deposit_callback_url or settings.pawapay_callback_url
+    )
+
+
+PawapayDepositWebhookProcessorDep = Annotated[
+    PawapayPaymentProcessor, Depends(get_pawapay_deposit_webhook_processor)
+]
+
+
+def get_pawapay_refund_webhook_processor() -> PawapayPaymentProcessor:
+    settings = get_settings()
+    return _pawapay_webhook_processor(
+        settings.pawapay_refund_callback_url or settings.pawapay_callback_url
+    )
+
+
+PawapayRefundWebhookProcessorDep = Annotated[
+    PawapayPaymentProcessor, Depends(get_pawapay_refund_webhook_processor)
 ]

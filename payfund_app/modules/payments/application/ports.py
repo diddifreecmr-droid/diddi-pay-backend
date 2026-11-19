@@ -107,6 +107,22 @@ class PayoutProviderEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class RefundProviderEvent:
+    """Validated provider callback data for a refund."""
+
+    event_key: str
+    event_type: str
+    provider_reference: str | None
+    status: RefundStatus | None
+    provider_status: str | None = None
+    amount: int | None = None
+    currency: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    sanitized_payload: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class CallbackTarget:
     url: str
     secret: str
@@ -220,6 +236,12 @@ class PaymentAttemptRepositoryPort(Protocol):
 class RefundRepositoryPort(Protocol):
     def add(self, refund: Refund, *, client_id: str, processor: str) -> Refund: ...
 
+    def get_by_provider_reference(
+        self, processor: str, provider_reference: str, *, for_update: bool = False
+    ): ...
+
+    def save(self, refund: Refund) -> Refund: ...
+
 
 class ProviderEventRepositoryPort(Protocol):
     def get(self, processor: str, event_key: str): ...
@@ -241,6 +263,7 @@ class ProviderEventRepositoryPort(Protocol):
         status: str,
         payment_attempt_id: uuid.UUID | None = None,
         payout_id: uuid.UUID | None = None,
+        refund_id: uuid.UUID | None = None,
         error_message: str | None = None,
     ): ...
 

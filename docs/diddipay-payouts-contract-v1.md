@@ -129,6 +129,12 @@ A lire attentivement avant d'integrer un vrai flux de paiement reel - ne pas sup
   dedupplique l'evenement, confirme le statut par `GET /v2/payouts/{payoutId}` avant de poster
   le ledger, puis emet `payout.succeeded` ou `payout.failed` vers le module proprietaire.
   La reconciliation periodique reste obligatoire comme filet de securite.
+- **Callbacks PawaPay deposits et refunds.** Le nouvel orchestrateur expose aussi
+  `POST /payfund/v1/webhooks/pawapay/deposits` et
+  `POST /payfund/v1/webhooks/pawapay/refunds`. Le premier finalise les PaymentIntent de dépôt
+  via l'inbox provider et le ledger de capture ; le second finalise le remboursement et poste
+  l'écriture inverse une seule fois. Les trois URLs sont séparées afin que la signature couvre
+  exactement le chemin configuré dans le dashboard PawaPay.
 - En staging, un callback non signe peut rester accepte uniquement avec
   `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=false`. Avant la production, configurer l'URL exacte,
   les cles publiques PawaPay et `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true`.

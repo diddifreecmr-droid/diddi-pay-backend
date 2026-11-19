@@ -15,7 +15,13 @@ commitées dans le dépôt.
 | `PAYMENT_CALLBACK_TARGETS` | Cibles et secrets callbacks | `{}` | JSON staging | JSON production |
 | `PAYMENT_REDIS_STREAM` | Stream Redis événements | `diddipay.payment.events.v1` | idem | idem |
 | `PAYMENT_SERVICE_KEYS` | Clés S2S par module | vide | secrets staging | secrets production |
-| `PAYMENT_PROCESSOR_MODE` | Mode processeur | `sandbox` | `sandbox` | mode approuvé |
+| `PAYMENT_PROCESSOR_MODE` | Processeur du nouvel orchestrateur PaymentIntent/Payout (`sandbox`, `paystack` ou `pawapay`) | `sandbox` | selon la recette | mode approuvé |
+| `PAYMENT_GATEWAY_MODE` | Processeur du wallet legacy (`stub`, `paystack` ou `pawapay`) | `stub` | selon la recette | mode approuvé |
+| `PAWAPAY_API_TOKEN` | Jeton PawaPay pour dépôts, retraits et callbacks | vide | secret sandbox | secret production |
+| `PAWAPAY_BASE_URL` | Base API PawaPay | sandbox PawaPay | `https://api.sandbox.pawapay.io` | URL production PawaPay |
+| `PAWAPAY_DEPOSIT_CALLBACK_URL` | Callback PawaPay des dépôts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
+| `PAWAPAY_REFUND_CALLBACK_URL` | Callback PawaPay des remboursements | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
+| `PAWAPAY_PAYOUT_CALLBACK_URL` | Callback PawaPay des payouts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
 | `QR_SIGNING_SECRET` | Signature QR | `change-me-in-production` | secret staging | secret fort obligatoire |
 | `CORS_ORIGINS` | Origines web autorisées | `*` | domaines staging | domaines production |
 | `DOCS_PUBLIC_ENABLED` | Publie ou masque le portail documentaire | `false` | `true` | `false` |

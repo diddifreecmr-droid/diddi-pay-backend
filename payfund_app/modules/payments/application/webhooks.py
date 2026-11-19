@@ -49,6 +49,10 @@ class PaymentWebhookUseCases:
         headers: Mapping[str, str],
     ) -> WebhookOutcome:
         event = processor.parse_webhook(raw_body, headers)
+        return self.process_event(processor, raw_body, event)
+
+    def process_event(self, processor, raw_body: bytes, event) -> WebhookOutcome:
+        """Apply an already parsed event through the normal inbox/accounting path."""
         row = self.events.get(processor.name, event.event_key)
         if row is not None and row.status in {"processed", "ignored"}:
             return WebhookOutcome("duplicate", event.event_key)
