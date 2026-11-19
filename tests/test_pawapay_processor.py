@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import time
 import uuid
 
 import httpx
@@ -9,6 +12,7 @@ import pytest
 from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
+    ProcessorWebhookRejected,
 )
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
@@ -252,6 +256,106 @@ def test_verify_payment_http_error_is_a_real_failure():
 def test_parse_webhook_not_implemented():
     with pytest.raises(NotImplementedError, match="BCEAO"):
         processor(lambda r: httpx.Response(200)).parse_webhook(b"{}", {})
+
+
+def test_parse_payout_webhook_normalizes_official_callback_without_pii():
+    payout_id = str(uuid.uuid4())
+    body = json.dumps(
+        {
+            "payoutId": payout_id,
+            "status": "COMPLETED",
+            "amount": "5000",
+            "currency": "XOF",
+            "country": "CIV",
+            "recipient": {"accountDetails": {"phoneNumber": "225000000000"}},
+            "providerTransactionId": "provider-tx-1",
+        }
+    ).encode()
+
+    event = processor(lambda r: httpx.Response(200)).parse_payout_webhook(body, {})
+
+    assert event.event_key == f"payout:{payout_id}:completed"
+    assert event.status == PayoutStatus.SUCCEEDED
+    assert event.amount == 5_000
+    assert event.currency == "XOF"
+    assert "recipient" not in event.sanitized_payload
+    assert "225000000000" not in json.dumps(event.sanitized_payload)
+
+
+def test_parse_payout_webhook_rejects_unknown_status():
+    body = json.dumps(
+        {
+            "payoutId": str(uuid.uuid4()),
+            "status": "UNKNOWN",
+            "amount": "5000",
+            "currency": "XOF",
+        }
+    ).encode()
+
+    with pytest.raises(ProcessorWebhookRejected, match="unsupported"):
+        processor(lambda r: httpx.Response(200)).parse_payout_webhook(body, {})
+
+
+def test_parse_payout_webhook_verifies_signed_callback(monkeypatch):
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    payout_id = str(uuid.uuid4())
+    body = json.dumps(
+        {
+            "payoutId": payout_id,
+            "status": "COMPLETED",
+            "amount": "5000",
+            "currency": "XOF",
+        },
+        separators=(",", ":"),
+    ).encode()
+    callback_url = "https://pay-api-staging.diddifree.com/payfund/v1/webhooks/pawapay/payouts"
+    content_digest = "sha-512=:" + base64.b64encode(hashlib.sha512(body).digest()).decode() + ":"
+    signature_date = str(int(time.time()))
+    signature_params = (
+        '("@method" "@authority" "@path" "signature-date" "content-digest" "content-type")'
+        f";created={signature_date};expires={int(time.time()) + 300};keyid=\"key-1\""
+    )
+    signature_base = "\n".join(
+        [
+            '"@method": POST',
+            '"@authority": pay-api-staging.diddifree.com',
+            '"@path": /payfund/v1/webhooks/pawapay/payouts',
+            f'"signature-date": {signature_date}',
+            f'"content-digest": {content_digest}',
+            '"content-type": application/json',
+            f'"@signature-params": {signature_params}',
+        ]
+    ).encode()
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    signature = private_key.sign(signature_base, ec.ECDSA(hashes.SHA256()))
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    signed_processor = PawapayPaymentProcessor(
+        api_token="sandbox-token-not-real",
+        base_url="https://api.pawapay.test",
+        callback_url=callback_url,
+        callback_signature_required=True,
+    )
+    monkeypatch.setattr(
+        signed_processor,
+        "_fetch_callback_public_keys",
+        lambda: httpx.Response(200, json=[{"id": "key-1", "key": public_key}]),
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Content-Digest": content_digest,
+        "Signature-Date": signature_date,
+        "Signature-Input": f"sig-pp={signature_params}",
+        "Signature": "sig-pp=:" + base64.b64encode(signature).decode() + ":",
+    }
+
+    event = signed_processor.parse_payout_webhook(body, headers)
+
+    assert event.status == PayoutStatus.SUCCEEDED
 
 
 def refund_request(**overrides):

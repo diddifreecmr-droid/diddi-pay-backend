@@ -105,6 +105,12 @@ class PaymentWebhookResponse(BaseModel):
     payment_intent_id: str | None = None
 
 
+class PayoutWebhookResponse(BaseModel):
+    status: Literal["processed", "duplicate", "ignored", "failed"]
+    event_key: str
+    payout_id: str | None = None
+
+
 class CreateRefundRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

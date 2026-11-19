@@ -249,19 +249,7 @@ class PayoutUseCases:
                 pending += 1
                 self.uow.commit()
                 continue
-            previous = payout.status
-            payout.apply_provider_status(
-                result.status,
-                provider_reference=result.provider_reference,
-                provider_status=result.provider_status,
-                failure_code=result.failure_code,
-                failure_message=result.failure_message,
-            )
-            self.payouts.save(payout)
-            if payout.status == PayoutStatus.SUCCEEDED and self.accounting is not None:
-                self.accounting.record_success(payout)
-            if payout.status != previous:
-                self._enqueue_status(payout)
+            self.apply_provider_result(payout, result)
             if payout.status == PayoutStatus.SUCCEEDED:
                 succeeded += 1
             elif payout.status == PayoutStatus.FAILED:
@@ -270,3 +258,24 @@ class PayoutUseCases:
                 pending += 1
             self.uow.commit()
         return PayoutReconciliationSummary(len(candidates), succeeded, failed, pending)
+
+    def apply_provider_result(self, payout: Payout, result: PayoutResult) -> bool:
+        """Apply one verified provider result exactly once in the current transaction."""
+        previous = payout.status
+        payout.apply_provider_status(
+            result.status,
+            provider_reference=result.provider_reference,
+            provider_status=result.provider_status,
+            failure_code=result.failure_code,
+            failure_message=result.failure_message,
+        )
+        self.payouts.save(payout)
+        if (
+            payout.status == PayoutStatus.SUCCEEDED
+            and previous != PayoutStatus.SUCCEEDED
+            and self.accounting is not None
+        ):
+            self.accounting.record_success(payout)
+        if payout.status != previous:
+            self._enqueue_status(payout)
+        return payout.status != previous

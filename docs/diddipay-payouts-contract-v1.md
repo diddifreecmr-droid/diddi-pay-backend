@@ -123,9 +123,15 @@ A lire attentivement avant d'integrer un vrai flux de paiement reel - ne pas sup
   facon dont l'argent a ete collecte (une collecte carte via un autre PSP ne finance pas
   automatiquement ce solde). C'est un sujet de tresorerie operationnelle, hors du controle
   de l'appelant et de DiddiPay cote code.
-- **Pas de webhook de confirmation de payout aujourd'hui.** Le statut final s'obtient par
-  polling (`GET /payfund/v1/payouts/{id}`) ou attend la reconciliation automatique
-  periodique.
+- **Callback PawaPay active pour les payouts.** PawaPay appelle
+  `POST /payfund/v1/webhooks/pawapay/payouts` (l'ancien chemin
+  `/webhooks/pawapay/payouts` reste expose pendant la migration). DiddiPay valide le payload,
+  dedupplique l'evenement, confirme le statut par `GET /v2/payouts/{payoutId}` avant de poster
+  le ledger, puis emet `payout.succeeded` ou `payout.failed` vers le module proprietaire.
+  La reconciliation periodique reste obligatoire comme filet de securite.
+- En staging, un callback non signe peut rester accepte uniquement avec
+  `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=false`. Avant la production, configurer l'URL exacte,
+  les cles publiques PawaPay et `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true`.
 - **Pas de remboursement de payout** (annuler un versement deja parti) - non modelise.
 
 ## Statuts

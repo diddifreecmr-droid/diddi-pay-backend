@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     # (voir wallet/infra/pawapay_gateway.py et gateways.get_gateway()).
     pawapay_api_token: str = ""
     pawapay_base_url: str = "https://api.sandbox.pawapay.io"
+    # PawaPay must be configured with the exact public callback URL. Keep empty for
+    # unsigned legacy sandbox callbacks; require signatures before production.
+    pawapay_callback_url: str = ""
+    pawapay_callback_signature_required: bool = False
+    pawapay_public_keys_url: str = ""
 
     # CinetPay API v1 mobile money (api.cinetpay.net sandbox / api.cinetpay.co prod).
     # Auth = api_key (sk_test_/sk_live_) + api_password -> JWT. Les DEUX sont requis ;

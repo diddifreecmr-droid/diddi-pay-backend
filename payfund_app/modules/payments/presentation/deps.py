@@ -196,3 +196,21 @@ def get_paystack_webhook_processor() -> PaystackPaymentProcessor:
 PaystackWebhookProcessorDep = Annotated[
     PaystackPaymentProcessor, Depends(get_paystack_webhook_processor)
 ]
+
+
+def get_pawapay_webhook_processor() -> PawapayPaymentProcessor:
+    settings = get_settings()
+    if not settings.pawapay_api_token:
+        raise Unauthenticated("Webhook PawaPay non configure.")
+    return PawapayPaymentProcessor(
+        api_token=settings.pawapay_api_token,
+        base_url=settings.pawapay_base_url,
+        callback_url=settings.pawapay_callback_url or None,
+        callback_signature_required=settings.pawapay_callback_signature_required,
+        public_keys_url=settings.pawapay_public_keys_url or None,
+    )
+
+
+PawapayWebhookProcessorDep = Annotated[
+    PawapayPaymentProcessor, Depends(get_pawapay_webhook_processor)
+]

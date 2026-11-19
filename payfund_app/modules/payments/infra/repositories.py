@@ -291,10 +291,12 @@ class ProviderEventRepository:
         *,
         status: str,
         payment_attempt_id: uuid.UUID | None = None,
+        payout_id: uuid.UUID | None = None,
         error_message: str | None = None,
     ) -> ProviderEventRecord:
         row.status = status
         row.payment_attempt_id = payment_attempt_id
+        row.payout_id = payout_id
         row.error_message = error_message
         if status in {"processed", "ignored", "failed"}:
             row.processed_at = datetime.now().astimezone()
@@ -498,6 +500,18 @@ class PayoutRepository:
             )
             .order_by(PayoutRecord.created_at.desc())
         )
+        return self._to_domain(row) if row else None
+
+    def get_by_provider_reference(
+        self, processor: str, provider_reference: str, *, for_update: bool = False
+    ) -> Payout | None:
+        query = select(PayoutRecord).where(
+            PayoutRecord.processor == processor,
+            PayoutRecord.provider_reference == provider_reference,
+        )
+        if for_update:
+            query = query.with_for_update()
+        row = self.session.scalar(query)
         return self._to_domain(row) if row else None
 
     def save(self, payout: Payout) -> Payout:
