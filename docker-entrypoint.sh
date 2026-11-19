@@ -8,7 +8,12 @@ set -e
 python - <<'PY'
 from sqlalchemy import create_engine, inspect
 import os
-import subprocess
+from alembic import command
+from alembic.config import Config
+from payfund_app.shared_kernel.logging import configure_logging
+
+configure_logging()
+config = Config("alembic.ini")
 
 database_url = os.environ["DATABASE_URL"]
 engine = create_engine(database_url, future=True)
@@ -18,9 +23,9 @@ with engine.connect() as conn:
     has_version_table = inspector.has_table("alembic_version", schema=None)
 
 if has_wallet_accounts and not has_version_table:
-    subprocess.check_call(["alembic", "stamp", "head"])
+    command.stamp(config, "head")
 else:
-    subprocess.check_call(["alembic", "upgrade", "head"])
+    command.upgrade(config, "head")
 PY
 
-exec uvicorn payfund_app.main:app --host 0.0.0.0 --port 8000
+exec uvicorn payfund_app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers

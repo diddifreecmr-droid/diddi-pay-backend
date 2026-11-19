@@ -6,7 +6,6 @@ from prometheus_client import Counter, Gauge, Histogram
 
 from payfund_app.core.config import get_settings
 
-
 PAYMENT_INTENTS_CREATED_TOTAL = Counter(
     "diddipay_payment_intents_created_total",
     "New provider-neutral payment intents created by DiddiPay.",
@@ -44,10 +43,24 @@ OUTBOX_EVENTS = Gauge(
     ("status",),
 )
 
+DEPENDENCY_REQUESTS = Counter(
+    "diddi_dependency_requests_total",
+    "Provider requests",
+    ("dependency", "operation", "outcome"),
+)
+DEPENDENCY_DURATION = Histogram(
+    "diddi_dependency_request_duration_seconds",
+    "Provider duration",
+    ("dependency", "operation"),
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
+)
+
 _PROVIDERS = frozenset(
     {
         "paystack",
         "pawapay",
+        "cinetpay",
+        "jeko",
         "sandbox",
         "stub",
         "sandbox_orange_money",
@@ -63,9 +76,13 @@ _INTENT_STATUSES = frozenset(
     {"pending", "requires_action", "processing", "succeeded", "failed", "cancelled"}
 )
 _CURRENCIES = frozenset({"xof"})
-_PROVIDER_OPERATIONS = frozenset({"initialize", "verify", "refund"})
+_PROVIDER_OPERATIONS = frozenset(
+    {"initialize", "verify", "refund", "login", "payout", "verify_payout"}
+)
 _PROVIDER_OUTCOMES = frozenset({"returned", "http_error", "transport_error"})
-_WEBHOOK_OUTCOMES = frozenset({"processed", "duplicate", "ignored", "failed", "rejected"})
+_WEBHOOK_OUTCOMES = frozenset(
+    {"processed", "duplicate", "ignored", "failed", "rejected"}
+)
 _RECONCILIATION_OUTCOMES = frozenset({"succeeded", "failed", "pending", "mismatched"})
 _DELIVERY_OUTCOMES = frozenset({"delivered", "retried", "unavailable"})
 _OUTBOX_STATUSES = frozenset({"pending", "delivering", "delivered", "dead_letter"})
@@ -76,7 +93,9 @@ def _label(value: object, allowed: frozenset[str]) -> str:
     return normalized if normalized in allowed else "unknown"
 
 
-def observe_payment_intent_created(*, processor: str, status: str, currency: str) -> None:
+def observe_payment_intent_created(
+    *, processor: str, status: str, currency: str
+) -> None:
     if not get_settings().metrics_enabled:
         return
     PAYMENT_INTENTS_CREATED_TOTAL.labels(
@@ -93,6 +112,12 @@ def observe_provider_call(
         return
     provider_label = _label(provider, _PROVIDERS)
     operation_label = _label(operation, _PROVIDER_OPERATIONS)
+    DEPENDENCY_REQUESTS.labels(
+        provider_label, operation_label, _label(outcome, _PROVIDER_OUTCOMES)
+    ).inc()
+    DEPENDENCY_DURATION.labels(provider_label, operation_label).observe(
+        duration_seconds
+    )
     PROVIDER_CALLS_TOTAL.labels(
         provider_label,
         operation_label,
@@ -135,7 +160,9 @@ def observe_delivery_summary(*, delivered: int, retried: int, unavailable: int) 
         "unavailable": unavailable,
     }.items():
         if count > 0:
-            OUTBOX_DELIVERIES_TOTAL.labels(_label(outcome, _DELIVERY_OUTCOMES)).inc(count)
+            OUTBOX_DELIVERIES_TOTAL.labels(_label(outcome, _DELIVERY_OUTCOMES)).inc(
+                count
+            )
 
 
 def set_outbox_status_counts(counts: dict[str, int]) -> None:

@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-11-13T15:18:01.042531+00:00",
+  "environment": "local-synthetic",
+  "outage_seconds": 300.1560000000027,
+  "successful_operations": 1143,
+  "max_operation_seconds": 0.5780000000013388,
+  "max_queue": 2048,
+  "python_tracemalloc_peak_bytes": 6648700,
+  "rejected_http_exports": 127,
+  "accepted_http_exports_after_recovery": 2,
+  "shutdown_seconds": 0.0,
+  "lost_spans_queue_full": 2704.0,
+  "lost_spans_export_failed": 3396.0,
+  "limitations": "Synthetic local operations; no central ingestion, no real provider transaction; peak includes test harness"
+}

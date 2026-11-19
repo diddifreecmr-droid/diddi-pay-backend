@@ -1,4 +1,5 @@
 .env
+/observabilite.env
 .env.*
 !.env.example
 __pycache__/

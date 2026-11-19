@@ -1,0 +1,48 @@
+# No receiver or notification test: routing belongs to the central team.
+groups:
+  - name: diddipay-observability-v1
+    rules:
+      - alert: DiddiPayTelemetryTargetDown
+        expr: up{service_name="diddipay",environment="${OBSERVABILITY_ENVIRONMENT}",deployment_id="${OBSERVABILITY_DEPLOYMENT_ID}"} == 0
+        for: 2m
+        labels: &ownership
+          owner: ${OPERATIONS_OWNER}
+          service_name: diddipay
+          environment: ${OBSERVABILITY_ENVIRONMENT}
+          severity: critical
+        annotations:
+          summary: Collecte DiddiPay interrompue, disponibilité inconnue
+          runbook_url: ${RUNBOOK_URL}
+      - alert: DiddiPayWorkerStale
+        expr: time() - diddi_worker_heartbeat_timestamp_seconds{service_name="diddipay",environment="${OBSERVABILITY_ENVIRONMENT}",deployment_id="${OBSERVABILITY_DEPLOYMENT_ID}"} > 90
+        for: 30s
+        labels: *ownership
+        annotations:
+          summary: Boucle bloquée ou arrêtée, paiements différés possibles
+          runbook_url: ${RUNBOOK_URL}
+      - alert: DiddiPayTelemetryLoss
+        expr: sum by (service_name,environment,deployment_id,component) (increase(diddi_telemetry_dropped_total{service_name="diddipay",environment="${OBSERVABILITY_ENVIRONMENT}",deployment_id="${OBSERVABILITY_DEPLOYMENT_ID}"}[5m])) > 0
+        for: 5m
+        labels: *ownership
+        annotations:
+          summary: Pertes persistantes de télémétrie, investigation incomplète
+          runbook_url: ${RUNBOOK_URL}
+      - alert: DiddiPayWorkerNoData
+        expr: absent_over_time(diddi_worker_heartbeat_timestamp_seconds{service_name="diddipay",worker_type="payment",environment="${OBSERVABILITY_ENVIRONMENT}",deployment_id="${OBSERVABILITY_DEPLOYMENT_ID}"}[2m])
+        labels: *ownership
+        annotations:
+          summary: Aucune donnée worker, état inconnu
+          runbook_url: ${RUNBOOK_URL}
+      - alert: DiddiPayApiNoData
+        expr: absent_over_time(up{job="diddipay-api",service_name="diddipay",environment="${OBSERVABILITY_ENVIRONMENT}",deployment_id="${OBSERVABILITY_DEPLOYMENT_ID}"}[2m])
+        labels: *ownership
+        annotations:
+          summary: Aucune cible API découverte, disponibilité inconnue
+          runbook_url: ${RUNBOOK_URL}
+      - alert: DiddiPayReadinessUnavailable
+        expr: probe_success{job="diddipay-readiness",service_name="diddipay",environment="${OBSERVABILITY_ENVIRONMENT}",deployment_id="${OBSERVABILITY_DEPLOYMENT_ID}"} == 0
+        for: 2m
+        labels: *ownership
+        annotations:
+          summary: Capacité essentielle indisponible, vérifier DB et transport de messages
+          runbook_url: ${RUNBOOK_URL}

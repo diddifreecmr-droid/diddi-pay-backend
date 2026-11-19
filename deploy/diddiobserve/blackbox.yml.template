@@ -1,0 +1,12 @@
+# Fragment for an existing private central prober, not an instruction to deploy one.
+modules:
+  diddipay_readiness:
+    prober: http
+    timeout: 3s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      follow_redirects: false
+      tls_config:
+        ca_file: ${SCRAPE_CA_FILE}
+        insecure_skip_verify: false

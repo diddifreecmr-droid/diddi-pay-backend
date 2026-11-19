@@ -1,0 +1,14 @@
+{
+  "synthetic_only": true,
+  "compose_render": true,
+  "secret_preservation_cases": [
+    "legacy",
+    "standard",
+    "components"
+  ],
+  "shared_logs_volume": false,
+  "external_network_required": false,
+  "api_existing_port_mapping_retained": true,
+  "worker_host_port_published": false,
+  "central_ingestion_verified": false
+}

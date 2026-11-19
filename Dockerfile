@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF
+ENV OBSERVABILITY_RELEASE_SHA=$VCS_REF
+
 WORKDIR /app
 
 # psycopg[binary] et pyjwt[crypto] embarquent des wheels compilées : aucun paquet de build

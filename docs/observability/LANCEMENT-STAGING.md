@@ -1,0 +1,18 @@
+# Portainer staging — protocole 2.0.0
+
+Cette procédure remplace les instructions de volume partagé/GID/réseau commun de la version 1.1.1. Aucun déploiement n'est exécuté par cette livraison.
+
+1. Faire confirmer par DiddiObserve l'activation/authentification des routes https://logs-otel.diddifree.com/otlp/diddipay/v1/logs et /v1/traces. La remise du 19 novembre les indique préparées, pas encore vérifiées. Obtenir OTEL_EXPORTER_OTLP_HEADERS par le canal privé. Ne pas recopier un secret métriques dans cet en-tête.
+2. Conserver les secrets métriques déjà installés dans Portainer, qu'ils soient METRICS_TOKEN, METRICS_BEARER_TOKEN ou API_METRICS_TOKEN/WORKER_METRICS_TOKEN. Ne pas les remplacer par des champs vides. Conserver le CIDR existant si son routage reste valide.
+3. Importer le fichier local observabilite.env en conservant les autres variables métier. Il contient les URL publiques confirmées par la remise, ENVIRONMENT=staging, DEPLOYMENT_ID=diddipay-staging, OTEL_SERVICE_NAME=diddipay et OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf. Aucun secret central n'est inventé. Les clés de secrets absentes ne signifient pas qu'il faut supprimer les clés existantes.
+4. Vérifier les anciens overrides API_/WORKER_ : ils priment sur la variable commune correspondante. Renseigner leurs URL si on les conserve ; sinon retirer les overrides d'URL obsolètes pour utiliser les URL communes. Le Compose transmet ensuite les noms OTEL standard à chaque conteneur. Conserver les valeurs de secrets déjà présentes et faire réconcilier un ancien secret OTLP par la centrale si nécessaire.
+5. Une fois les routes validées, régler OTEL_LOGS_ENABLED=true et TRACING_ENABLED=true. Avant cette confirmation, garder false. Vérifier le SHA OBSERVABILITY_RELEASE_SHA contre l'image/checkout réellement construit.
+6. Publier/revoir les changements du dépôt avant utilisation dans la stack Git existante. Compose principal docker-compose.yml ; fichier additionnel docker-compose.diddiobserve.yml. Ne pas ajouter l'ancien docker-compose.observability.yml. Aucun volume de logs ni réseau central externe n'est créé par l'overlay. Le port hôte API existant est conservé ; le worker n'a pas de port hôte publié.
+7. Après revue puis déploiement autorisé, vérifier API/worker sains, paramètres présents (ne pas afficher la valeur des tokens/en-têtes), puis logs/traces réels distincts par diddi.component dans Loki/Tempo et corrélation Grafana. Pour cette étape, confirmer le scrape API, le refus des mauvais tokens et sa cible UP. La route externe des métriques worker est différée par décision du responsable : elle ne bloque pas les exports OTLP de l’API et du worker, mais sa collecte restera non validée.
+8. Désactiver toute collecte historique fichier/stdout en coordination avec la centrale avant l'export général ; conserver les anciennes données jusqu'à décision de rétention. Rejouer les validations de panne/reprise, rotation locale, rétention et alertes ; ne pas déclarer conformant-2.0.0 avant les preuves applicables.
+
+Détails du filtrage METRICS_ALLOWED_CIDRS et des cibles : [README.md](README.md). Manifestes et preuves historiques ne prouvent pas la révision actuellement déployée.
+
+## Point différé par le responsable
+
+Route envisagée : `https://pay-api-staging.diddifree.com/worker/internal/metrics`. Elle est uniquement notée pour une étape ultérieure, non configurée et non déclarée accessible. Aucune publication de port ni modification de reverse proxy à réaliser maintenant. Conserver le serveur métriques interne du worker et son token existant. La suite immédiate porte sur les logs/traces OTLP des deux processus et les métriques API ; la conformité complète reste conditionnée aux preuves manquantes, dont les métriques worker.

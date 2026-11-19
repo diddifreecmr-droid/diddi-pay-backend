@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
+from pydantic import AliasChoices, AnyHttpUrl, BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,22 +24,40 @@ class PaymentCallbackSettings(BaseModel):
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True, populate_by_name=True)
 
     database_url: str = "postgresql+psycopg://payfund:payfund@localhost:5432/payfund"
     deployment_environment: Literal["local", "test", "staging", "production"] = "local"
 
     # Observabilite runtime. `release_sha` permet de relier une erreur au commit deploye.
     observability_enabled: bool = True
-    observability_environment: str = "local"
-    observability_service_name: str = "diddipay"
-    observability_release_sha: str = "unknown"
+    observability_environment: Literal["local", "development", "test", "staging", "production"] = Field(default="development", validation_alias=AliasChoices("ENVIRONMENT", "OBSERVABILITY_ENVIRONMENT"))
+    observability_service_name: Literal["diddipay"] = Field(default="diddipay", validation_alias=AliasChoices("OTEL_SERVICE_NAME", "OBSERVABILITY_SERVICE_NAME"))
+    observability_release_sha: str = Field(default="unknown", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    observability_deployment_id: str = Field(validation_alias=AliasChoices("DEPLOYMENT_ID", "OBSERVABILITY_DEPLOYMENT_ID"), default="local", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    observability_component: Literal["api", "worker", "scheduler"] = "api"
+    worker_metrics_port: int = Field(default=9001, ge=1024, le=65535)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     observability_log_file: str = ""
     metrics_enabled: bool = False
-    metrics_token: str = ""
-    tracing_enabled: bool = False
-    tracing_otlp_endpoint: str = "http://otel-collector:4318"
+    metrics_token: str = Field(default="", validation_alias=AliasChoices("METRICS_BEARER_TOKEN", "METRICS_TOKEN"))
+    metrics_allowed_cidrs: str = ""
+
+    @field_validator("metrics_allowed_cidrs")
+    @classmethod
+    def validate_metrics_networks(cls, value: str) -> str:
+        from ipaddress import ip_network
+        for item in value.split(","):
+            if item.strip():
+                ip_network(item.strip())
+        return value
+    otel_logs_enabled: bool = False
+    otel_exporter_otlp_logs_endpoint: str = ""
+    otel_exporter_otlp_protocol: Literal["http/protobuf"] = "http/protobuf"
+    tracing_enabled: bool = True
+    tracing_otlp_endpoint: str = Field(default="", validation_alias=AliasChoices("OTEL_EXPORTER_OTLP_ENDPOINT", "TRACING_OTLP_ENDPOINT"))
+    tracing_otlp_traces_endpoint: str = Field(default="", validation_alias=AliasChoices("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "TRACING_OTLP_TRACES_ENDPOINT"))
+    tracing_allow_insecure_local: bool = False
     tracing_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
     payment_worker_heartbeat_path: str = "/tmp/diddipay-payment-worker-heartbeat.json"
     payment_worker_heartbeat_max_age_seconds: int = Field(default=90, ge=30, le=600)

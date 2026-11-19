@@ -1,0 +1,42 @@
+# REVIEW ONLY: merge with docker-compose.yml. No shared logs/network required.
+# Keep existing metrics secrets and API ingress/host port configuration.
+services:
+  app:
+    build:
+      args:
+        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?actual built revision required}
+    environment: &otel_environment
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-diddipay}
+      ENVIRONMENT: ${ENVIRONMENT:?telemetry environment required}
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:?deployment identity required}
+      OBSERVABILITY_RELEASE_SHA: ${OBSERVABILITY_RELEASE_SHA:?actual built revision required}
+      OBSERVABILITY_COMPONENT: api
+      OBSERVABILITY_LOG_FILE: ""
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${API_OTLP_LOGS_ENDPOINT:-${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${API_OTLP_TRACES_ENDPOINT:-${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_HEADERS: ${API_OTLP_HEADERS:-${OTEL_EXPORTER_OTLP_HEADERS:-}}
+      OTEL_LOGS_ENABLED: ${OTEL_LOGS_ENABLED:-false}
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      TRACING_ALLOW_INSECURE_LOCAL: "false"
+      # Clear legacy endpoints inherited from base Compose: standard variables own routing.
+      TRACING_OTLP_ENDPOINT: ""
+      TRACING_OTLP_TRACES_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_CERTIFICATE: ""
+      METRICS_ENABLED: "true"
+      # Existing API_/WORKER_ or shared token is reused verbatim; never generate/rotate here.
+      METRICS_BEARER_TOKEN: ${API_METRICS_TOKEN:-${METRICS_BEARER_TOKEN:-${METRICS_TOKEN:?existing metrics secret required}}}
+      METRICS_ALLOWED_CIDRS: ${METRICS_ALLOWED_CIDRS:-}
+  payment-worker:
+    build:
+      args:
+        VCS_REF: ${OBSERVABILITY_RELEASE_SHA:?actual built revision required}
+    environment:
+      <<: *otel_environment
+      OBSERVABILITY_COMPONENT: worker
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${WORKER_OTLP_LOGS_ENDPOINT:-${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${WORKER_OTLP_TRACES_ENDPOINT:-${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_HEADERS: ${WORKER_OTLP_HEADERS:-${OTEL_EXPORTER_OTLP_HEADERS:-}}
+      METRICS_BEARER_TOKEN: ${WORKER_METRICS_TOKEN:-${METRICS_BEARER_TOKEN:-${METRICS_TOKEN:?existing metrics secret required}}}
+    expose: ["9001"]

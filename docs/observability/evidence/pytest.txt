@@ -1,0 +1,19 @@
+........................................................................ [ 14%]
+........................................................................ [ 28%]
+........................................................................ [ 43%]
+........................................................................ [ 57%]
+........................................................................ [ 71%]
+........................................................................ [ 86%]
+.....................................................................    [100%]
+============================== warnings summary ===============================
+<python>\Lib\site-packages\fastapi\testclient.py:1
+  <python>\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_payment_api.py: 8 warnings
+tests/test_payment_processor_registry_deps.py: 3 warnings
+  <repository>\payfund_app\modules\payments\presentation\routers.py:149: DeprecationWarning: deprecated
+    legacy_callback_url=payload.callback_url,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+501 passed, 12 warnings in 69.24s (0:01:09)

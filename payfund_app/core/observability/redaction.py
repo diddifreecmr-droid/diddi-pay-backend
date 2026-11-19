@@ -6,7 +6,6 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-
 REDACTED = "[REDACTED]"
 MAX_LOG_STRING_LENGTH = 2048
 MAX_REDACTION_DEPTH = 8
@@ -29,12 +28,17 @@ _SENSITIVE_KEY_PARTS = frozenset(
         "card_number",
         "phone",
         "email",
+        "token",
+        "address",
+        "ip",
+        "latitude",
+        "longitude",
+        "body",
+        "payload",
     }
 )
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
-_JWT_RE = re.compile(
-    r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"
-)
+_JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 _PAYSTACK_KEY_RE = re.compile(r"\bsk_(?:test|live)_[A-Za-z0-9_-]+\b", re.IGNORECASE)
 
 
@@ -54,6 +58,24 @@ def _is_sensitive_key(key: object) -> bool:
 
 
 def _sanitize_string(value: str) -> str:
+    value = re.sub(
+        r"""(?i)(["']?(?:password|token|secret|api[_-]?key|pin|otp)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)""",
+        r"\1[REDACTED]",
+        value,
+    )
+    value = re.sub(
+        r"(?i)\b(?:authorization|cookie|set-cookie)\s*:\s*[^\r\n]+", REDACTED, value
+    )
+    value = re.sub(r"(?i)\bbasic\s+[A-Za-z0-9+/=]+", REDACTED, value)
+    value = re.sub(r"https?://[^\s\"'<>]+", "[URL]", value)
+    value = re.sub(
+        r"(?i)\b(password|token|secret|api[_-]?key|pin|otp)\s*[:=]\s*[^\s,;]+",
+        r"\1=[REDACTED]",
+        value,
+    )
+    value = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", REDACTED, value)
+    value = re.sub(r"(?<!\w)\+?\d[\d .()-]{7,}\d(?!\w)", REDACTED, value)
+    value = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", REDACTED, value)
     value = _BEARER_RE.sub(REDACTED, value)
     value = _JWT_RE.sub(REDACTED, value)
     value = _PAYSTACK_KEY_RE.sub(REDACTED, value)
@@ -69,16 +91,20 @@ def redact(value: Any, *, _depth: int = 0) -> Any:
         return "[MAX_DEPTH]"
     if isinstance(value, Mapping):
         result: dict[str, Any] = {}
-        for key, item in value.items():
+        for index, (key, item) in enumerate(value.items()):
+            if index >= 128:
+                result["truncated"] = True
+                break
             name = str(key)
             result[name] = (
-                REDACTED
-                if _is_sensitive_key(key)
-                else redact(item, _depth=_depth + 1)
+                REDACTED if _is_sensitive_key(key) else redact(item, _depth=_depth + 1)
             )
         return result
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [redact(item, _depth=_depth + 1) for item in value]
+        from itertools import islice
+
+        items = [redact(item, _depth=_depth + 1) for item in islice(value, 128)]
+        return items + (["[TRUNCATED]"] if len(value) > 128 else [])
     if isinstance(value, str):
         return _sanitize_string(value)
     if isinstance(value, bytes):

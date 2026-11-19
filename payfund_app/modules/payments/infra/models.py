@@ -228,6 +228,7 @@ class PaymentOutboxRecord(Base):
     client_id: Mapped[str] = mapped_column(String(64), nullable=False)
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     aggregate_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    telemetry_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     attempts: Mapped[int] = mapped_column(nullable=False, server_default=text("0"))

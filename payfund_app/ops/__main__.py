@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import signal
 import sys
-import time
+import threading
 import uuid
 
 from payfund_app.core.config import get_settings
@@ -33,7 +35,9 @@ def _parse_uuid(value: str) -> uuid.UUID:
     return uuid.UUID(value)
 
 
-def _emit_worker_cycle(reconciliation, payout_reconciliation, delivery, queue: dict[str, int]) -> None:
+def _emit_worker_cycle(
+    reconciliation, payout_reconciliation, delivery, queue: dict[str, int]
+) -> None:
     emit(
         "warning" if queue["dead_letter"] else "info",
         "ops.payment_worker.cycle",
@@ -45,6 +49,8 @@ def _emit_worker_cycle(reconciliation, payout_reconciliation, delivery, queue: d
 
 
 def main(argv: list[str] | None = None) -> int:
+    os.environ["OBSERVABILITY_COMPONENT"] = "worker"
+    get_settings.cache_clear()
     configure_logging()
     parser = argparse.ArgumentParser(prog="python -m payfund_app.ops")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -52,7 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     backfill = sub.add_parser("backfill-wallet", help="Create a missing wallet")
     backfill.add_argument("user_id", type=_parse_uuid)
     backfill.add_argument("--phone", default=None)
-    backfill.add_argument("--account-type", choices=("user", "merchant"), default="user")
+    backfill.add_argument(
+        "--account-type", choices=("user", "merchant"), default="user"
+    )
     backfill.add_argument("--admin-role", default="admin")
 
     reconcile = sub.add_parser(
@@ -80,18 +88,21 @@ def main(argv: list[str] | None = None) -> int:
     payment_relay.add_argument("--admin-role", default="admin")
 
     payment_worker = sub.add_parser(
-        "payment-worker", help="Continuously reconcile PaymentIntents and relay module callbacks"
+        "payment-worker",
+        help="Continuously reconcile PaymentIntents and relay module callbacks",
     )
     payment_worker.add_argument("--interval", type=int, default=30)
     payment_worker.add_argument("--admin-role", default="admin")
 
     payment_once = sub.add_parser(
-        "maintain-payment-intents", help="Run one PaymentIntent reconciliation and callback cycle"
+        "maintain-payment-intents",
+        help="Run one PaymentIntent reconciliation and callback cycle",
     )
     payment_once.add_argument("--admin-role", default="admin")
 
     audit = sub.add_parser(
-        "audit-payment-integrity", help="Read-only check for missing captures or module events"
+        "audit-payment-integrity",
+        help="Read-only check for missing captures or module events",
     )
     audit.add_argument("--limit", type=int, choices=range(1, 501), default=100)
     audit.add_argument("--admin-role", default="admin")
@@ -124,13 +135,39 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "payment-worker":
         if args.interval < 1:
             parser.error("--interval must be positive")
-        while True:
+        import atexit
+
+        from payfund_app.core.observability.tracing import (
+            configure_tracing,
+            shutdown_tracing,
+        )
+        from payfund_app.core.observability.worker import (
+            observe_queues,
+            start_metrics_server,
+            worker_cycle,
+        )
+
+        provider = configure_tracing()
+        if provider:
+            atexit.register(shutdown_tracing, provider)
+        if get_settings().metrics_enabled:
+            start_metrics_server()
+        emit("info", "worker.started")
+        stopping = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+        signal.signal(signal.SIGINT, lambda *_: stopping.set())
+        while not stopping.is_set():
             try:
-                with SessionLocal() as session:
+                with worker_cycle(), SessionLocal() as session:
                     reconciliation = reconcile_pending_payment_intents(session)
                     payout_reconciliation = reconcile_pending_payouts(session)
                     delivery = deliver_payment_events(session)
                     queue = payment_event_delivery_status(session)
+                    try:
+                        observe_queues(session)
+                    except Exception:  # noqa: BLE001 - telemetry failure must not stop business
+                        session.rollback()
+                        emit("error", "telemetry.queue.failed")
                     _emit_worker_cycle(
                         reconciliation, payout_reconciliation, delivery, queue
                     )
@@ -138,13 +175,22 @@ def main(argv: list[str] | None = None) -> int:
                     get_settings().payment_worker_heartbeat_path, healthy=True
                 )
             except Exception as exc:  # noqa: BLE001 - worker must retry after transient failures
-                emit("error", "ops.payment_worker.failed", error=str(exc))
+                emit(
+                    "error",
+                    "ops.payment_worker.failed",
+                    error=str(exc),
+                    exception_type=type(exc).__name__,
+                )
                 record_worker_heartbeat(
                     get_settings().payment_worker_heartbeat_path,
                     healthy=False,
                     error=str(exc),
                 )
-            time.sleep(args.interval)
+            stopping.wait(args.interval)
+        if provider:
+            shutdown_tracing(provider)
+            atexit.unregister(shutdown_tracing)
+        return 0
 
     with SessionLocal() as session:
         if args.command == "audit-payment-integrity":
@@ -162,7 +208,9 @@ def main(argv: list[str] | None = None) -> int:
             payout_reconciliation = reconcile_pending_payouts(session)
             delivery = deliver_payment_events(session)
             queue = payment_event_delivery_status(session)
-            print(f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} payouts_scanned={payout_reconciliation.scanned} delivered={delivery.delivered} retried={delivery.retried} pending={queue['pending']} dead_letter={queue['dead_letter']}")
+            print(
+                f"scanned={reconciliation.scanned} succeeded={reconciliation.succeeded} mismatched={reconciliation.mismatched} payouts_scanned={payout_reconciliation.scanned} delivered={delivery.delivered} retried={delivery.retried} pending={queue['pending']} dead_letter={queue['dead_letter']}"
+            )
             return 2 if queue["dead_letter"] else 0
         if args.command == "backfill-wallet":
             result = backfill_wallet(
@@ -185,7 +233,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "reconcile-paystack":
-            result = reconcile_paystack_deposit(session, transaction_id=args.transaction_id)
+            result = reconcile_paystack_deposit(
+                session, transaction_id=args.transaction_id
+            )
             print(f"transaction_id={result.transaction_id} status={result.status}")
             emit(
                 "info",

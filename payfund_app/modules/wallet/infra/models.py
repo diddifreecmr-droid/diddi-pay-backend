@@ -424,6 +424,7 @@ class OutboxEvent(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     event_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    telemetry_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

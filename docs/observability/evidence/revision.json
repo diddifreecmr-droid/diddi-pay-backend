@@ -1,0 +1,10 @@
+{
+  "implementation_commit": "4c1c1e9c500c5c448d1f0a07b055857548c06ea5",
+  "implementation_tree": "bb0f215574b93942a2a7e0e4f6234e410cc914fd",
+  "base_commit": "8f49eda54ebdb0a1663ef228b0c2e75b35369a20",
+  "recorded_at": "2026-11-13T15:24:26.016580+00:00",
+  "deployed_revision": "not verified; no deployment performed",
+  "scope": "diddipay-fund only",
+  "validation": "501 local tests passed; 300-second local OTLP outage and recovery; configuration parsed using synthetic values",
+  "note": "Evidence commit adds this revision record without changing implementation."
+}

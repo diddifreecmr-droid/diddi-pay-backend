@@ -7,7 +7,7 @@ loki.source.file "diddipay" {
 
 loki.process "diddipay" {
   stage.json {
-    expressions = {ts = "ts"}
+    expressions = {ts = "timestamp"}
   }
   stage.timestamp {
     source = "ts"
