@@ -2095,6 +2095,17 @@
             ],
             "title": "Failure Code"
           },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2120,6 +2131,17 @@
                 "type": "null"
               }
             ]
+          },
+          "provider_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Status"
           },
           "status": {
             "enum": [
@@ -2255,6 +2277,28 @@
             ],
             "title": "Description"
           },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2298,6 +2342,17 @@
               }
             ],
             "title": "Payer User Id"
+          },
+          "provider_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Status"
           },
           "refunded_amount": {
             "title": "Refunded Amount",

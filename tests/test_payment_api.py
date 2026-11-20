@@ -1,5 +1,16 @@
 import uuid
 
+from payfund_app.main import app
+from payfund_app.modules.payments.application.ports import (
+    InitializePaymentRequest,
+    PaymentDirection,
+    ProcessorCapabilities,
+    ProviderResult,
+)
+from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.domain import AttemptStatus
+from payfund_app.modules.payments.presentation.deps import get_processor_registry
+
 
 BASE = "/payfund/v1/payment-intents"
 HEADERS = {
@@ -37,6 +48,50 @@ def test_create_payment_intent_returns_provider_neutral_action(client):
     assert body["attempts"][0]["status"] == "requires_action"
     assert body["attempts"][0]["next_action"]["type"] == "redirect"
     assert "provider_reference" not in body["attempts"][0]
+
+
+def test_create_payment_intent_exposes_provider_failure_details(client):
+    class FailingProcessor:
+        name = "test-failing-provider"
+        capabilities = ProcessorCapabilities(
+            currencies=frozenset({"XOF"}),
+            directions=frozenset({PaymentDirection.COLLECTION}),
+            channels=frozenset({"mobile_money"}),
+            networks=frozenset({"orange"}),
+        )
+
+        def initialize_payment(self, request: InitializePaymentRequest) -> ProviderResult:
+            return ProviderResult(
+                provider_reference="provider-rejected-reference",
+                status=AttemptStatus.FAILED,
+                provider_status="invalid_params",
+                failure_code="PROVIDER_REQUEST_REJECTED",
+                failure_message="provider rejected the checkout parameters",
+            )
+
+    registry = ProcessorRegistry()
+    registry.register(FailingProcessor())
+    app.dependency_overrides[get_processor_registry] = lambda: registry
+    try:
+        response = client.post(
+            BASE,
+            headers={**HEADERS, "Idempotency-Key": "provider-failure-details"},
+            json=payload(),
+        )
+    finally:
+        app.dependency_overrides.pop(get_processor_registry, None)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["provider_status"] == "invalid_params"
+    assert body["failure_code"] == "PROVIDER_REQUEST_REJECTED"
+    assert body["failure_message"] == "provider rejected the checkout parameters"
+    assert body["attempts"][0]["provider_status"] == "invalid_params"
+    assert body["attempts"][0]["failure_code"] == "PROVIDER_REQUEST_REJECTED"
+    assert body["attempts"][0]["failure_message"] == (
+        "provider rejected the checkout parameters"
+    )
 
 
 def test_create_payment_intent_is_idempotent(client):

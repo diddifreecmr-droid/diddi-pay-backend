@@ -174,6 +174,9 @@ Reponse `201 Created` :
   "amount": 5000,
   "currency": "XOF",
   "status": "requires_action",
+  "provider_status": "initialized",
+  "failure_code": null,
+  "failure_message": null,
   "payer_user_id": "7c7df66d-7345-4aa7-b818-31cd91955d5b",
   "payee_user_id": "80ed38ce-1814-4b40-99f8-1ca7e65bea90",
   "description": "Course DiddiGo 42",
@@ -193,6 +196,7 @@ Reponse `201 Created` :
       "status": "requires_action",
       "channel": "mobile_money",
       "network": "orange",
+      "provider_status": "initialized",
       "next_action": {
         "type": "redirect",
         "url": "https://checkout.paystack.com/example",
@@ -200,6 +204,7 @@ Reponse `201 Created` :
         "expires_at": null
       },
       "failure_code": null,
+      "failure_message": null,
       "created_at": "2026-08-15T10:00:00Z",
       "updated_at": "2026-08-15T10:00:00Z"
     }
@@ -208,6 +213,13 @@ Reponse `201 Created` :
   "updated_at": "2026-08-15T10:00:00Z"
 }
 ```
+
+`provider_status`, `failure_code` et `failure_message` au niveau du `PaymentIntent` reprennent
+la derniere tentative. Ils permettent au module appelant de traiter directement un echec sans
+parcourir `attempts[]`; la meme information reste disponible dans la tentative pour l'audit.
+Une initialisation provider rejetee reste une creation HTTP `201` : le `PaymentIntent` est bien
+cree, mais sa reponse porte `status=failed` et les details d'echec. Une enveloppe HTTP `error`
+est reservee aux erreurs de contrat DiddiPay (authentification, validation, idempotence, etc.).
 
 ### Idempotence
 

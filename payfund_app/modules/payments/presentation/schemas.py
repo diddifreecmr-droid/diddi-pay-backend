@@ -63,8 +63,10 @@ class PaymentAttemptResponse(BaseModel):
     ]
     channel: str | None = None
     network: str | None = None
+    provider_status: str | None = None
     next_action: NextActionResponse | None = None
     failure_code: str | None = None
+    failure_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -84,6 +86,9 @@ class PaymentIntentResponse(BaseModel):
         "partially_refunded",
         "refunded",
     ]
+    provider_status: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
     payer_user_id: uuid.UUID | None = None
     payee_user_id: uuid.UUID | None = None
     description: str | None = None

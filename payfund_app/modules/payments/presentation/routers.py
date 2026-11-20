@@ -84,6 +84,7 @@ def _response(view: PaymentView) -> PaymentIntentResponse:
                 status=str(attempt.status),
                 channel=attempt.channel,
                 network=attempt.network,
+                provider_status=attempt.provider_status,
                 next_action=NextActionResponse(
                     type=str(action.type),
                     url=action.url,
@@ -93,10 +94,12 @@ def _response(view: PaymentView) -> PaymentIntentResponse:
                 if action
                 else None,
                 failure_code=attempt.failure_code,
+                failure_message=attempt.failure_message,
                 created_at=attempt.created_at,
                 updated_at=attempt.updated_at,
             )
         )
+    latest_attempt = view.attempts[-1] if view.attempts else None
     return PaymentIntentResponse(
         id=intent.id,
         client_id=intent.client_id,
@@ -104,6 +107,9 @@ def _response(view: PaymentView) -> PaymentIntentResponse:
         amount=intent.money.amount,
         currency=intent.money.currency,
         status=str(intent.status),
+        provider_status=latest_attempt.provider_status if latest_attempt else None,
+        failure_code=latest_attempt.failure_code if latest_attempt else None,
+        failure_message=latest_attempt.failure_message if latest_attempt else None,
         payer_user_id=intent.payer_user_id,
         payee_user_id=intent.payee_user_id,
         description=intent.description,
@@ -159,6 +165,7 @@ def create_payment_intent(
     except Exception as exc:
         _translate_error(exc)
         raise
+    resolved_attempt = view.attempts[-1] if view.attempts else None
     emit(
         "info",
         "payment.intent.resolved",
@@ -168,9 +175,13 @@ def create_payment_intent(
         amount=view.intent.money.amount,
         currency=view.intent.money.currency,
         status=str(view.intent.status),
+        processor=resolved_attempt.processor if resolved_attempt else None,
+        provider_status=resolved_attempt.provider_status if resolved_attempt else None,
+        failure_code=resolved_attempt.failure_code if resolved_attempt else None,
     )
     if view.created:
-        attempt = view.attempts[-1]
+        attempt = resolved_attempt
+        assert attempt is not None
         observe_payment_intent_created(
             processor=attempt.processor,
             status=str(view.intent.status),
