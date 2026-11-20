@@ -2,6 +2,11 @@
 /observabilite.env
 .env.*
 !.env.example
+!.env.pawapay.example
+!.env.paystack.example
+!.env.cinetpay.example
+!.env.jeko.example
+!.env.sandbox.example
 __pycache__/
 *.py[cod]
 .pytest_cache/

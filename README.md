@@ -85,15 +85,39 @@ démarre quand même, mais avec les valeurs par défaut de `.env.example` (ports
 `48213`, `QR_SIGNING_SECRET=change-me-in-production`) — à vérifier avant toute mise en
 production réelle.
 
-Portainer permet aussi de charger ces variables depuis le fichier `.env` préparé localement.
-Ce fichier contient les secrets Paystack et interservices : l'importer dans la configuration du
-stack, mais ne jamais l'ajouter au dépôt ni le joindre à un ticket. Git ignore `.env` et tous les
-fichiers `.env.*`, à l'exception du modèle public `.env.example`.
+La configuration locale est maintenant séparée en deux couches :
+
+- `.env` ou `.env.general` contient le socle commun (base de données, Redis, DiddiFreeID, S2S,
+  callbacks inter-modules et observabilité) ;
+- un seul profil provider est chargé après : `.env.pawapay`, `.env.paystack`, `.env.cinetpay`,
+  `.env.jeko` ou `.env.sandbox`.
+
+Les modèles publics correspondants sont `.env.example` et les fichiers `.env.<provider>.example`.
+Les fichiers réels contiennent les secrets et restent ignores par Git. Pour repartir de la
+configuration locale historique sans afficher les secrets, utiliser :
+
+```powershell
+./scripts/split_env.ps1
+```
+
+La commande genere `.env.general` et les profils provider dans le dossier courant. Elle ne
+supprime pas `.env` et n'imprime aucune valeur secrete. Pour lancer Docker avec PawaPay :
+
+```powershell
+docker compose --env-file .env.general --env-file .env.pawapay up -d --build
+```
+
+Pour Paystack, remplacer uniquement le second fichier par `.env.paystack`. L'ordre est
+important : le profil provider est charge apres le general et ses valeurs de mode/credentials
+prennent priorite. Dans Portainer, importer ou reporter les variables des deux fichiers dans les
+variables de la stack : le fichier general puis le profil provider choisi. Ne jamais versionner,
+joindre a Jira ou envoyer dans un ticket un fichier `.env.*` reel. Git ignore tous les `.env.*`
+reels et autorise uniquement les modeles `.example`.
 
 Le compose transmet aussi les variables du coeur PaymentIntent (`PAYMENT_PROCESSOR_MODE`,
-`PAYMENT_SERVICE_KEYS`, `PAYMENT_CALLBACK_TARGETS`, secrets Paystack et callback DiddiFund). Leurs
-valeurs par défaut gardent le sandbox fermé aux appels S2S : il faut donc les définir explicitement
-dans Portainer pour tester une intégration module.
+`PAYMENT_SERVICE_KEYS`, `PAYMENT_CALLBACK_TARGETS`, les secrets du profil provider selectionne et
+le callback DiddiFund). Leurs valeurs par défaut gardent le sandbox ferme aux appels S2S : il faut
+donc les definir explicitement dans Portainer pour tester une integration module.
 
 ## Tests
 
