@@ -52,6 +52,7 @@ class NextActionResponse(BaseModel):
 
 class PaymentAttemptResponse(BaseModel):
     id: uuid.UUID
+    processor: str
     status: Literal[
         "pending",
         "requires_action",
@@ -63,8 +64,10 @@ class PaymentAttemptResponse(BaseModel):
     ]
     channel: str | None = None
     network: str | None = None
+    provider_status: str | None = None
     next_action: NextActionResponse | None = None
     failure_code: str | None = None
+    failure_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -72,6 +75,7 @@ class PaymentAttemptResponse(BaseModel):
 class PaymentIntentResponse(BaseModel):
     id: uuid.UUID
     client_id: str
+    processor: str | None = None
     business_reference: str
     amount: int
     currency: str
@@ -84,6 +88,9 @@ class PaymentIntentResponse(BaseModel):
         "partially_refunded",
         "refunded",
     ]
+    provider_status: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
     payer_user_id: uuid.UUID | None = None
     payee_user_id: uuid.UUID | None = None
     description: str | None = None
@@ -109,6 +116,12 @@ class PayoutWebhookResponse(BaseModel):
     status: Literal["processed", "duplicate", "ignored", "failed"]
     event_key: str
     payout_id: str | None = None
+
+
+class RefundWebhookResponse(BaseModel):
+    status: Literal["processed", "duplicate", "ignored", "failed"]
+    event_key: str
+    refund_id: str | None = None
 
 
 class CreateRefundRequest(BaseModel):

@@ -85,15 +85,39 @@ démarre quand même, mais avec les valeurs par défaut de `.env.example` (ports
 `48213`, `QR_SIGNING_SECRET=change-me-in-production`) — à vérifier avant toute mise en
 production réelle.
 
-Portainer permet aussi de charger ces variables depuis le fichier `.env` préparé localement.
-Ce fichier contient les secrets Paystack et interservices : l'importer dans la configuration du
-stack, mais ne jamais l'ajouter au dépôt ni le joindre à un ticket. Git ignore `.env` et tous les
-fichiers `.env.*`, à l'exception du modèle public `.env.example`.
+La configuration locale est maintenant séparée en deux couches :
+
+- `.env` ou `.env.general` contient le socle commun (base de données, Redis, DiddiFreeID, S2S,
+  callbacks inter-modules et observabilité) ;
+- un seul profil provider est chargé après : `.env.pawapay`, `.env.paystack`, `.env.cinetpay`,
+  `.env.jeko` ou `.env.sandbox`.
+
+Les modèles publics correspondants sont `.env.example` et les fichiers `.env.<provider>.example`.
+Les fichiers réels contiennent les secrets et restent ignores par Git. Pour repartir de la
+configuration locale historique sans afficher les secrets, utiliser :
+
+```powershell
+./scripts/split_env.ps1
+```
+
+La commande genere `.env.general` et les profils provider dans le dossier courant. Elle ne
+supprime pas `.env` et n'imprime aucune valeur secrete. Pour lancer Docker avec PawaPay :
+
+```powershell
+docker compose --env-file .env.general --env-file .env.pawapay up -d --build
+```
+
+Pour Paystack, remplacer uniquement le second fichier par `.env.paystack`. L'ordre est
+important : le profil provider est charge apres le general et ses valeurs de mode/credentials
+prennent priorite. Dans Portainer, importer ou reporter les variables des deux fichiers dans les
+variables de la stack : le fichier general puis le profil provider choisi. Ne jamais versionner,
+joindre a Jira ou envoyer dans un ticket un fichier `.env.*` reel. Git ignore tous les `.env.*`
+reels et autorise uniquement les modeles `.example`.
 
 Le compose transmet aussi les variables du coeur PaymentIntent (`PAYMENT_PROCESSOR_MODE`,
-`PAYMENT_SERVICE_KEYS`, `PAYMENT_CALLBACK_TARGETS`, secrets Paystack et callback DiddiFund). Leurs
-valeurs par défaut gardent le sandbox fermé aux appels S2S : il faut donc les définir explicitement
-dans Portainer pour tester une intégration module.
+`PAYMENT_SERVICE_KEYS`, `PAYMENT_CALLBACK_TARGETS`, les secrets du profil provider selectionne et
+le callback DiddiFund). Leurs valeurs par défaut gardent le sandbox ferme aux appels S2S : il faut
+donc les definir explicitement dans Portainer pour tester une integration module.
 
 ## Tests
 
@@ -201,11 +225,17 @@ Sénégal), dépôt **et** retrait tous deux pris en charge :
 - `PAYMENT_GATEWAY_MODE=pawapay`
 - `PAWAPAY_API_TOKEN=<token>`
 - `PAWAPAY_BASE_URL` (défaut : sandbox `https://api.sandbox.pawapay.io`)
-- payout callback : `POST /payfund/v1/webhooks/pawapay/payouts` ; l'ancien chemin
+- callbacks PawaPay PaymentIntent : `POST /payfund/v1/webhooks/pawapay/deposits` et
+  `POST /payfund/v1/webhooks/pawapay/refunds` ; callback payout :
+  `POST /payfund/v1/webhooks/pawapay/payouts`. L'ancien chemin payout
   `/webhooks/pawapay/payouts` reste disponible pendant la migration de staging.
-- `PAWAPAY_CALLBACK_URL` doit correspondre exactement à l'URL configurée dans PawaPay ; activer
-  `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true` et configurer `PAWAPAY_PUBLIC_KEYS_URL` avant la
-  production. La reconciliation reste le filet de sécurité.
+- `PAWAPAY_DEPOSIT_CALLBACK_URL`, `PAWAPAY_REFUND_CALLBACK_URL` et
+  `PAWAPAY_PAYOUT_CALLBACK_URL` doivent correspondre exactement aux trois URLs configurées
+  dans PawaPay. Activer `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true` et configurer
+  `PAWAPAY_PUBLIC_KEYS_URL` avant la production. La réconciliation reste le filet de sécurité.
+- Les callbacks `deposits` et `refunds` concernent le nouvel orchestrateur PaymentIntent. Le
+  wallet historique reste identifié comme legacy et continue de dépendre de sa réconciliation
+  dédiée tant qu'il n'est pas migré vers PaymentIntent.
 - opérateur MTN/Orange/Moov résolu automatiquement depuis l'indicatif téléphonique du payeur —
   voir `wallet/infra/pawapay_gateway.py` pour la liste des combinaisons pays+opérateur actives.
 - **code prêt, pas encore activé en production** : le mode réellement déployé est celui configuré
@@ -216,6 +246,41 @@ Chaque transaction wallet persiste désormais le mode qui l'a traitée
 changement de `PAYMENT_GATEWAY_MODE` — voir `WalletUseCases.reconcile_transaction`. Le compte
 suspense (§2, "Mobile Money suspense") est lui aussi bucketé par processeur et non plus par
 opérateur télécom.
+
+#### Choisir le processeur dans Docker/Portainer
+
+Les deux variables ne pilotent pas le même périmètre :
+
+- `PAYMENT_GATEWAY_MODE` choisit le connecteur du **wallet legacy** (`stub`, `paystack` ou
+  `pawapay`).
+- `PAYMENT_PROCESSOR_MODE` choisit le processeur du nouvel orchestrateur **PaymentIntent/Payout**
+  (`sandbox`, `paystack` ou `pawapay`).
+
+Pour utiliser PawaPay en sandbox dans le nouvel orchestrateur, injecter dans les variables du
+conteneur API et du worker :
+
+```dotenv
+PAYMENT_PROCESSOR_MODE=pawapay
+PAWAPAY_API_TOKEN=<token-sandbox-pawapay>
+PAWAPAY_BASE_URL=https://api.sandbox.pawapay.io
+PAWAPAY_DEPOSIT_CALLBACK_URL=https://pay-api-staging.diddifree.com/payfund/v1/webhooks/pawapay/deposits
+PAWAPAY_REFUND_CALLBACK_URL=https://pay-api-staging.diddifree.com/payfund/v1/webhooks/pawapay/refunds
+PAWAPAY_PAYOUT_CALLBACK_URL=https://pay-api-staging.diddifree.com/payfund/v1/webhooks/pawapay/payouts
+PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true
+PAWAPAY_PUBLIC_KEYS_URL=https://api.sandbox.pawapay.io/v2/public-key/http
+PAYMENT_GATEWAY_AUTOCONFIRM=false
+```
+
+Ajouter `PAYMENT_GATEWAY_MODE=pawapay` uniquement si les routes du wallet legacy doivent aussi
+utiliser PawaPay. Pour Paystack, remplacer le mode concerné par `paystack` et fournir
+`PAYSTACK_SECRET_KEY`, `PAYSTACK_WEBHOOK_SECRET`, `PAYSTACK_BASE_URL=https://api.paystack.co` et
+`PAYSTACK_ENVIRONMENT=test` ou `live`. Dans Portainer, ces variables doivent être injectées dans
+la stack puis les conteneurs API et worker doivent être recréés ; un simple redémarrage sans
+recréation ne garantit pas que la nouvelle configuration soit chargée.
+
+Le callback `deposits` finalise les dépôts PaymentIntent, `refunds` finalise les remboursements et
+`payouts` finalise les sorties. Le callback navigateur d'une Payment Page n'est pas un callback
+serveur et n'est pas remplacé par ces trois routes.
 
 La politique de step-up est indépendante du provider. Le seuil se configure avec
 `WALLET_STEP_UP_THRESHOLD_XOF` (défaut : `50000`) et un transfert de ce montant ou plus exige

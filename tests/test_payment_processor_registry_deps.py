@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 
 from payfund_app.core.config import get_settings
+from payfund_app.core.errors import ServiceUnavailable
 from payfund_app.modules.payments.infra.models import PaymentAttemptRecord
 from payfund_app.modules.payments.presentation import deps
 
@@ -90,6 +91,41 @@ def test_paystack_mode_without_key_fails_fast(monkeypatch):
 
     with pytest.raises(ValueError, match="PAYSTACK_SECRET_KEY"):
         deps.get_processor_registry()
+
+
+def test_cinetpay_mode_without_credentials_fails_with_actionable_error(monkeypatch):
+    monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "cinetpay")
+    monkeypatch.setenv("CINETPAY_API_KEY", "")
+    monkeypatch.setenv("CINETPAY_API_PASSWORD", "")
+    get_settings.cache_clear()
+
+    with pytest.raises(ServiceUnavailable) as error:
+        deps.get_processor_registry()
+
+    assert error.value.code == "PROCESSOR_NOT_CONFIGURED"
+    assert error.value.details == {
+        "processor": "cinetpay",
+        "missing": ["CINETPAY_API_KEY", "CINETPAY_API_PASSWORD"],
+    }
+
+
+def test_cinetpay_configuration_failure_does_not_cache_empty_registry(monkeypatch):
+    monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "cinetpay")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "")
+    monkeypatch.setenv("CINETPAY_API_KEY", "")
+    monkeypatch.setenv("CINETPAY_API_PASSWORD", "")
+    get_settings.cache_clear()
+
+    with pytest.raises(ServiceUnavailable):
+        deps.get_processor_registry()
+
+    monkeypatch.setenv("CINETPAY_API_KEY", "cinetpay-test-key")
+    monkeypatch.setenv("CINETPAY_API_PASSWORD", "cinetpay-test-password")
+    get_settings.cache_clear()
+
+    registry = deps.get_processor_registry()
+
+    assert set(registry.names()) == {"cinetpay", "sandbox"}
 
 
 def test_pawapay_registered_only_when_token_configured(monkeypatch):

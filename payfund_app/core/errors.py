@@ -105,6 +105,12 @@ class UnprocessableEntity(AppError):
     message = "Validation de champs échouée."
 
 
+class ServiceUnavailable(AppError):
+    status_code = 503
+    code = "SERVICE_UNAVAILABLE"
+    message = "Service temporairement indisponible."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:

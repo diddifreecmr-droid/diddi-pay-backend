@@ -108,9 +108,12 @@ class Settings(BaseSettings):
     # (voir wallet/infra/pawapay_gateway.py et gateways.get_gateway()).
     pawapay_api_token: str = ""
     pawapay_base_url: str = "https://api.sandbox.pawapay.io"
-    # PawaPay must be configured with the exact public callback URL. Keep empty for
-    # unsigned legacy sandbox callbacks; require signatures before production.
+    # PawaPay callback URLs must match the public URLs configured in the PawaPay dashboard.
+    # The legacy single URL remains the payout fallback for existing staging deployments.
     pawapay_callback_url: str = ""
+    pawapay_payout_callback_url: str = ""
+    pawapay_deposit_callback_url: str = ""
+    pawapay_refund_callback_url: str = ""
     pawapay_callback_signature_required: bool = False
     pawapay_public_keys_url: str = ""
 

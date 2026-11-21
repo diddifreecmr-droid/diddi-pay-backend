@@ -19,6 +19,9 @@ from payfund_app.modules.payments.application.payout_webhooks import (
 )
 from payfund_app.modules.payments.application.payouts import PayoutUseCases
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
+from payfund_app.modules.payments.application.refund_webhooks import (
+    RefundWebhookUseCases,
+)
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
 from payfund_app.modules.payments.infra.repositories import (
     FinancialLedgerRepository,
@@ -27,9 +30,12 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentOutboxRepository,
     PayoutRepository,
     ProviderEventRepository,
+    RefundRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
+    PawapayDepositWebhookProcessorDep,
+    PawapayRefundWebhookProcessorDep,
     PawapayWebhookProcessorDep,
     PaystackWebhookProcessorDep,
     SessionDep,
@@ -37,6 +43,7 @@ from payfund_app.modules.payments.presentation.deps import (
 from payfund_app.modules.payments.presentation.schemas import (
     PaymentWebhookResponse,
     PayoutWebhookResponse,
+    RefundWebhookResponse,
 )
 from payfund_app.shared_kernel.logging import emit
 
@@ -113,6 +120,135 @@ async def paystack_webhook(
         status=result.status,
         event_key=result.event_key,
         payment_intent_id=result.payment_intent_id,
+    )
+
+
+@pawapay_router.post(
+    "/deposits",
+    response_model=PaymentWebhookResponse,
+    summary="Receive a PawaPay deposit callback",
+    description=(
+        "Provider-only endpoint for PaymentIntent deposits. The signed callback is stored "
+        "in the provider inbox before the PaymentIntent and financial ledger are updated. "
+        "Missed callbacks remain recoverable through payment reconciliation."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "additionalProperties": True},
+                    "example": {
+                        "depositId": "00000000-0000-0000-0000-000000000001",
+                        "status": "COMPLETED",
+                        "requestedAmount": "5000",
+                        "depositedAmount": "5000",
+                        "currency": "XOF",
+                        "country": "CIV",
+                    },
+                }
+            },
+        }
+    },
+)
+async def pawapay_deposit_webhook(
+    request: Request,
+    session: SessionDep,
+    processor: PawapayDepositWebhookProcessorDep,
+) -> PaymentWebhookResponse:
+    raw_body = await request.body()
+    use_cases = PaymentWebhookUseCases(
+        PaymentIntentRepository(session),
+        PaymentAttemptRepository(session),
+        ProviderEventRepository(session),
+        SqlAlchemyUnitOfWork(session),
+        PaymentOutboxRepository(session),
+        PaymentAccountingService(FinancialLedgerRepository(session)),
+    )
+    try:
+        result = use_cases.process(processor, raw_body, request.headers)
+    except ProcessorWebhookRejected as exc:
+        observe_webhook(provider="pawapay", outcome="rejected")
+        raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
+    observe_webhook(provider="pawapay", outcome=result.status)
+    emit(
+        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
+        "payment.webhook.processed",
+        processor="pawapay",
+        event_key=result.event_key,
+        payment_intent_id=result.payment_intent_id,
+        status=result.status,
+    )
+    return PaymentWebhookResponse(
+        status=result.status,
+        event_key=result.event_key,
+        payment_intent_id=result.payment_intent_id,
+    )
+
+
+@pawapay_router.post(
+    "/refunds",
+    response_model=RefundWebhookResponse,
+    summary="Receive a PawaPay refund callback",
+    description=(
+        "Provider-only endpoint for asynchronous PawaPay refunds. The callback is validated, "
+        "deduplicated and applied to the refund state and financial ledger exactly once."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "additionalProperties": True},
+                    "example": {
+                        "refundId": "00000000-0000-0000-0000-000000000002",
+                        "status": "COMPLETED",
+                        "amount": "5000",
+                        "currency": "XOF",
+                        "country": "CIV",
+                    },
+                }
+            },
+        }
+    },
+)
+async def pawapay_refund_webhook(
+    request: Request,
+    session: SessionDep,
+    processor: PawapayRefundWebhookProcessorDep,
+) -> RefundWebhookResponse:
+    raw_body = await request.body()
+    use_cases = RefundWebhookUseCases(
+        RefundRepository(session),
+        PaymentIntentRepository(session),
+        PaymentAttemptRepository(session),
+        ProviderEventRepository(session),
+        SqlAlchemyUnitOfWork(session),
+        PaymentAccountingService(FinancialLedgerRepository(session)),
+    )
+    try:
+        result = use_cases.process(
+            processor,
+            raw_body,
+            request.headers,
+            callback_url=processor.callback_url,
+        )
+    except ProcessorWebhookRejected as exc:
+        observe_webhook(provider="pawapay", outcome="rejected")
+        raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
+    observe_webhook(provider="pawapay", outcome=result.status)
+    emit(
+        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
+        "refund.webhook.processed",
+        processor="pawapay",
+        event_key=result.event_key,
+        refund_id=result.refund_id,
+        status=result.status,
+    )
+    return RefundWebhookResponse(
+        status=result.status,
+        event_key=result.event_key,
+        refund_id=result.refund_id,
     )
 
 

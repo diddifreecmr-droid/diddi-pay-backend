@@ -15,11 +15,24 @@ commitées dans le dépôt.
 | `PAYMENT_CALLBACK_TARGETS` | Cibles et secrets callbacks | `{}` | JSON staging | JSON production |
 | `PAYMENT_REDIS_STREAM` | Stream Redis événements | `diddipay.payment.events.v1` | idem | idem |
 | `PAYMENT_SERVICE_KEYS` | Clés S2S par module | vide | secrets staging | secrets production |
-| `PAYMENT_PROCESSOR_MODE` | Mode processeur | `sandbox` | `sandbox` | mode approuvé |
+| `PAYMENT_PROCESSOR_MODE` | Processeur du nouvel orchestrateur PaymentIntent/Payout (`sandbox`, `paystack`, `pawapay`, `cinetpay` ou `jeko`) | `sandbox` | selon la recette | mode approuvé |
+| `PAYMENT_GATEWAY_MODE` | Processeur du wallet legacy (`stub`, `paystack` ou `pawapay`) | `stub` | selon la recette | mode approuvé |
+| `PAYSTACK_SECRET_KEY` / `PAYSTACK_WEBHOOK_SECRET` | Credentials Paystack | vide | secrets test | secrets live |
+| `PAWAPAY_API_TOKEN` | Jeton PawaPay pour dépôts, retraits et callbacks | vide | secret sandbox | secret production |
+| `PAWAPAY_BASE_URL` | Base API PawaPay | sandbox PawaPay | `https://api.sandbox.pawapay.io` | URL production PawaPay |
+| `PAWAPAY_DEPOSIT_CALLBACK_URL` | Callback PawaPay des dépôts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
+| `PAWAPAY_REFUND_CALLBACK_URL` | Callback PawaPay des remboursements | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
+| `PAWAPAY_PAYOUT_CALLBACK_URL` | Callback PawaPay des payouts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
+| `CINETPAY_API_KEY` / `CINETPAY_API_PASSWORD` | Credentials CinetPay PaymentIntent/Payout | vide | secrets sandbox | secrets production |
+| `CINETPAY_BASE_URL` / `CINETPAY_COUNTRY` | Endpoint et pays CinetPay | auto / `CI` | selon le compte | selon le compte |
+| `JEKO_API_KEY` / `JEKO_API_KEY_ID` / `JEKO_STORE_ID` | Credentials et boutique Jèko | vide | store de test approuve | store production |
+| `JEKO_BASE_URL` / `JEKO_WEBHOOK_SECRET` | Endpoint et secret callback Jèko | `https://api.jeko.africa` / vide | selon le compte | selon le compte |
 | `QR_SIGNING_SECRET` | Signature QR | `change-me-in-production` | secret staging | secret fort obligatoire |
 | `CORS_ORIGINS` | Origines web autorisées | `*` | domaines staging | domaines production |
 | `DOCS_PUBLIC_ENABLED` | Publie ou masque le portail documentaire | `false` | `true` | `false` |
 | `DOCS_PORT` | Port hôte du portail documentaire | `48080` | port libre staging | port interne proxy |
 
-La liste complète et les exemples de ports sont maintenus dans le fichier versionné
-`.env.example` à la racine du dépôt ; il n'est pas publié dans le portail public.
+La liste générale est maintenue dans `.env.example`. Les paramètres propres à chaque
+processeur sont dans `.env.pawapay.example`, `.env.paystack.example`,
+`.env.cinetpay.example`, `.env.jeko.example` et `.env.sandbox.example`. Les fichiers réels
+`.env.*` ne doivent jamais être committes.

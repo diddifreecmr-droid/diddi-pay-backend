@@ -38,9 +38,15 @@ def production_configuration_errors(settings: Settings) -> list[str]:
     if settings.pawapay_api_token:
         if not settings.pawapay_callback_signature_required:
             errors.append("PAWAPAY_CALLBACK_SIGNATURE_REQUIRED must be true")
-        callback_url = urlparse(settings.pawapay_callback_url)
-        if callback_url.scheme != "https" or not callback_url.netloc:
-            errors.append("PAWAPAY_CALLBACK_URL must be an HTTPS URL")
+        callback_urls = {
+            "payout": settings.pawapay_payout_callback_url or settings.pawapay_callback_url,
+            "deposit": settings.pawapay_deposit_callback_url or settings.pawapay_callback_url,
+            "refund": settings.pawapay_refund_callback_url or settings.pawapay_callback_url,
+        }
+        for operation, configured_url in callback_urls.items():
+            callback_url = urlparse(configured_url)
+            if callback_url.scheme != "https" or not callback_url.netloc:
+                errors.append(f"PAWAPAY_{operation.upper()}_CALLBACK_URL must be an HTTPS URL")
         public_keys_url = urlparse(settings.pawapay_public_keys_url)
         if settings.pawapay_public_keys_url and public_keys_url.scheme != "https":
             errors.append("PAWAPAY_PUBLIC_KEYS_URL must use HTTPS")

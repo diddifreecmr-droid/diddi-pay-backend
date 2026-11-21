@@ -292,11 +292,13 @@ class ProviderEventRepository:
         status: str,
         payment_attempt_id: uuid.UUID | None = None,
         payout_id: uuid.UUID | None = None,
+        refund_id: uuid.UUID | None = None,
         error_message: str | None = None,
     ) -> ProviderEventRecord:
         row.status = status
         row.payment_attempt_id = payment_attempt_id
         row.payout_id = payout_id
+        row.refund_id = refund_id
         row.error_message = error_message
         if status in {"processed", "ignored", "failed"}:
             row.processed_at = datetime.now().astimezone()
@@ -347,6 +349,17 @@ class RefundRepository:
             )
         )
         return int(value or 0)
+
+    def get_by_provider_reference(
+        self, processor: str, provider_reference: str, *, for_update: bool = False
+    ) -> RefundRecord | None:
+        query = select(RefundRecord).where(
+            RefundRecord.processor == processor,
+            RefundRecord.provider_reference == provider_reference,
+        )
+        if for_update:
+            query = query.with_for_update()
+        return self.session.scalar(query)
 
     def save(self, refund: Refund) -> Refund:
         row = self.session.get(RefundRecord, refund.id)

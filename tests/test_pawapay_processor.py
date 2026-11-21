@@ -253,9 +253,53 @@ def test_verify_payment_http_error_is_a_real_failure():
     assert result.failure_code == "PAWAPAY_VERIFICATION_FAILED"
 
 
-def test_parse_webhook_not_implemented():
-    with pytest.raises(NotImplementedError, match="BCEAO"):
+def test_parse_webhook_rejects_invalid_deposit_payload():
+    with pytest.raises(ProcessorWebhookRejected, match="depositId"):
         processor(lambda r: httpx.Response(200)).parse_webhook(b"{}", {})
+
+
+def test_parse_deposit_webhook_normalizes_official_callback_without_pii():
+    deposit_id = str(uuid.uuid4())
+    body = json.dumps(
+        {
+            "depositId": deposit_id,
+            "status": "COMPLETED",
+            "requestedAmount": "5000",
+            "depositedAmount": "5000",
+            "currency": "XOF",
+            "country": "CIV",
+            "payer": {"address": {"value": "225000000000"}},
+        }
+    ).encode()
+
+    event = processor(lambda r: httpx.Response(200)).parse_deposit_webhook(body, {})
+
+    assert event.event_key == f"deposit:{deposit_id}:completed"
+    assert event.status == AttemptStatus.SUCCEEDED
+    assert event.amount == 5_000
+    assert event.currency == "XOF"
+    assert "payer" not in event.sanitized_payload
+    assert "225000000000" not in json.dumps(event.sanitized_payload)
+
+
+def test_parse_refund_webhook_normalizes_official_callback():
+    refund_id = str(uuid.uuid4())
+    body = json.dumps(
+        {
+            "refundId": refund_id,
+            "status": "COMPLETED",
+            "amount": "5000",
+            "currency": "XOF",
+            "country": "CIV",
+        }
+    ).encode()
+
+    event = processor(lambda r: httpx.Response(200)).parse_refund_webhook(body, {})
+
+    assert event.event_key == f"refund:{refund_id}:completed"
+    assert event.status == RefundStatus.SUCCEEDED
+    assert event.amount == 5_000
+    assert event.currency == "XOF"
 
 
 def test_parse_payout_webhook_normalizes_official_callback_without_pii():

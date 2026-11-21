@@ -34,14 +34,10 @@ Deliberately NOT wired here:
     live provider uses authType=PROVIDER_AUTH, Wave isn't listed at all). REDIRECT_AUTH
     needs a real example to design against and can't be requested until PawaPay enables it
     on the account. See ADR/ticket before adding it.
-  * Deposit callbacks -- the payout callback is wired here; deposits still use
-    verify_payment/reconciliation until their own callback contract is needed.
-
 refund_payment (verified against the real sandbox, POST /v2/refunds) follows the same
 async ACCEPTED -> COMPLETED/FAILED shape as deposits/payouts. Note: refunds.py has no
-reconciliation path for refunds at all (RefundRepositoryPort only has add()), so a refund
-that comes back PROCESSING here has no way to ever resolve to a final status today --
-a pre-existing gap in the module, not something this file can fix alone.
+reconciliation path for refunds at the moment; the signed refund callback is the primary
+completion signal and remains protected by the normal idempotent inbox.
 """
 
 from __future__ import annotations
@@ -71,7 +67,9 @@ from payfund_app.modules.payments.application.ports import (
     PayoutRequest,
     PayoutResult,
     ProcessorCapabilities,
+    ProviderEvent,
     ProviderResult,
+    RefundProviderEvent,
     RefundRequest,
     RefundResult,
 )
@@ -404,6 +402,138 @@ class PawapayPaymentProcessor:
             failure_message=failure_message,
         )
 
+    def parse_deposit_webhook(
+        self,
+        raw_body: bytes,
+        headers,
+        *,
+        callback_url: str | None = None,
+    ) -> ProviderEvent:
+        """Validate and normalize the official PawaPay deposit callback payload."""
+        self._verify_callback_signature(
+            raw_body,
+            headers,
+            callback_url=callback_url or self.callback_url,
+        )
+        body = self._parse_callback_body(raw_body, operation="deposit")
+        deposit_id = str(body.get("depositId") or "")
+        if not deposit_id or len(deposit_id) > 160:
+            raise ProcessorWebhookRejected("pawapay callback depositId is missing or invalid")
+
+        provider_status = str(body.get("status") or "").upper()
+        status = self._normalize_deposit_callback_status(provider_status)
+        amount_key = "depositedAmount" if status == AttemptStatus.SUCCEEDED else "requestedAmount"
+        amount_value = body.get(amount_key)
+        if amount_value is None:
+            amount_value = body.get("amount")
+        try:
+            amount = self._parse_amount(amount_value)
+        except (TypeError, ValueError) as exc:
+            raise ProcessorWebhookRejected("pawapay callback deposit amount is invalid") from exc
+        if amount is None or amount <= 0:
+            raise ProcessorWebhookRejected("pawapay callback deposit amount is required")
+
+        currency = str(body.get("currency") or "").upper()
+        if not currency:
+            raise ProcessorWebhookRejected("pawapay callback deposit currency is required")
+
+        failure_code, failure_message = (
+            self._failure_reason(body) if status == AttemptStatus.FAILED else (None, None)
+        )
+        sanitized_payload = {
+            key: body[key]
+            for key in (
+                "depositId",
+                "status",
+                "requestedAmount",
+                "depositedAmount",
+                "currency",
+                "country",
+                "correspondent",
+                "created",
+                "providerTransactionId",
+            )
+            if key in body
+        }
+        if failure_code or failure_message:
+            sanitized_payload["failureReason"] = {
+                "failureCode": failure_code,
+                "failureMessage": failure_message,
+            }
+        return ProviderEvent(
+            event_key=f"deposit:{deposit_id}:{provider_status.lower()}",
+            event_type=f"deposit.{provider_status.lower()}",
+            provider_reference=deposit_id,
+            status=status,
+            amount=amount,
+            currency=currency,
+            sanitized_payload=sanitized_payload,
+        )
+
+    def parse_refund_webhook(
+        self,
+        raw_body: bytes,
+        headers,
+        *,
+        callback_url: str | None = None,
+    ) -> RefundProviderEvent:
+        """Validate and normalize the official PawaPay refund callback payload."""
+        self._verify_callback_signature(
+            raw_body,
+            headers,
+            callback_url=callback_url or self.callback_url,
+        )
+        body = self._parse_callback_body(raw_body, operation="refund")
+        refund_id = str(body.get("refundId") or "")
+        if not refund_id or len(refund_id) > 160:
+            raise ProcessorWebhookRejected("pawapay callback refundId is missing or invalid")
+
+        provider_status = str(body.get("status") or "").upper()
+        status = self._normalize_refund_callback_status(provider_status)
+        try:
+            amount = self._parse_amount(body.get("amount"))
+        except (TypeError, ValueError) as exc:
+            raise ProcessorWebhookRejected("pawapay callback refund amount is invalid") from exc
+        if amount is None or amount <= 0:
+            raise ProcessorWebhookRejected("pawapay callback refund amount is required")
+        currency = str(body.get("currency") or "").upper()
+        if not currency:
+            raise ProcessorWebhookRejected("pawapay callback refund currency is required")
+
+        failure_code, failure_message = (
+            self._failure_reason(body) if status == RefundStatus.FAILED else (None, None)
+        )
+        sanitized_payload = {
+            key: body[key]
+            for key in (
+                "refundId",
+                "status",
+                "amount",
+                "currency",
+                "country",
+                "created",
+                "providerTransactionId",
+            )
+            if key in body
+        }
+        if failure_code or failure_message:
+            sanitized_payload["failureReason"] = {
+                "failureCode": failure_code,
+                "failureMessage": failure_message,
+            }
+        return RefundProviderEvent(
+            event_key=f"refund:{refund_id}:{provider_status.lower()}",
+            event_type=f"refund.{provider_status.lower()}",
+            provider_reference=refund_id,
+            status=status,
+            provider_status=provider_status.lower(),
+            amount=amount,
+            currency=currency,
+            failure_code=failure_code,
+            failure_message=failure_message,
+            sanitized_payload=sanitized_payload,
+        )
+
     def parse_payout_webhook(
         self,
         raw_body: bytes,
@@ -485,10 +615,7 @@ class PawapayPaymentProcessor:
         )
 
     def parse_webhook(self, raw_body: bytes, headers):
-        raise NotImplementedError(
-            "pawapay deposit webhooks are not wired yet (BCEAO compliance gate); "
-            "use verify_payment / reconciliation"
-        )
+        return self.parse_deposit_webhook(raw_body, headers, callback_url=self.callback_url)
 
     def _verify_callback_signature(
         self,
@@ -632,6 +759,42 @@ class PawapayPaymentProcessor:
             return self._client.get(self._public_keys_url, headers={})
         with httpx.Client(timeout=10.0) as client:
             return client.get(self._public_keys_url)
+
+    @staticmethod
+    def _parse_callback_body(raw_body: bytes, *, operation: str) -> dict[str, Any]:
+        try:
+            body = httpx.Response(200, content=raw_body).json()
+        except ValueError as exc:
+            raise ProcessorWebhookRejected(
+                f"pawapay {operation} callback body is not valid JSON"
+            ) from exc
+        if not isinstance(body, dict):
+            raise ProcessorWebhookRejected(f"pawapay {operation} callback body must be an object")
+        return body
+
+    @staticmethod
+    def _normalize_deposit_callback_status(status: str) -> AttemptStatus:
+        if status == "COMPLETED":
+            return AttemptStatus.SUCCEEDED
+        if status in {"FAILED", "REJECTED"}:
+            return AttemptStatus.FAILED
+        if status in {"ACCEPTED", "SUBMITTED", "PENDING", "PROCESSING", "ENQUEUED"}:
+            return AttemptStatus.PROCESSING
+        raise ProcessorWebhookRejected(
+            f"pawapay deposit callback status is unsupported: {status!r}"
+        )
+
+    @staticmethod
+    def _normalize_refund_callback_status(status: str) -> RefundStatus:
+        if status == "COMPLETED":
+            return RefundStatus.SUCCEEDED
+        if status in {"FAILED", "REJECTED"}:
+            return RefundStatus.FAILED
+        if status in {"ACCEPTED", "SUBMITTED", "PENDING", "PROCESSING", "ENQUEUED"}:
+            return RefundStatus.PROCESSING
+        raise ProcessorWebhookRejected(
+            f"pawapay refund callback status is unsupported: {status!r}"
+        )
 
     def refund_payment(self, request: RefundRequest) -> RefundResult:
         # Verified against the real PawaPay sandbox (POST /v2/refunds, GET /v2/refunds/{id}):
