@@ -76,6 +76,9 @@ class ProviderResult:
     amount: int | None = None
     currency: str | None = None
     fee: int | None = None
+    # Provider-only data needed for later callbacks/reconciliation. This is persisted
+    # separately from the public PaymentIntent metadata and is never returned to callers.
+    provider_metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

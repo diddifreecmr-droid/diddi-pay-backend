@@ -163,6 +163,7 @@ des ports hôte configurables via `.env` (voir « Démarrage »).
 | `POST /payment-intents/{id}/refunds` | ✅ remboursement Paystack idempotent |
 | `GET /payment-intents/{id}/financial-summary` | ✅ captures, frais, remboursements, settlement |
 | `POST /payments/webhooks/paystack` | ✅ signature, inbox, déduplication et outbox |
+| `POST /payments/webhooks/cinetpay` | ✅ notify token, vérification provider, inbox et déduplication |
 | `POST /fund/campaigns/{id}/invest/payment` | ✅ investissement externe par PaymentIntent |
 | `POST /fund/payments/webhooks/diddipay` | ✅ callback signé et idempotent |
 | `GET /wallet/balance` | ✅ |

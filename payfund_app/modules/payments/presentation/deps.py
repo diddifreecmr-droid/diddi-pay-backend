@@ -158,6 +158,7 @@ def get_processor_registry() -> ProcessorRegistry:
                     api_password=settings.cinetpay_api_password,
                     country=settings.cinetpay_country,
                     base_url=settings.cinetpay_base_url or None,
+                    webhook_url=settings.cinetpay_webhook_url or None,
                 ),
                 priority=110,
             )
@@ -211,6 +212,24 @@ def get_paystack_webhook_processor() -> PaystackPaymentProcessor:
 
 PaystackWebhookProcessorDep = Annotated[
     PaystackPaymentProcessor, Depends(get_paystack_webhook_processor)
+]
+
+
+def get_cinetpay_webhook_processor() -> CinetpayPaymentProcessor:
+    settings = get_settings()
+    if not settings.cinetpay_api_key or not settings.cinetpay_api_password:
+        raise Unauthenticated("Webhook CinetPay non configure.")
+    return CinetpayPaymentProcessor(
+        api_key=settings.cinetpay_api_key,
+        api_password=settings.cinetpay_api_password,
+        country=settings.cinetpay_country,
+        base_url=settings.cinetpay_base_url or None,
+        webhook_url=settings.cinetpay_webhook_url or None,
+    )
+
+
+CinetpayWebhookProcessorDep = Annotated[
+    CinetpayPaymentProcessor, Depends(get_cinetpay_webhook_processor)
 ]
 
 

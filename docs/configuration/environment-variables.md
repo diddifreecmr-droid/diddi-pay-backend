@@ -25,6 +25,7 @@ commitées dans le dépôt.
 | `PAWAPAY_PAYOUT_CALLBACK_URL` | Callback PawaPay des payouts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
 | `CINETPAY_API_KEY` / `CINETPAY_API_PASSWORD` | Credentials CinetPay PaymentIntent/Payout | vide | secrets sandbox | secrets production |
 | `CINETPAY_BASE_URL` / `CINETPAY_COUNTRY` | Endpoint et pays CinetPay | auto / `CI` | selon le compte | selon le compte |
+| `CINETPAY_WEBHOOK_URL` | URL HTTPS publique recevant les notifications de paiement CinetPay | vide | `/payfund/v1/payments/webhooks/cinetpay` | URL HTTPS de production |
 | `JEKO_API_KEY` / `JEKO_API_KEY_ID` / `JEKO_STORE_ID` | Credentials et boutique Jèko | vide | store de test approuve | store production |
 | `JEKO_BASE_URL` / `JEKO_WEBHOOK_SECRET` | Endpoint et secret callback Jèko | `https://api.jeko.africa` / vide | selon le compte | selon le compte |
 | `QR_SIGNING_SECRET` | Signature QR | `change-me-in-production` | secret staging | secret fort obligatoire |

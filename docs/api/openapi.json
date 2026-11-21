@@ -7367,6 +7367,45 @@
         ]
       }
     },
+    "/payfund/v1/payments/webhooks/cinetpay": {
+      "post": {
+        "description": "CinetPay notifications are not trusted as payment proof. DiddiPay validates the stored per-payment notify_token, verifies the payment with CinetPay, then applies the normal idempotent inbox and accounting flow.",
+        "operationId": "cinetpay_webhook_payfund_v1_payments_webhooks_cinetpay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "merchant_transaction_id": "00000000-0000-0000-0000-000000000001",
+                "notify_token": "returned-at-payment-initialization",
+                "status": "SUCCESS",
+                "transaction_id": "ER-T-EXAMPLE"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentWebhookResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive and verify a CinetPay payment notification",
+        "tags": [
+          "payment-webhooks"
+        ]
+      }
+    },
     "/payfund/v1/payments/webhooks/paystack": {
       "post": {
         "description": "Provider-only endpoint. DiddiPay verifies X-Paystack-Signature against the exact raw request bytes before parsing or applying the event.",

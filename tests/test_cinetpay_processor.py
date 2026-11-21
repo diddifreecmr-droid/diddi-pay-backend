@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 
@@ -9,6 +10,7 @@ import pytest
 from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
+    ProcessorWebhookRejected,
 )
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
@@ -28,7 +30,7 @@ from payfund_app.modules.payments.infra.cinetpay_processor import (
 _TOKEN_OK = {"code": 0, "status": "OK", "data": {"access_token": "jwt-test"}}
 
 
-def processor(handler, *, login_response=None, api_key="sk_test_abc"):
+def processor(handler, *, login_response=None, api_key="sk_test_abc", webhook_url=None):
     """Build a processor whose MockTransport auto-answers /v1/oauth/login with a token and
     routes everything else to `handler`. `login_response` overrides the login reply."""
     logins = {"count": 0}
@@ -46,6 +48,7 @@ def processor(handler, *, login_response=None, api_key="sk_test_abc"):
         api_key=api_key,
         api_password="pwd-not-real",
         base_url="https://api.cinetpay.net",
+        webhook_url=webhook_url,
         client=client,
     )
     proc._test_login_count = logins  # type: ignore[attr-defined]
@@ -201,6 +204,33 @@ def test_initialize_success_maps_to_requires_action_redirect():
     assert result.provider_reference == str(attempt_id)
     assert result.next_action.type == NextActionType.REDIRECT
     assert result.next_action.url == "https://secure.cinetpay.net/checkout/ptk"
+    assert result.provider_metadata["notify_token_sha256"] == hashlib.sha256(
+        b"ntk"
+    ).hexdigest()
+    assert result.provider_metadata["transaction_id"] == "cp-1"
+
+
+def test_initialize_uses_dedicated_notify_url_when_configured():
+    captured = {}
+
+    def handler(http_request):
+        captured["body"] = json.loads(http_request.content)
+        return httpx.Response(
+            200,
+            json={
+                "payment_url": "https://secure.cinetpay.net/checkout/ptk",
+                "notify_token": "ntk",
+            },
+        )
+
+    processor(
+        handler,
+        webhook_url="https://pay-api-staging.diddifree.com/payfund/v1/payments/webhooks/cinetpay",
+    ).initialize_payment(request())
+    assert captured["body"]["notify_url"] == (
+        "https://pay-api-staging.diddifree.com/payfund/v1/payments/webhooks/cinetpay"
+    )
+    assert captured["body"]["success_url"] == request().callback_url
 
 
 def test_initialize_is_idempotent_on_retry_same_attempt_id():
@@ -291,7 +321,8 @@ def test_verify_payment_success():
     assert result.status == AttemptStatus.SUCCEEDED
     assert result.amount == 5000
     assert result.currency == "XOF"
-    assert result.provider_reference == "cp-1"
+    assert result.provider_reference == "merch-1"
+    assert result.provider_metadata["transaction_id"] == "cp-1"
 
 
 def test_verify_payment_pending_is_processing():
@@ -318,7 +349,8 @@ def test_verify_payment_initiated_unpaid_is_processing():
 
     result = processor(handler).verify_payment("merch-x")
     assert result.status == AttemptStatus.PROCESSING
-    assert result.provider_reference == "cp-x"
+    assert result.provider_reference == "merch-x"
+    assert result.provider_metadata["transaction_id"] == "cp-x"
     assert result.provider_status == "initiated"
 
 
@@ -473,6 +505,49 @@ def test_refund_payment_not_implemented():
         processor(lambda r: httpx.Response(200)).refund_payment(req)
 
 
-def test_parse_webhook_not_implemented():
-    with pytest.raises(NotImplementedError, match="BCEAO"):
-        processor(lambda r: httpx.Response(200)).parse_webhook(b"{}", {})
+def test_parse_webhook_validates_token_and_verifies_canonical_status():
+    def handler(http_request):
+        assert http_request.url.path == "/v1/payment/merch-1"
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "status": "SUCCESS",
+                    "transaction_id": "cp-1",
+                    "amount": "5000",
+                    "currency": "XOF",
+                },
+            },
+        )
+
+    raw = json.dumps(
+        {
+            "notify_token": "ntk",
+            "merchant_transaction_id": "merch-1",
+            "transaction_id": "cp-1",
+            "status": "FAILED",  # ignored; verification says SUCCESS
+        }
+    ).encode()
+    result = processor(handler).parse_webhook(
+        raw,
+        {},
+        expected_notify_token_hash=hashlib.sha256(b"ntk").hexdigest(),
+    )
+    assert result.status == AttemptStatus.SUCCEEDED
+    assert result.provider_reference == "merch-1"
+    assert result.amount == 5000
+    assert result.event_key == "payment:cp-1:success"
+    assert result.sanitized_payload["reported_status"] == "FAILED"
+
+
+def test_parse_webhook_rejects_missing_stored_token():
+    raw = json.dumps(
+        {
+            "notify_token": "ntk",
+            "merchant_transaction_id": "merch-1",
+            "transaction_id": "cp-1",
+        }
+    ).encode()
+    with pytest.raises(ProcessorWebhookRejected, match="notify_token"):
+        processor(lambda r: httpx.Response(200)).parse_webhook(raw, {})

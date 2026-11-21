@@ -239,6 +239,7 @@ class PaymentUseCases:
         attempt.next_action = result.next_action
         attempt.failure_code = result.failure_code
         attempt.failure_message = result.failure_message
+        attempt.provider_metadata.update(result.provider_metadata)
         attempt.transition_to(result.status)
         targets = {
             AttemptStatus.REQUIRES_ACTION: PaymentIntentStatus.REQUIRES_ACTION,
