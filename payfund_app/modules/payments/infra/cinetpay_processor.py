@@ -143,10 +143,9 @@ class CinetpayPaymentProcessor:
         # No REFUND: CinetPay v1 has no refund endpoint.
         directions=frozenset({PaymentDirection.COLLECTION, PaymentDirection.PAYOUT}),
         channels=frozenset({"mobile_money"}),
-        # Empty, like Paystack: the hosted Payment Page lets the payer pick the network, and
-        # declaring networks nobody else declares (e.g. wave) would hijack real traffic via
-        # the "dedicated processor" preference -- the exact trap the handoff warns about.
-        # Payout network restrictions are enforced inside create_payout instead.
+        # Empty: the hosted Payment Page lets the payer pick the network. The selected
+        # processor is controlled by PAYMENT_PROCESSOR_MODE or the request override; payout
+        # network restrictions are enforced inside create_payout instead.
         networks=frozenset(),
     )
 

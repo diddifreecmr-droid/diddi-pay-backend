@@ -31,6 +31,7 @@ Idempotency-Key: <cle stable par versement>
 ```json
 {
   "business_reference": "diddifood:order:order-42:restaurant-payout:v1",
+  "processor": "pawapay",
   "beneficiary_reference": "restaurant:rest-7",
   "beneficiary_destination": {
     "type": "mobile_money",
@@ -72,9 +73,10 @@ Reponse `201` :
 }
 ```
 
-`processor` est informatif (observabilite, debug) - **aucun appelant ne doit jamais router
-ou valider sur cette valeur**. Elle peut changer d'un payout a l'autre, meme pour deux
-appels identiques, sans que le contrat ci-dessus change.
+`processor` est optionnel dans la requete. S'il est absent, DiddiPay utilise strictement
+`PAYMENT_PROCESSOR_MODE`. S'il est present, il devient le processeur explicite de ce payout.
+La valeur retournee est le processeur effectivement utilisee et est utile pour l'audit ; les
+modules ne doivent pas construire leur logique metier autour d'un nom de PSP.
 
 ## `beneficiary_destination` - agnostique au rail
 
@@ -85,8 +87,8 @@ discriminant. Un seul type existe aujourd'hui :
 {"type": "mobile_money", "phone": "+2250700000789", "network": "mtn"}
 ```
 
-`network` est une chaine libre (`mtn`, `orange`, `moov`, ...) - DiddiPay ne la valide pas a
-ce niveau, elle est interpretee par le processeur reellement choisi en interne.
+`network` est une chaine libre (`mtn`, `orange`, `moov`, ...). DiddiPay la valide contre les
+capacites du processeur deja choisi ; elle ne declenche jamais un changement automatique de PSP.
 
 **Ce qui est garanti rester stable :**
 
@@ -100,10 +102,10 @@ ce niveau, elle est interpretee par le processeur reellement choisi en interne.
   particulier est disponible, ce sera via une capacite exposee par DiddiPay (a definir si
   le besoin se presente), pas en inspectant `processor`.
 
-**Pourquoi ce choix** : en interne, DiddiPay route chaque payout vers un processeur reel en
-fonction de `type`/`network`, via une mise en correspondance de capacites (quel processeur
-sait traiter quel type/reseau), pas via un routage code en dur par module appelant. Ajouter
-un processeur = ajouter une classe et sa declaration de capacites, cote DiddiPay uniquement.
+**Pourquoi ce choix** : le module appelant choisit au besoin un processeur explicite ; sinon la
+configuration serveur `PAYMENT_PROCESSOR_MODE` fixe la politique par defaut. Les capacites du
+processeur choisi valident ensuite `type`/`network`. Ajouter un processeur = ajouter une classe et
+sa declaration de capacites, cote DiddiPay uniquement, sans changer le contrat metier.
 
 ## Ce qui n'est PAS encore vrai (limites actuelles)
 

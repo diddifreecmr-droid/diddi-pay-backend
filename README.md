@@ -254,7 +254,12 @@ Les deux variables ne pilotent pas le même périmètre :
 - `PAYMENT_GATEWAY_MODE` choisit le connecteur du **wallet legacy** (`stub`, `paystack` ou
   `pawapay`).
 - `PAYMENT_PROCESSOR_MODE` choisit le processeur du nouvel orchestrateur **PaymentIntent/Payout**
-  (`sandbox`, `paystack` ou `pawapay`).
+  (`sandbox`, `paystack`, `pawapay`, `cinetpay` ou `jeko`).
+
+`PAYMENT_PROCESSOR_MODE` est le choix strict par defaut. Un appel PaymentIntent ou Payout peut
+envoyer le champ `processor` pour choisir explicitement un autre processeur configure. Le champ
+`network` ne provoque jamais de bascule automatique : il valide seulement que le processeur
+choisi est compatible.
 
 Pour utiliser PawaPay en sandbox dans le nouvel orchestrateur, injecter dans les variables du
 conteneur API et du worker :

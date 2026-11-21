@@ -684,6 +684,20 @@
             ],
             "title": "Payer User Id"
           },
+          "processor": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional processor override; otherwise PAYMENT_PROCESSOR_MODE is used",
+            "title": "Processor"
+          },
           "return_target": {
             "anyOf": [
               {
@@ -758,6 +772,20 @@
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
+          },
+          "processor": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional processor override; otherwise PAYMENT_PROCESSOR_MODE is used",
+            "title": "Processor"
           }
         },
         "required": [

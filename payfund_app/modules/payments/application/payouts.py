@@ -39,6 +39,7 @@ class CreatePayoutCommand:
     amount: int
     currency: str
     idempotency_key: str
+    processor: str | None = None
     # {"type": "mobile_money", "phone": ..., "network": ...} today; other types added later
     # without touching this command or any caller. None outside local/test.
     beneficiary_destination: dict[str, Any] | None = None
@@ -49,6 +50,7 @@ class CreatePayoutCommand:
             {
                 "client_id": self.client_id,
                 "business_reference": self.business_reference,
+                "processor": self.processor,
                 "beneficiary_reference": self.beneficiary_reference,
                 "beneficiary_destination": self.beneficiary_destination,
                 "amount": self.amount,
@@ -81,12 +83,14 @@ class PayoutUseCases:
         uow: UnitOfWorkPort,
         accounting=None,
         allow_simulated_payouts: bool = False,
+        default_processor: str | None = None,
     ) -> None:
         self.payouts = payouts
         self.outbox = outbox
         self.processors = processors
         self.uow = uow
         self.accounting = accounting
+        self.default_processor = default_processor
         # Safe by default: a caller must explicitly opt in (local/test only, see
         # payout_router._use_cases) before a payout is allowed to resolve to a processor that
         # reports SUCCEEDED without ever moving real money (SandboxPaymentProcessor today --
@@ -99,10 +103,9 @@ class PayoutUseCases:
         if existing:
             return self._idempotent_view(existing, fingerprint)
 
-        # Routing is derived from the destination, never hardcoded to a provider: a
-        # mobile_money destination's "channel"/"network" are the same generic hints
-        # InitializePaymentRequest already uses for collections. A processor that doesn't
-        # recognise a given type/network simply never matches -- see ProcessorCapabilities.
+        # The configured mode is the policy default. A request-level processor is the only
+        # override. The destination network validates the selected processor's capability; it
+        # never silently switches to another processor.
         destination = command.beneficiary_destination or {}
         channel = destination.get("type")
         network = destination.get("network")
@@ -111,6 +114,7 @@ class PayoutUseCases:
             direction=PaymentDirection.PAYOUT,
             channel=channel,
             network=network,
+            preferred_processor=command.processor or self.default_processor,
         )
         if processor.name in SIMULATED_PROCESSOR_NAMES and not self.allow_simulated_payouts:
             raise ProcessorRoutingError(

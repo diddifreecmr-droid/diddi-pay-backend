@@ -361,8 +361,8 @@ Autorisation explicite reçue. Adaptateur écrit sur le modèle de `pawapay_proc
 
 - **`payfund_app/modules/payments/infra/jeko_processor.py`** — `JekoPaymentProcessor`.
   - Capacités : `currencies={XOF}`, `directions={COLLECTION, PAYOUT}` (**pas REFUND**),
-    `channels={mobile_money}`, `networks=frozenset()` (vide → ne détourne aucun réseau dédié ;
-    le réseau exact est mappé à l'init/payout : `{orange,wave,mtn,moov,djamo}` → `paymentMethod`).
+    `channels={mobile_money}`, `networks=frozenset()` (le réseau exact est validé et mappé après
+    la sélection explicite ou configurée : `{orange,wave,mtn,moov,djamo}` → `paymentMethod`).
   - Collecte : `POST /partner_api/payment_requests` → `redirectUrl` → `NextActionType.REDIRECT`
     (identique Paystack). `amountCents = XOF × 100`. `reference = dpi_{attempt_id.hex}`.
     `provider_reference` = l'`id` Jèko renvoyé.
@@ -376,8 +376,9 @@ Autorisation explicite reçue. Adaptateur écrit sur le modèle de `pawapay_proc
 - **`core/config.py`** : `jeko_api_key`, `jeko_api_key_id`, `jeko_store_id`,
   `jeko_base_url` (défaut `https://api.jeko.africa`), `jeko_webhook_secret`.
 - **`presentation/deps.py::get_processor_registry()`** : enregistré **si** les 3 clés sont
-  présentes (key + key_id + store_id), **priorité 120** (après Paystack 100 / CinetPay 110 →
-  jamais auto-sélectionné devant l'existant ; utilisé sur sélection explicite ou en repli).
+  présentes (key + key_id + store_id). Les routes API utilisent Jèko uniquement si
+  `PAYMENT_PROCESSOR_MODE=jeko` ou si le champ `processor=jeko` est envoyé explicitement ;
+  il n'est jamais choisi automatiquement selon le réseau.
 - **Tests** : `tests/test_jeko_processor.py` (27) + 2 cas de registry dans
   `tests/test_payment_processor_registry_deps.py`. **Suite complète : 473 passent.**
 - **Re-vérifié en direct** (pas que les mocks) : le vrai `JekoPaymentProcessor` contre
