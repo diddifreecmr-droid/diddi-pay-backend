@@ -189,9 +189,10 @@ Pays cible confirmé : **CI**.
 - Collecte → `payment_url` → `NextActionType.REDIRECT`. **channel envoyé = `ALL`** (voir §10).
 - `refund_payment` → `NotImplementedError` (pas d'API). `parse_webhook` → `NotImplementedError` (BCEAO).
 - Enregistré dans `presentation/deps.py::get_processor_registry()`, conditionné par
-  `CINETPAY_API_KEY` **et** `CINETPAY_API_PASSWORD`, **priorité 110** (sous Paystack 100 /
-  PawaPay 50 → jamais choisi par défaut, utilisé sur sélection explicite ou en repli payout
-  Wave). `networks` vide → ne détourne aucun réseau dédié d'un autre processeur.
+  `CINETPAY_API_KEY` **et** `CINETPAY_API_PASSWORD`. La priorité ne sert qu'aux appelants
+  internes qui demanderaient un fallback au registre ; les routes API utilisent strictement
+  `PAYMENT_PROCESSOR_MODE` ou le champ `processor` explicite. `networks` vide signifie que
+  CinetPay accepte la validation de réseau sans provoquer de changement automatique de PSP.
 - Config : `cinetpay_api_key/_api_password/_base_url/_country` dans `core/config.py`.
 - Tests : `tests/test_cinetpay_processor.py` (28 tests). Suite complète : **444 passent**.
 - `DiddiPay_Contrat_API.md` / payouts contract : **inchangés** — le comportement visible
@@ -267,9 +268,10 @@ Le code est livré sur la branche `cinet-pay`. Pour rendre CinetPay réellement 
 2. **Variables d'env** du stack (sinon le processeur ne s'enregistre pas) :
    `CINETPAY_API_KEY` (`sk_test_…`/`sk_live_…`, base URL auto-détectée), `CINETPAY_API_PASSWORD`,
    `CINETPAY_COUNTRY=CI`.
-3. **Routage** : CinetPay est en priorité 110 et `networks` vide → **jamais choisi par défaut**.
-   Pour qu'il serve les collectes, poser `PAYMENT_PROCESSOR_MODE=cinetpay` (il devient le
-   collecteur par défaut ; PawaPay garde ses rails dédiés mtn/orange/moov s'il est configuré).
+3. **Routage** : pour qu'il serve les collectes et payouts par défaut, poser
+   `PAYMENT_PROCESSOR_MODE=cinetpay`. Un appel peut aussi envoyer `processor=cinetpay` pour
+   une seule opération. PawaPay ne remplace plus CinetPay automatiquement selon le réseau ;
+   il faut le sélectionner par le mode ou par le champ explicite.
    **Décision opérateur au 2026-10-19 : PAS encore collecteur par défaut** — on laisse le mode
    actuel, CinetPay reste inactif jusqu'à décision contraire.
 4. **IP + compte** : whitelister l'IP de sortie du serveur de **prod** (staging `169.58.70.37`

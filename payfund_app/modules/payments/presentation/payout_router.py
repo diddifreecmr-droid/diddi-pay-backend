@@ -53,6 +53,7 @@ def _use_cases(session, processors) -> PayoutUseCases:
         SqlAlchemyUnitOfWork(session),
         PayoutAccountingService(FinancialLedgerRepository(session)),
         allow_simulated_payouts=get_settings().deployment_environment in {"local", "test"},
+        default_processor=get_settings().payment_processor_mode,
     )
 
 

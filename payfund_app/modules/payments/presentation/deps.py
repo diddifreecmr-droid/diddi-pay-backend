@@ -111,8 +111,9 @@ def get_processor_registry() -> ProcessorRegistry:
     (`ProcessorRegistry.get(attempt.processor)`) for any attempt created under a different mode
     than whatever this process currently has — including across the app/worker process split,
     since each builds its own registry independently. `PAYMENT_PROCESSOR_MODE` still controls
-    which processor *new* intents prefer (see `PaymentUseCases.default_processor` /
-    `preferred_processor`); it no longer gates what gets registered.
+    which processor new operations use by default (see `PaymentUseCases.default_processor` /
+    and `PayoutUseCases.default_processor`); a request-level `processor` may explicitly override
+    that default. It no longer gates what gets registered.
     """
     global _registry
     if _registry is None:
@@ -136,9 +137,8 @@ def get_processor_registry() -> ProcessorRegistry:
             )
         # Shares the same PawaPay sandbox/live credentials as the legacy wallet
         # (wallet/infra/pawapay_gateway.py) -- same account, two independent adapters.
-        # Priority 50 (< Paystack's default 100) so capability-based auto-selection prefers
-        # the direct mtn/orange/moov rail over Paystack's hosted mobile-money checkout when
-        # no preferred_processor forces otherwise -- see PaymentUseCases.create().
+        # Keep a priority for registry fallback callers, but API operations always provide the
+        # configured default or an explicit request-level processor.
         if settings.pawapay_api_token:
             _registry.register(
                 PawapayPaymentProcessor(
@@ -149,12 +149,8 @@ def get_processor_registry() -> ProcessorRegistry:
             )
         # CinetPay v1 (hosted Payment Page -> REDIRECT, + mobile-money payouts incl. Wave).
         # Needs BOTH the api_key and the api_password; an api_key alone can't authenticate.
-        # Priority 110 (> Paystack's 100 = lower precedence) so auto-selection keeps
-        # preferring the existing default; cinetpay is used when explicitly chosen via
-        # preferred_processor, or as the payout fallback for a network the direct rails
-        # (pawapay mtn/orange/moov) don't cover -- e.g. Wave. Empty capability.networks means
-        # it never hijacks another processor's dedicated network (see SIMULATED_PROCESSOR_NAMES
-        # rationale in processor_router.py).
+        # Keep a priority for registry fallback callers. API operations use CinetPay only when
+        # PAYMENT_PROCESSOR_MODE=cinetpay or processor=cinetpay is sent explicitly.
         if settings.cinetpay_api_key and settings.cinetpay_api_password:
             _registry.register(
                 CinetpayPaymentProcessor(
@@ -167,11 +163,8 @@ def get_processor_registry() -> ProcessorRegistry:
             )
         # Jèko (hosted payment page -> REDIRECT, + mobile-money payouts incl. Wave). Needs all
         # three of api_key + api_key_id + store_id; a key alone can't authenticate and no call
-        # works without a store_id. Priority 120 (> Paystack 100, > CinetPay 110 = lowest
-        # precedence) so capability-based auto-selection keeps preferring the existing
-        # processors; jeko is used when explicitly chosen via preferred_processor, or as a
-        # payout fallback. Empty capability.networks means it never hijacks another processor's
-        # dedicated network (see SIMULATED_PROCESSOR_NAMES rationale in processor_router.py).
+        # works without a store_id. API operations use Jèko only when
+        # PAYMENT_PROCESSOR_MODE=jeko or processor=jeko is sent explicitly.
         if (
             settings.jeko_api_key
             and settings.jeko_api_key_id

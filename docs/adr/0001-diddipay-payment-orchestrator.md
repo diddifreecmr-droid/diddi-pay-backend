@@ -38,7 +38,9 @@ are operational details and are not business identifiers for consuming modules.
 
 1. A trusted module creates a PaymentIntent with an idempotency key and its business reference.
 2. DiddiPay persists the intent before contacting a processor.
-3. The processor router selects an adapter compatible with currency, direction, and channel.
+3. DiddiPay uses the request `processor` override when present, otherwise the configured
+   `PAYMENT_PROCESSOR_MODE`; capabilities validate currency, direction, channel, and network
+   without silently switching to another processor.
 4. Each processor call creates a separate PaymentAttempt.
 5. DiddiPay returns a provider-neutral `next_action` to the caller.
 6. Provider webhooks enter a durable inbox and are processed idempotently.

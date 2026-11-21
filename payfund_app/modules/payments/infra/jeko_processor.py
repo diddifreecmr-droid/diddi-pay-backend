@@ -95,10 +95,9 @@ class JekoPaymentProcessor:
         currencies=frozenset({"XOF"}),
         directions=frozenset({PaymentDirection.COLLECTION, PaymentDirection.PAYOUT}),
         channels=frozenset({"mobile_money"}),
-        # Hosted page / per-network init -- empty networks means Jèko never becomes the
-        # "dedicated handler" that hijacks another processor's traffic (same rationale as
-        # CinetPay; see SIMULATED_PROCESSOR_NAMES in processor_router.py). The exact network
-        # is still required and mapped at initialize_payment/create_payout time.
+        # Hosted page / per-network init -- empty networks means the exact network is validated
+        # and mapped at initialize_payment/create_payout time, after the caller or configured
+        # mode has selected Jèko.
         networks=frozenset(),
     )
 

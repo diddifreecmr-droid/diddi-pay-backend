@@ -188,12 +188,10 @@ def _processor_for(session, intent_id) -> str:
     )
 
 
-def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
+def test_payment_processor_mode_is_strict_and_explicit_processor_overrides(
     monkeypatch, client, session
 ):
-    """Regression for the dispatch bug: PAYMENT_PROCESSOR_MODE=paystack must not force
-    Paystack onto a network pawapay explicitly declares (mtn/orange/moov) -- the dedicated
-    processor for that network wins. card still goes to Paystack, unaffected."""
+    """The configured processor stays authoritative; a request may explicitly override it."""
     monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "paystack")
     monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_not_a_real_secret")
     monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
@@ -203,11 +201,21 @@ def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
     def pawapay_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"redirectUrl": "https://paywith.pawapay.io/v2?x"})
 
-    def unreached_paystack(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("mtn_momo must not reach Paystack")
+    def paystack_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {
+                    "authorization_url": "https://checkout.paystack.test/mtn",
+                    "access_code": "abc",
+                    "reference": "dpi_reference",
+                },
+            },
+        )
 
     _mock_outbound(
-        monkeypatch, paystack_handler=unreached_paystack, pawapay_handler=pawapay_handler
+        monkeypatch, paystack_handler=paystack_handler, pawapay_handler=pawapay_handler
     )
 
     mobile_money_key = f"dispatch-mtn-{uuid.uuid4()}"
@@ -221,62 +229,68 @@ def test_mobile_money_mtn_routes_to_pawapay_despite_paystack_default_mode(
             "channel": "mobile_money",
             "network": "mtn",
             "customer_phone": "+2250503456789",
+            "customer_email": "payer@example.test",
             "callback_url": "https://go.diddifree.com/payments/return",
         },
     )
 
     assert response.status_code == 201
-    assert _processor_for(session, response.json()["id"]) == "pawapay"
+    assert _processor_for(session, response.json()["id"]) == "paystack"
 
-    deps.reset_processor_registry()
-
-    def unreached_pawapay(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("card must not reach pawapay")
-
-    def paystack_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "status": True,
-                "data": {
-                    "authorization_url": "https://checkout.paystack.test/abc",
-                    "access_code": "abc",
-                    "reference": "dpi_reference",
-                },
-            },
-        )
-
-    _mock_outbound(
-        monkeypatch, paystack_handler=paystack_handler, pawapay_handler=unreached_pawapay
-    )
-
-    card_key = f"dispatch-card-{uuid.uuid4()}"
-    card_response = client.post(
+    override_key = f"dispatch-mtn-pawapay-{uuid.uuid4()}"
+    override_response = client.post(
         BASE,
-        headers={**HEADERS, "Idempotency-Key": card_key},
+        headers={**HEADERS, "Idempotency-Key": override_key},
         json={
-            "business_reference": f"ride:{card_key}",
+            "business_reference": f"ride:{override_key}",
             "amount": 5_000,
             "currency": "XOF",
-            "channel": "card",
-            "customer_email": "payer@example.test",
+            "channel": "mobile_money",
+            "network": "mtn",
+            "processor": "pawapay",
+            "customer_phone": "+2250503456789",
+            "callback_url": "https://go.diddifree.com/payments/return",
         },
     )
 
-    assert card_response.status_code == 201
-    assert _processor_for(session, card_response.json()["id"]) == "paystack"
+    assert override_response.status_code == 201
+    assert _processor_for(session, override_response.json()["id"]) == "pawapay"
+
+
+def test_explicit_processor_network_mismatch_is_not_rerouted(
+    monkeypatch, client, session
+):
+    monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "paystack")
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_not_a_real_secret")
+    monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
+    get_settings.cache_clear()
+    deps.reset_processor_registry()
+
+    def unreached(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("an incompatible processor must fail before an outbound call")
+
+    _mock_outbound(monkeypatch, paystack_handler=unreached, pawapay_handler=unreached)
+    key = f"dispatch-wave-pawapay-{uuid.uuid4()}"
+    response = client.post(
+        BASE,
+        headers={**HEADERS, "Idempotency-Key": key},
+        json={
+            "business_reference": f"remittance:{key}",
+            "amount": 835,
+            "currency": "XOF",
+            "channel": "mobile_money",
+            "network": "wave",
+            "processor": "pawapay",
+            "customer_phone": "+2250503456789",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "PAYMENT_METHOD_UNAVAILABLE"
 
 
 def test_wave_routes_to_paystack_not_sandbox(monkeypatch, client, session):
-    """Regression found via a real staging DiddiSend request: network=wave landed on
-    SandboxPaymentProcessor's fake sandbox.diddipay.local checkout instead of Paystack, in a
-    real staging environment with real PAYSTACK_SECRET_KEY configured. Root cause: Sandbox
-    declares networks={"orange","wave","mtn"} for local/dev convenience, and the
-    dedicated-processor-wins dispatch (built so PawaPay beats Paystack's default for
-    mtn/orange/moov) only checked "does some processor explicitly declare this network" --
-    Sandbox qualified for wave since no real processor does, hijacking it ahead of Paystack's
-    generic (empty-networks) fallback. PawaPay is registered here too, to prove it staying
-    silent on wave doesn't change the outcome."""
+    """A network must not override the configured PaymentIntent processor."""
     monkeypatch.setenv("PAYMENT_PROCESSOR_MODE", "paystack")
     monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_not_a_real_secret")
     monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
@@ -322,10 +336,7 @@ def test_wave_routes_to_paystack_not_sandbox(monkeypatch, client, session):
 
 
 def test_mobile_money_payout_routes_to_pawapay(monkeypatch, client):
-    """End-to-end: a real beneficiary_destination (mobile_money/mtn) now resolves to the
-    real PawaPay processor instead of 422 PAYOUT_METHOD_UNAVAILABLE -- proves the generic
-    destination dict actually reaches ProcessorCapabilities-based routing for payouts too,
-    not just collections."""
+    """A payout can explicitly override the configured default processor."""
     monkeypatch.setenv("PAWAPAY_API_TOKEN", "sandbox-token-not-real")
     get_settings.cache_clear()
     deps.reset_processor_registry()
@@ -350,6 +361,7 @@ def test_mobile_money_payout_routes_to_pawapay(monkeypatch, client):
         },
         json={
             "business_reference": f"diddifood:order:{payout_key}:restaurant-payout:v1",
+            "processor": "pawapay",
             "beneficiary_reference": "restaurant:rest-7",
             "beneficiary_destination": {
                 "type": "mobile_money",

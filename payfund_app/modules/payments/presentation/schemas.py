@@ -13,6 +13,12 @@ class CreatePaymentIntentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     business_reference: str = Field(min_length=1, max_length=128)
+    processor: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+        description="Optional processor override; otherwise PAYMENT_PROCESSOR_MODE is used",
+    )
     amount: int = Field(gt=0, description="Positive amount; for XOF, 5000 means 5,000 XOF")
     currency: Literal["XOF"] = "XOF"
     payer_user_id: uuid.UUID | None = None
@@ -175,6 +181,12 @@ class CreatePayoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     business_reference: str = Field(min_length=1, max_length=128)
+    processor: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+        description="Optional processor override; otherwise PAYMENT_PROCESSOR_MODE is used",
+    )
     beneficiary_reference: str = Field(min_length=1, max_length=128)
     # Where the money actually goes -- distinct from beneficiary_reference (the opaque
     # business identity, e.g. a restaurant UUID). None outside local/test, where payouts

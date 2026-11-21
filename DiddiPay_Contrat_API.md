@@ -117,6 +117,7 @@ Corps :
 ```json
 {
   "business_reference": "ride:42",
+  "processor": "paystack",
   "amount": 5000,
   "currency": "XOF",
   "payer_user_id": "7c7df66d-7345-4aa7-b818-31cd91955d5b",
@@ -138,17 +139,25 @@ Champs :
 | Champ | Requis | Regle |
 |---|---:|---|
 | `business_reference` | oui | Reference stable de l'objet dans le module, 1 a 128 caracteres |
+| `processor` | non | Processeur explicite (`paystack`, `pawapay`, `cinetpay`, `jeko`, `sandbox`) ; sinon `PAYMENT_PROCESSOR_MODE` |
 | `amount` | oui | Entier strictement positif |
 | `currency` | oui | `XOF` pour le MVP |
 | `payer_user_id` | non | UUID DiddiFreeID du payeur |
 | `payee_user_id` | non | UUID DiddiFreeID du beneficiaire si connu |
 | `channel` | non | `mobile_money` ou `card` |
-| `network` | non | `orange`, `wave` ou `mtn` ; indication de routage, pas garantie d'affichage PSP |
+| `network` | non | `orange`, `wave` ou `mtn` ; contrainte de compatibilite du processeur choisi |
 | `customer_email` | Paystack | Requis par le checkout Paystack actuel |
 | `customer_phone` | non | Telephone normalise, maximum 32 caracteres |
 | `return_target` | PawaPay mobile money | Nom d'une destination de retour configuree cote serveur, par exemple `app` |
 | `description` | non | Libelle lisible, maximum 255 caracteres |
 | `metadata` | non | Contexte metier JSON non sensible |
+
+`processor` est absent dans la plupart des appels : DiddiPay utilise alors strictement la valeur
+de `PAYMENT_PROCESSOR_MODE`. Si le module envoie `processor`, cette valeur devient le choix
+explicite pour cette requete, a condition que le processeur soit configure et supporte la devise,
+le sens, le canal et le reseau demandes. `network` ne selectionne jamais un autre processeur.
+En cas d'incompatibilite, DiddiPay renvoie `PAYMENT_METHOD_UNAVAILABLE` sans appeler un PSP de
+substitution.
 
 Le module ne fournit jamais une URL arbitraire. Les cibles sont configurees dans
 `PAYMENT_CHECKOUT_RETURN_TARGETS` avec une cle `<client_id>:<return_target>`. Le retour navigateur
@@ -156,9 +165,10 @@ n'est pas une preuve de paiement : seul le statut DiddiPay, alimente par webhook
 fait foi. `callback_url` reste temporairement documente comme deprecie pour la migration staging et
 doit etre desactive en production avec `PAYMENT_CALLBACK_URL_FALLBACK_ENABLED=false`.
 
-Pour `channel=mobile_money` avec `network` dans `mtn`/`orange`/`moov` (route PawaPay), l'un des
-deux (`return_target` ou `callback_url`) est desormais obligatoire : PawaPay route ces collections
-via sa Payment Page hebergee, qui exige une URL de retour reelle. Omettre les deux ne bloque pas la
+Lorsque le processeur choisi est PawaPay et que `channel=mobile_money` avec `network` dans
+`mtn`/`orange`/`moov`, l'un des deux (`return_target` ou `callback_url`) est desormais obligatoire :
+PawaPay route ces collections via sa Payment Page hebergee, qui exige une URL de retour reelle.
+Omettre les deux ne bloque pas la
 creation (toujours `201`) mais fait echouer la tentative immediatement : intent `status=failed`,
 `attempts[0].failure_code=PROCESSOR_REQUEST_REJECTED`, message `callback_url is required by
 pawapay's Payment Page`. Paystack reste insensible a cette contrainte (son propre retour par defaut
