@@ -170,6 +170,7 @@ Reponse `201 Created` :
 {
   "id": "dcd7b1f8-7f28-4a88-a909-e0eae3fa7d84",
   "client_id": "diddigo",
+  "processor": "paystack",
   "business_reference": "ride:42",
   "amount": 5000,
   "currency": "XOF",
@@ -193,6 +194,7 @@ Reponse `201 Created` :
   "attempts": [
     {
       "id": "b0198fb9-d36d-4395-9225-76c686739264",
+      "processor": "paystack",
       "status": "requires_action",
       "channel": "mobile_money",
       "network": "orange",
@@ -217,9 +219,16 @@ Reponse `201 Created` :
 `provider_status`, `failure_code` et `failure_message` au niveau du `PaymentIntent` reprennent
 la derniere tentative. Ils permettent au module appelant de traiter directement un echec sans
 parcourir `attempts[]`; la meme information reste disponible dans la tentative pour l'audit.
+`processor` indique le connecteur effectivement selectionne pour la derniere tentative. Ce champ
+est informatif et ne doit pas etre utilise par un module metier pour choisir un parcours : le
+module appelle DiddiPay via le contrat PaymentIntent, quelle que soit l'implementation PSP.
 Une initialisation provider rejetee reste une creation HTTP `201` : le `PaymentIntent` est bien
 cree, mais sa reponse porte `status=failed` et les details d'echec. Une enveloppe HTTP `error`
 est reservee aux erreurs de contrat DiddiPay (authentification, validation, idempotence, etc.).
+
+Si `PAYMENT_PROCESSOR_MODE=cinetpay` est selectionne sans `CINETPAY_API_KEY` et
+`CINETPAY_API_PASSWORD`, DiddiPay renvoie `503 PROCESSOR_NOT_CONFIGURED` avec la liste des noms
+de variables manquantes. Aucun appel CinetPay n'est alors tente.
 
 ### Idempotence
 

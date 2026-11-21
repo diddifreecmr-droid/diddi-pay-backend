@@ -52,6 +52,7 @@ class NextActionResponse(BaseModel):
 
 class PaymentAttemptResponse(BaseModel):
     id: uuid.UUID
+    processor: str
     status: Literal[
         "pending",
         "requires_action",
@@ -74,6 +75,7 @@ class PaymentAttemptResponse(BaseModel):
 class PaymentIntentResponse(BaseModel):
     id: uuid.UUID
     client_id: str
+    processor: str | None = None
     business_reference: str
     amount: int
     currency: str

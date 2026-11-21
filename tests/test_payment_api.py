@@ -42,10 +42,12 @@ def test_create_payment_intent_returns_provider_neutral_action(client):
     assert response.status_code == 201
     body = response.json()
     assert body["client_id"] == "diddigo"
+    assert body["processor"] == "sandbox"
     assert body["business_reference"] == "ride:42"
     assert body["status"] == "requires_action"
     assert body["next_action"]["type"] == "redirect"
     assert body["attempts"][0]["status"] == "requires_action"
+    assert body["attempts"][0]["processor"] == "sandbox"
     assert body["attempts"][0]["next_action"]["type"] == "redirect"
     assert "provider_reference" not in body["attempts"][0]
 
@@ -84,10 +86,12 @@ def test_create_payment_intent_exposes_provider_failure_details(client):
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "failed"
+    assert body["processor"] == "test-failing-provider"
     assert body["provider_status"] == "invalid_params"
     assert body["failure_code"] == "PROVIDER_REQUEST_REJECTED"
     assert body["failure_message"] == "provider rejected the checkout parameters"
     assert body["attempts"][0]["provider_status"] == "invalid_params"
+    assert body["attempts"][0]["processor"] == "test-failing-provider"
     assert body["attempts"][0]["failure_code"] == "PROVIDER_REQUEST_REJECTED"
     assert body["attempts"][0]["failure_message"] == (
         "provider rejected the checkout parameters"

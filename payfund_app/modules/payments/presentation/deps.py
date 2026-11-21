@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from payfund_app.core.config import get_settings
 from payfund_app.core.database import get_session
-from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.errors import ServiceUnavailable, Unauthenticated
 from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
 from payfund_app.modules.payments.infra.cinetpay_processor import (
@@ -81,6 +81,28 @@ get_payment_payout_writer = _payment_client_dependency("payment_payout_write_sco
 _registry: ProcessorRegistry | None = None
 
 
+def _validate_selected_processor_configuration(settings) -> None:
+    """Fail clearly when an explicitly selected external processor is incomplete."""
+    mode = settings.payment_processor_mode.strip().lower()
+    if mode != "cinetpay":
+        return
+
+    missing = [
+        name
+        for name, value in (
+            ("CINETPAY_API_KEY", settings.cinetpay_api_key),
+            ("CINETPAY_API_PASSWORD", settings.cinetpay_api_password),
+        )
+        if not str(value or "").strip()
+    ]
+    if missing:
+        raise ServiceUnavailable(
+            "CinetPay est selectionne mais sa configuration est incomplete.",
+            code="PROCESSOR_NOT_CONFIGURED",
+            details={"processor": "cinetpay", "missing": missing},
+        )
+
+
 def get_processor_registry() -> ProcessorRegistry:
     """Register every processor that's actually configured, not just the current mode.
 
@@ -94,8 +116,9 @@ def get_processor_registry() -> ProcessorRegistry:
     """
     global _registry
     if _registry is None:
-        _registry = ProcessorRegistry()
         settings = get_settings()
+        _validate_selected_processor_configuration(settings)
+        _registry = ProcessorRegistry()
         # Free, no external credentials — always available so reconciliation can resolve any
         # attempt stamped "sandbox", regardless of the currently configured mode.
         _registry.register(SandboxPaymentProcessor())

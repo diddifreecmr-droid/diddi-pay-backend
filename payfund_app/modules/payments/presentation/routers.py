@@ -81,6 +81,7 @@ def _response(view: PaymentView) -> PaymentIntentResponse:
         attempts.append(
             PaymentAttemptResponse(
                 id=attempt.id,
+                processor=attempt.processor,
                 status=str(attempt.status),
                 channel=attempt.channel,
                 network=attempt.network,
@@ -103,6 +104,7 @@ def _response(view: PaymentView) -> PaymentIntentResponse:
     return PaymentIntentResponse(
         id=intent.id,
         client_id=intent.client_id,
+        processor=latest_attempt.processor if latest_attempt else None,
         business_reference=intent.business_reference,
         amount=intent.money.amount,
         currency=intent.money.currency,
