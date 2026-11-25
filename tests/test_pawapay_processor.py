@@ -359,7 +359,7 @@ def test_parse_payout_webhook_verifies_signed_callback(monkeypatch):
     signature_date = str(int(time.time()))
     signature_params = (
         '("@method" "@authority" "@path" "signature-date" "content-digest" "content-type")'
-        f";created={signature_date};expires={int(time.time()) + 300};keyid=\"key-1\""
+        f";alg=\"ecdsa-p256-sha256\";created={signature_date};expires={int(time.time()) + 300};keyid=\"key-1\""
     )
     signature_base = "\n".join(
         [
@@ -400,6 +400,77 @@ def test_parse_payout_webhook_verifies_signed_callback(monkeypatch):
     event = signed_processor.parse_payout_webhook(body, headers)
 
     assert event.status == PayoutStatus.SUCCEEDED
+
+
+def test_parse_payout_webhook_accepts_sha256_signed_callback(monkeypatch):
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    payout_id = str(uuid.uuid4())
+    body = json.dumps(
+        {
+            "payoutId": payout_id,
+            "status": "COMPLETED",
+            "amount": "5000",
+            "currency": "XOF",
+        },
+        separators=(",", ":"),
+    ).encode()
+    callback_url = "https://pay-api-staging.diddifree.com/payfund/v1/webhooks/pawapay/payouts"
+    content_digest = "sha-256=:" + base64.b64encode(hashlib.sha256(body).digest()).decode() + ":"
+    signature_date = str(int(time.time()))
+    signature_params = (
+        '("@method" "@authority" "@path" "signature-date" "content-digest" "content-type")'
+        f";alg=\"ecdsa-p256-sha256\";created={signature_date};expires={int(time.time()) + 300};keyid=\"key-1\""
+    )
+    signature_base = "\n".join(
+        [
+            '"@method": POST',
+            '"@authority": pay-api-staging.diddifree.com',
+            '"@path": /payfund/v1/webhooks/pawapay/payouts',
+            f'"signature-date": {signature_date}',
+            f'"content-digest": {content_digest}',
+            '"content-type": application/json',
+            f'"@signature-params": {signature_params}',
+        ]
+    ).encode()
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    signature = private_key.sign(signature_base, ec.ECDSA(hashes.SHA256()))
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    signed_processor = PawapayPaymentProcessor(
+        api_token="sandbox-token-not-real",
+        base_url="https://api.pawapay.test",
+        callback_url=callback_url,
+        callback_signature_required=True,
+    )
+    monkeypatch.setattr(
+        signed_processor,
+        "_fetch_callback_public_keys",
+        lambda: httpx.Response(200, json=[{"id": "key-1", "key": public_key}]),
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Content-Digest": content_digest,
+        "Signature-Date": signature_date,
+        "Signature-Input": f"sig-pp={signature_params}",
+        "Signature": "sig-pp=:" + base64.b64encode(signature).decode() + ":",
+    }
+
+    event = signed_processor.parse_payout_webhook(body, headers)
+
+    assert event.status == PayoutStatus.SUCCEEDED
+
+
+def test_signed_callback_preserves_trailing_slash_in_callback_url():
+    processor_with_slash = PawapayPaymentProcessor(
+        api_token="sandbox-token-not-real",
+        callback_url="https://example.com/webhook/",
+    )
+
+    assert processor_with_slash.callback_url == "https://example.com/webhook/"
 
 
 def refund_request(**overrides):

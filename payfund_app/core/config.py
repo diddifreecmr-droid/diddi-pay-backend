@@ -125,6 +125,7 @@ class Settings(BaseSettings):
     cinetpay_api_password: str = ""
     cinetpay_base_url: str = ""
     cinetpay_country: str = "CI"
+    cinetpay_webhook_url: str = ""
 
     # Jèko (jeko.africa) Partner API -- hosted payment page -> REDIRECT, + mobile-money
     # payouts incl. Wave. Auth = TWO headers: api_key (`jeko_...`) + api_key_id (its UUID);

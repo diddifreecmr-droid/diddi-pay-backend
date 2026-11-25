@@ -125,6 +125,9 @@ class PaymentAttemptRecord(Base):
     next_action: Mapped[dict | None] = mapped_column(JSONB)
     failure_code: Mapped[str | None] = mapped_column(String(80))
     failure_message: Mapped[str | None] = mapped_column(String(255))
+    provider_metadata: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

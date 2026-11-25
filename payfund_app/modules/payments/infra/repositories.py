@@ -161,6 +161,7 @@ class PaymentAttemptRepository:
                 next_action=_action_to_json(attempt.next_action),
                 failure_code=attempt.failure_code,
                 failure_message=attempt.failure_message,
+                provider_metadata=attempt.provider_metadata,
                 created_at=attempt.created_at,
                 updated_at=attempt.updated_at,
             )
@@ -227,6 +228,7 @@ class PaymentAttemptRepository:
         row.next_action = _action_to_json(attempt.next_action)
         row.failure_code = attempt.failure_code
         row.failure_message = attempt.failure_message
+        row.provider_metadata = attempt.provider_metadata
         row.updated_at = attempt.updated_at
         self.session.flush()
         return attempt
@@ -247,6 +249,7 @@ class PaymentAttemptRepository:
             next_action=_action_from_json(row.next_action),
             failure_code=row.failure_code,
             failure_message=row.failure_message,
+            provider_metadata=row.provider_metadata or {},
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

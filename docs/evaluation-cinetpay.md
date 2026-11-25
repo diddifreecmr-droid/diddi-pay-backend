@@ -114,9 +114,9 @@ sur le compte ». À **vérifier en direct** (via `/v1/balances` puis un paiemen
   comparaison *timing-safe* (`hmac.compare_digest`) entre le `notify_token` qu'on a
   stocké à l'initiation et celui renvoyé dans le webhook. → il faut persister le
   `notify_token` reçu à l'init et le rapprocher à la réception.
-- Non vérifié en pratique (aucun webhook reçu). Comme pour PawaPay, la confirmation
-  passera par `verify_payment`/`verify_payout` + réconciliation (gate conformité BCEAO,
-  SCRUM-555) plutôt que par le webhook dans un premier temps.
+- Le webhook de paiement est maintenant câblé côté DiddiPay : l'empreinte du `notify_token`
+  est persistée sur la tentative, puis la notification déclenche `verify_payment` avant toute
+  transition. Aucun statut, montant ou devise du body entrant n'est utilisé comme preuve.
 
 ## 6. Bornes de montant
 
@@ -187,14 +187,16 @@ Pays cible confirmé : **CI**.
   `channels={mobile_money}`, `networks=frozenset()` (page hébergée = choix du payeur ;
   réseaux payout validés en interne, incl. Wave).
 - Collecte → `payment_url` → `NextActionType.REDIRECT`. **channel envoyé = `ALL`** (voir §10).
-- `refund_payment` → `NotImplementedError` (pas d'API). `parse_webhook` → `NotImplementedError` (BCEAO).
+- `refund_payment` → `NotImplementedError` (pas d'API). Le webhook de paiement est exposé par
+  `POST /payfund/v1/payments/webhooks/cinetpay` et reste complété par la réconciliation.
 - Enregistré dans `presentation/deps.py::get_processor_registry()`, conditionné par
   `CINETPAY_API_KEY` **et** `CINETPAY_API_PASSWORD`. La priorité ne sert qu'aux appelants
   internes qui demanderaient un fallback au registre ; les routes API utilisent strictement
   `PAYMENT_PROCESSOR_MODE` ou le champ `processor` explicite. `networks` vide signifie que
   CinetPay accepte la validation de réseau sans provoquer de changement automatique de PSP.
 - Config : `cinetpay_api_key/_api_password/_base_url/_country` dans `core/config.py`.
-- Tests : `tests/test_cinetpay_processor.py` (28 tests). Suite complète : **444 passent**.
+- Tests : `tests/test_cinetpay_processor.py` (29 tests). Suite complète à rejouer après
+  migration sur la base d'intégration.
 - `DiddiPay_Contrat_API.md` / payouts contract : **inchangés** — le comportement visible
   (REDIRECT) est identique à Paystack, aucun nouveau champ côté appelants.
 - Pas encore poussé/déployé. Ne jamais redéployer soi-même via Portainer.
@@ -256,8 +258,8 @@ un deep-link/QR quel que soit le mode.
 client paye/autorise réellement) et d'un payout (nécessite d'approvisionner le solde sandbox).
 Les endpoints sont prouvés vivants et corrects jusqu'au point de blocage.
 
-**Webhook signature** : toujours non vérifié en pratique (aucun webhook reçu) ; de toute
-façon ce n'est qu'un echo de `notify_token`, confirmation par `verify_*` + réconciliation.
+**Webhook signature** : CinetPay utilise un `notify_token` echo, comparé en temps constant ;
+la confirmation passe toujours par `verify_payment` + réconciliation.
 
 ## 11. Activation / implémentation (à faire par l'opérateur)
 

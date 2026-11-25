@@ -225,6 +225,7 @@ class PaymentAttempt:
     next_action: NextAction | None = None
     failure_code: str | None = None
     failure_message: str | None = None
+    provider_metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
 

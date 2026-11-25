@@ -141,7 +141,9 @@ class PawapayPaymentProcessor:
         self._api_token = api_token
         self._base_url = base_url.rstrip("/")
         self._client = client
-        self.callback_url = callback_url.rstrip("/") if callback_url else None
+        # PawaPay signs the exact callback URL configured in its dashboard. Do not
+        # normalize a trailing slash here: changing the path changes the signature base.
+        self.callback_url = callback_url if callback_url else None
         self._callback_signature_required = callback_signature_required
         self._public_keys_url = public_keys_url or f"{self._base_url}/v2/public-key/http"
         self._public_key_cache: dict[str, tuple[Any, float]] = {}
@@ -636,14 +638,16 @@ class PawapayPaymentProcessor:
         if not callback_url or not signature_input or not signature or not digest:
             raise ProcessorWebhookRejected("pawapay callback signature headers are incomplete")
 
-        expected_digest = base64.b64encode(hashlib.sha512(raw_body).digest()).decode("ascii")
-        digest_match = re.fullmatch(r"sha-512=:([^:]+):", digest)
-        if digest_match is None or not hmac.compare_digest(
-            digest_match.group(1), expected_digest
-        ):
+        digest_match = re.fullmatch(r"sha-(256|512)=:([^:]+):", digest)
+        if digest_match is None:
+            raise ProcessorWebhookRejected("pawapay callback content digest is invalid")
+        digest_algorithm, received_digest = digest_match.groups()
+        digest = hashlib.sha256 if digest_algorithm == "256" else hashlib.sha512
+        expected_digest = base64.b64encode(digest(raw_body).digest()).decode("ascii")
+        if not hmac.compare_digest(received_digest, expected_digest):
             raise ProcessorWebhookRejected("pawapay callback content digest is invalid")
 
-        input_match = re.match(
+        input_match = re.fullmatch(
             r"(?P<label>[A-Za-z0-9_-]+)=(?P<params>\([^)]*\)(?:;[^,]+)?)",
             signature_input,
         )
@@ -651,12 +655,20 @@ class PawapayPaymentProcessor:
             raise ProcessorWebhookRejected("pawapay callback signature-input is invalid")
         label = input_match.group("label")
         signature_params = input_match.group("params")
+        if label != "sig-pp":
+            raise ProcessorWebhookRejected("pawapay callback signature label is invalid")
         components = re.findall(r'"([^"]+)"', signature_params.split(";", 1)[0])
-        required = {"@method", "@authority", "@path", "signature-date", "content-digest"}
+        required = {"@method", "@authority", "@path", "content-digest"}
+        callback_parts = urlsplit(callback_url)
+        if callback_parts.query:
+            required.add("@query")
         if not required.issubset(components):
             raise ProcessorWebhookRejected("pawapay callback signature coverage is incomplete")
+        algorithm_match = re.search(r';alg="([^"]+)"', signature_params)
+        if algorithm_match is None or algorithm_match.group(1) != "ecdsa-p256-sha256":
+            raise ProcessorWebhookRejected("pawapay callback signature algorithm is invalid")
         expires_match = re.search(r";expires=(\d+)", signature_params)
-        if expires_match and time.time() > int(expires_match.group(1)):
+        if expires_match is None or time.time() >= int(expires_match.group(1)):
             raise ProcessorWebhookRejected("pawapay callback signature has expired")
         key_id_match = re.search(r';keyid="([^"]+)"', signature_params)
         if key_id_match is None:
@@ -671,7 +683,7 @@ class PawapayPaymentProcessor:
         except (ValueError, base64.binascii.Error) as exc:
             raise ProcessorWebhookRejected("pawapay callback signature value is invalid") from exc
 
-        url = urlsplit(callback_url)
+        url = callback_parts
         header_values = normalized
         signature_base: list[str] = []
         for component in components:

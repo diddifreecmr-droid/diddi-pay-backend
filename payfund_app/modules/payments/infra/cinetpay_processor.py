@@ -16,10 +16,9 @@ Payouts (create_payout/verify_payout) use POST /v1/transfer / GET /v1/transfer/{
 Refunds: CinetPay v1 has **no refund endpoint** (the SDK exposes only payment/transfer/
 balance), so refund_payment raises NotImplementedError and REFUND is not in capabilities.
 
-Webhooks: parse_webhook raises NotImplementedError like PawaPay's -- blocked on the BCEAO
-agreement (SCRUM-555), a DiddiPay-side gate. CinetPay's own webhook auth is only a
-notify_token echo (timing-safe compare, no HMAC secret), so verify_payment/verify_payout +
-reconciliation remain the source of truth regardless.
+Webhooks are treated as notifications, not as proof of payment. DiddiPay validates the
+per-payment notify_token stored at initialization and then calls verify_payment before the
+normal inbox/accounting path is allowed to update the PaymentIntent.
 
 !! NOT re-verified against the live sandbox yet !!  The account provided came with an
 api_key but no api_password, and /v1/oauth/login is structurally impossible without both
@@ -31,9 +30,13 @@ sandbox before this is considered production-ready -- see docs/evaluation-cinetp
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import time
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import parse_qs
 
 import httpx
 
@@ -41,6 +44,7 @@ from payfund_app.core.observability.business_metrics import observe_provider_cal
 from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
+    ProcessorWebhookRejected,
 )
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
@@ -48,6 +52,7 @@ from payfund_app.modules.payments.application.ports import (
     PayoutRequest,
     PayoutResult,
     ProcessorCapabilities,
+    ProviderEvent,
     ProviderResult,
     RefundRequest,
     RefundResult,
@@ -156,6 +161,7 @@ class CinetpayPaymentProcessor:
         api_password: str,
         country: str = "CI",
         base_url: str | None = None,
+        webhook_url: str | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
@@ -169,6 +175,7 @@ class CinetpayPaymentProcessor:
         self._api_password = api_password
         self._country = country.upper()
         self._base_url = _resolve_base_url(api_key, base_url)
+        self._webhook_url = webhook_url
         self._client = client
         self._token: str | None = None
 
@@ -291,8 +298,9 @@ class CinetpayPaymentProcessor:
             "client_last_name": str(request.metadata.get("customer_last_name") or "Client"),
             "success_url": request.callback_url,
             "failed_url": request.callback_url,
-            # Webhooks are not consumed yet (BCEAO gate); set so CinetPay accepts the request.
-            "notify_url": request.callback_url,
+            # CinetPay calls this server endpoint after the checkout. Keep the checkout return
+            # URL separate: it is for the browser, while notify_url is for server-to-server.
+            "notify_url": self._webhook_url or request.callback_url,
             # Verified live: channel="MOBILE_MONEY" returns OPERATION_ERROR on this account,
             # while channel="ALL" returns the hosted Payment Page (payment_url + details.status
             # INITIATED / must_be_redirected:true) and lets the payer pick MM/Wave/card there.
@@ -326,11 +334,29 @@ class CinetpayPaymentProcessor:
                     or "cinetpay did not return a payment URL"
                 )[:255],
             )
+        provider_metadata: dict[str, str] = {}
+        notify_token = body.get("notify_token") or (
+            body.get("data", {}).get("notify_token")
+            if isinstance(body.get("data"), dict)
+            else None
+        )
+        transaction_id = body.get("transaction_id") or (
+            body.get("data", {}).get("transaction_id")
+            if isinstance(body.get("data"), dict)
+            else None
+        )
+        if notify_token:
+            provider_metadata["notify_token_sha256"] = hashlib.sha256(
+                str(notify_token).encode("utf-8")
+            ).hexdigest()
+        if transaction_id:
+            provider_metadata["transaction_id"] = str(transaction_id)
         return ProviderResult(
             provider_reference=reference,
             status=AttemptStatus.REQUIRES_ACTION,
             provider_status="payment_created",
             next_action=NextAction(NextActionType.REDIRECT, url=str(payment_url)),
+            provider_metadata=provider_metadata,
         )
 
     def verify_payment(self, provider_reference: str) -> ProviderResult:
@@ -360,13 +386,21 @@ class CinetpayPaymentProcessor:
             else (None, None)
         )
         return ProviderResult(
-            provider_reference=str(body.get("transaction_id") or data.get("transaction_id") or provider_reference),
+            # DiddiPay stores merchant_transaction_id (the attempt UUID) as its lookup key.
+            # CinetPay's transaction_id is retained as provider metadata, but must not replace
+            # that key or webhook/reconciliation lookup would diverge.
+            provider_reference=provider_reference,
             status=status,
             provider_status=provider_status.lower(),
             amount=amount,
             currency=currency,
             failure_code=failure_code,
             failure_message=failure_message,
+            provider_metadata=(
+                {"transaction_id": str(body.get("transaction_id") or data.get("transaction_id"))}
+                if (body.get("transaction_id") or data.get("transaction_id"))
+                else {}
+            ),
         )
 
     # -- Payout ----------------------------------------------------------------------
@@ -469,11 +503,82 @@ class CinetpayPaymentProcessor:
             "not available on this provider"
         )
 
-    def parse_webhook(self, raw_body: bytes, headers: Mapping[str, str]):
-        raise NotImplementedError(
-            "cinetpay webhooks are not wired yet -- blocked on the BCEAO agreement (SCRUM-555); "
-            "CinetPay's webhook auth is only a notify_token echo anyway, so use "
-            "verify_payment / reconciliation instead"
+    @staticmethod
+    def _parse_webhook_body(raw_body: bytes) -> dict[str, Any]:
+        try:
+            value = json.loads(raw_body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            try:
+                parsed = parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
+                value = {key: values[-1] for key, values in parsed.items()}
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise ProcessorWebhookRejected("invalid CinetPay webhook payload") from exc
+        if not isinstance(value, dict):
+            raise ProcessorWebhookRejected("invalid CinetPay webhook payload")
+        nested = value.get("data")
+        if isinstance(nested, dict):
+            merged = dict(value)
+            merged.update({key: val for key, val in nested.items() if key not in merged})
+            return merged
+        return value
+
+    @classmethod
+    def extract_webhook_reference(cls, raw_body: bytes) -> str:
+        body = cls._parse_webhook_body(raw_body)
+        reference = body.get("merchant_transaction_id") or body.get("merchantTransactionId")
+        if not isinstance(reference, str) or not reference or len(reference) > 160:
+            raise ProcessorWebhookRejected(
+                "CinetPay webhook merchant_transaction_id is missing or invalid"
+            )
+        return reference
+
+    def parse_webhook(
+        self,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+        *,
+        expected_notify_token_hash: str | None = None,
+    ) -> ProviderEvent:
+        del headers  # CinetPay v1 authenticates the callback with notify_token in the body.
+        body = self._parse_webhook_body(raw_body)
+        if not expected_notify_token_hash:
+            raise ProcessorWebhookRejected(
+                "CinetPay webhook cannot be validated: notify_token is not stored"
+            )
+        notify_token = body.get("notify_token") or body.get("notifyToken")
+        actual_hash = hashlib.sha256(str(notify_token).encode("utf-8")).hexdigest()
+        if not notify_token or not hmac.compare_digest(actual_hash, expected_notify_token_hash):
+            raise ProcessorWebhookRejected("invalid CinetPay notify_token")
+
+        reference = self.extract_webhook_reference(raw_body)
+        transaction_id = body.get("transaction_id") or body.get("transactionId")
+        if not isinstance(transaction_id, str) or not transaction_id:
+            raise ProcessorWebhookRejected("CinetPay webhook transaction_id is missing")
+
+        # The notification is only a trigger. The canonical status, amount and currency come
+        # from CinetPay's verification endpoint before PaymentWebhookUseCases applies state.
+        verified = self.verify_payment(reference)
+        canonical_transaction_id = verified.provider_metadata.get("transaction_id")
+        if canonical_transaction_id and canonical_transaction_id != transaction_id:
+            raise ProcessorWebhookRejected(
+                "CinetPay webhook transaction_id does not match provider verification"
+            )
+        provider_status = verified.provider_status or "unknown"
+        sanitized_payload = {
+            "merchant_transaction_id": reference,
+            "transaction_id": transaction_id,
+            "status": provider_status,
+            "reported_status": body.get("status"),
+        }
+        return ProviderEvent(
+            event_key=f"payment:{transaction_id}:{provider_status}",
+            event_type="payment.notification",
+            provider_reference=reference,
+            status=verified.status,
+            amount=verified.amount,
+            currency=verified.currency,
+            fee=verified.fee,
+            sanitized_payload=sanitized_payload,
         )
 
     # -- Helpers ---------------------------------------------------------------------

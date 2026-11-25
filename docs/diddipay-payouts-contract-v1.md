@@ -140,6 +140,11 @@ A lire attentivement avant d'integrer un vrai flux de paiement reel - ne pas sup
 - En staging, un callback non signe peut rester accepte uniquement avec
   `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=false`. Avant la production, configurer l'URL exacte,
   les cles publiques PawaPay et `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true`.
+- Un `401 Signature webhook PawaPay invalide` signifie que le callback a atteint DiddiPay mais
+  n'a pas passe la verification RFC 9421. Verifier en premier que « Sign all callbacks » est
+  active dans le dashboard PawaPay, que `PAWAPAY_PUBLIC_KEYS_URL` vise le meme environnement
+  et que chaque URL configuree est strictement identique, chemin compris. Une configuration
+  provider absente renvoie `503 PROCESSOR_NOT_CONFIGURED`, pas `401`.
 - **Pas de remboursement de payout** (annuler un versement deja parti) - non modelise.
 
 ## Statuts

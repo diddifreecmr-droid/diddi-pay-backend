@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from payfund_app.core.errors import Unauthenticated
+from payfund_app.core.errors import ServiceUnavailable, Unauthenticated
 from payfund_app.core.observability.business_metrics import observe_webhook
 from payfund_app.modules.payments.application.accounting import (
     PaymentAccountingService,
@@ -34,6 +34,7 @@ from payfund_app.modules.payments.infra.repositories import (
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
+    CinetpayWebhookProcessorDep,
     PawapayDepositWebhookProcessorDep,
     PawapayRefundWebhookProcessorDep,
     PawapayWebhookProcessorDep,
@@ -106,12 +107,106 @@ async def paystack_webhook(
         result = use_cases.process(processor, raw_body, request.headers)
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="paystack", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="paystack",
+            reason=str(exc)[:160],
+        )
         raise Unauthenticated("Signature webhook Paystack invalide.") from exc
     observe_webhook(provider="paystack", outcome=result.status)
     emit(
         "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
         "payment.webhook.processed",
         processor="paystack",
+        event_key=result.event_key,
+        payment_intent_id=result.payment_intent_id,
+        status=result.status,
+    )
+    return PaymentWebhookResponse(
+        status=result.status,
+        event_key=result.event_key,
+        payment_intent_id=result.payment_intent_id,
+    )
+
+
+@router.post(
+    "/cinetpay",
+    response_model=PaymentWebhookResponse,
+    summary="Receive and verify a CinetPay payment notification",
+    description=(
+        "CinetPay notifications are not trusted as payment proof. DiddiPay validates the "
+        "stored per-payment notify_token, verifies the payment with CinetPay, then applies "
+        "the normal idempotent inbox and accounting flow."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "additionalProperties": True},
+                    "example": {
+                        "notify_token": "returned-at-payment-initialization",
+                        "merchant_transaction_id": "00000000-0000-0000-0000-000000000001",
+                        "transaction_id": "ER-T-EXAMPLE",
+                        "status": "SUCCESS",
+                    },
+                }
+            },
+        }
+    },
+)
+async def cinetpay_webhook(
+    request: Request,
+    session: SessionDep,
+    processor: CinetpayWebhookProcessorDep,
+) -> PaymentWebhookResponse:
+    raw_body = await request.body()
+    attempts = PaymentAttemptRepository(session)
+    try:
+        # The reference is used only to find the stored hash. The callback status and amount
+        # remain untrusted until CinetPay's verification endpoint is called by the adapter.
+        reference = processor.extract_webhook_reference(raw_body)
+        attempt = attempts.get_by_provider_reference("cinetpay", reference)
+        expected_hash = attempt.provider_metadata.get("notify_token_sha256") if attempt else None
+        if not expected_hash:
+            raise ProcessorWebhookRejected("unknown CinetPay payment notification")
+
+        event = processor.parse_webhook(
+            raw_body,
+            request.headers,
+            expected_notify_token_hash=str(expected_hash),
+        )
+        use_cases = PaymentWebhookUseCases(
+            PaymentIntentRepository(session),
+            attempts,
+            ProviderEventRepository(session),
+            SqlAlchemyUnitOfWork(session),
+            PaymentOutboxRepository(session),
+            PaymentAccountingService(FinancialLedgerRepository(session)),
+        )
+        result = use_cases.process_event(processor, raw_body, event)
+    except ProcessorWebhookRejected as exc:
+        observe_webhook(provider="cinetpay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="cinetpay",
+            reason=str(exc)[:160],
+        )
+        raise Unauthenticated("Notification webhook CinetPay invalide.") from exc
+    except ProcessorCallUncertain as exc:
+        observe_webhook(provider="cinetpay", outcome="verification_unavailable")
+        raise ServiceUnavailable(
+            "La verification CinetPay est temporairement indisponible.",
+            code="PROCESSOR_UNAVAILABLE",
+            details={"provider": "cinetpay", "reference": exc.provider_reference},
+        ) from exc
+    observe_webhook(provider="cinetpay", outcome=result.status)
+    emit(
+        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
+        "payment.webhook.processed",
+        processor="cinetpay",
         event_key=result.event_key,
         payment_intent_id=result.payment_intent_id,
         status=result.status,
@@ -169,6 +264,13 @@ async def pawapay_deposit_webhook(
         result = use_cases.process(processor, raw_body, request.headers)
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="pawapay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="pawapay",
+            operation="deposit",
+            reason=str(exc)[:160],
+        )
         raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
     observe_webhook(provider="pawapay", outcome=result.status)
     emit(
@@ -235,6 +337,13 @@ async def pawapay_refund_webhook(
         )
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="pawapay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="pawapay",
+            operation="refund",
+            reason=str(exc)[:160],
+        )
         raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
     observe_webhook(provider="pawapay", outcome=result.status)
     emit(
@@ -308,6 +417,13 @@ async def pawapay_payout_webhook(
         )
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="pawapay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="pawapay",
+            operation="payout",
+            reason=str(exc)[:160],
+        )
         raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
     except ProcessorCallUncertain as exc:
         observe_webhook(provider="pawapay", outcome="transient_error")

@@ -163,6 +163,7 @@ des ports hôte configurables via `.env` (voir « Démarrage »).
 | `POST /payment-intents/{id}/refunds` | ✅ remboursement Paystack idempotent |
 | `GET /payment-intents/{id}/financial-summary` | ✅ captures, frais, remboursements, settlement |
 | `POST /payments/webhooks/paystack` | ✅ signature, inbox, déduplication et outbox |
+| `POST /payments/webhooks/cinetpay` | ✅ notify token, vérification provider, inbox et déduplication |
 | `POST /fund/campaigns/{id}/invest/payment` | ✅ investissement externe par PaymentIntent |
 | `POST /fund/payments/webhooks/diddipay` | ✅ callback signé et idempotent |
 | `GET /wallet/balance` | ✅ |
@@ -231,8 +232,12 @@ Sénégal), dépôt **et** retrait tous deux pris en charge :
   `/webhooks/pawapay/payouts` reste disponible pendant la migration de staging.
 - `PAWAPAY_DEPOSIT_CALLBACK_URL`, `PAWAPAY_REFUND_CALLBACK_URL` et
   `PAWAPAY_PAYOUT_CALLBACK_URL` doivent correspondre exactement aux trois URLs configurées
-  dans PawaPay. Activer `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true` et configurer
-  `PAWAPAY_PUBLIC_KEYS_URL` avant la production. La réconciliation reste le filet de sécurité.
+  dans PawaPay. `PAWAPAY_CALLBACK_SIGNATURE_REQUIRED=true` doit être utilisé uniquement
+  après avoir activé « Sign all callbacks » dans le dashboard PawaPay et configuré
+  `PAWAPAY_PUBLIC_KEYS_URL` pour le même environnement (sandbox ou production). Sinon, les
+  callbacks non signes sont volontairement rejetés en `401`; en staging uniquement, garder
+  cette variable a `false` jusqu'a l'activation de la signature. La réconciliation reste le
+  filet de sécurité.
 - Les callbacks `deposits` et `refunds` concernent le nouvel orchestrateur PaymentIntent. Le
   wallet historique reste identifié comme legacy et continue de dépendre de sa réconciliation
   dédiée tant qu'il n'est pas migré vers PaymentIntent.

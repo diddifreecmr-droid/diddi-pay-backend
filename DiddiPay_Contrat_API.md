@@ -265,6 +265,7 @@ Toutes les requetes ci-dessous sont exposees dans Swagger, corps et headers comp
 | `POST` | `/payment-intents/{intent_id}/refunds` | backend module | demander un remboursement idempotent |
 | `GET` | `/payment-intents/{intent_id}/financial-summary` | backend module | lire capture, frais, settlement et reste attendu |
 | `POST` | `/payments/webhooks/paystack` | Paystack | confirmer un evenement provider signe |
+| `POST` | `/payments/webhooks/cinetpay` | CinetPay | verifier une notification de paiement puis confirmer l'intention |
 | `POST` | `/webhooks/pawapay/payouts` | PawaPay | confirmer un payout, idempotent et verifie par API provider |
 
 Ces chemins sont relatifs a `/payfund/v1`. Les anciennes routes `/wallet/*` sont documentees dans
@@ -409,6 +410,25 @@ Invariants :
 - les donnees sensibles du payload provider ne sont pas conservees ;
 - un webhook duplique ne produit pas une seconde transition metier ;
 - la reconciliation couvre les webhooks manquants et les appels provider incertains.
+
+### `POST /payments/webhooks/cinetpay`
+
+CinetPay envoie une notification contenant notamment `notify_token`,
+`merchant_transaction_id` et `transaction_id`. Cette notification est un signal et non une
+preuve de paiement. DiddiPay compare l'empreinte du `notify_token` conservee lors de
+l'initialisation, puis appelle l'API CinetPay de verification avant d'appliquer le statut,
+le montant et la devise canoniques.
+
+La valeur a configurer dans CinetPay est :
+
+```ini
+CINETPAY_WEBHOOK_URL=https://pay-api-staging.diddifree.com/payfund/v1/payments/webhooks/cinetpay
+```
+
+Les doublons sont dedupliques par `provider_events`. Une notification pour une tentative
+ancienne sans `notify_token` persistee est rejetee et reste recuperable par reconciliation.
+Les remboursements ne sont pas branches sur cet endpoint : l'API CinetPay v1 integree ne
+fournit pas d'operation de remboursement.
 
 ### Callback vers le module proprietaire
 
