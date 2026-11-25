@@ -107,6 +107,12 @@ async def paystack_webhook(
         result = use_cases.process(processor, raw_body, request.headers)
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="paystack", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="paystack",
+            reason=str(exc)[:160],
+        )
         raise Unauthenticated("Signature webhook Paystack invalide.") from exc
     observe_webhook(provider="paystack", outcome=result.status)
     emit(
@@ -182,6 +188,12 @@ async def cinetpay_webhook(
         result = use_cases.process_event(processor, raw_body, event)
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="cinetpay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="cinetpay",
+            reason=str(exc)[:160],
+        )
         raise Unauthenticated("Notification webhook CinetPay invalide.") from exc
     except ProcessorCallUncertain as exc:
         observe_webhook(provider="cinetpay", outcome="verification_unavailable")
@@ -252,6 +264,13 @@ async def pawapay_deposit_webhook(
         result = use_cases.process(processor, raw_body, request.headers)
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="pawapay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="pawapay",
+            operation="deposit",
+            reason=str(exc)[:160],
+        )
         raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
     observe_webhook(provider="pawapay", outcome=result.status)
     emit(
@@ -318,6 +337,13 @@ async def pawapay_refund_webhook(
         )
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="pawapay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="pawapay",
+            operation="refund",
+            reason=str(exc)[:160],
+        )
         raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
     observe_webhook(provider="pawapay", outcome=result.status)
     emit(
@@ -391,6 +417,13 @@ async def pawapay_payout_webhook(
         )
     except ProcessorWebhookRejected as exc:
         observe_webhook(provider="pawapay", outcome="rejected")
+        emit(
+            "warning",
+            "payment.webhook.rejected",
+            processor="pawapay",
+            operation="payout",
+            reason=str(exc)[:160],
+        )
         raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
     except ProcessorCallUncertain as exc:
         observe_webhook(provider="pawapay", outcome="transient_error")

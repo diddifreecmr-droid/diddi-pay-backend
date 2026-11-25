@@ -202,7 +202,11 @@ def get_paystack_webhook_processor() -> PaystackPaymentProcessor:
     settings = get_settings()
     secret = settings.paystack_webhook_secret or settings.paystack_secret_key
     if not secret:
-        raise Unauthenticated("Webhook Paystack non configure.")
+        raise ServiceUnavailable(
+            "Webhook Paystack non configure.",
+            code="PROCESSOR_NOT_CONFIGURED",
+            details={"provider": "paystack"},
+        )
     return PaystackPaymentProcessor(
         secret_key=settings.paystack_secret_key or secret,
         base_url=settings.paystack_base_url,
@@ -218,7 +222,11 @@ PaystackWebhookProcessorDep = Annotated[
 def get_cinetpay_webhook_processor() -> CinetpayPaymentProcessor:
     settings = get_settings()
     if not settings.cinetpay_api_key or not settings.cinetpay_api_password:
-        raise Unauthenticated("Webhook CinetPay non configure.")
+        raise ServiceUnavailable(
+            "Webhook CinetPay non configure.",
+            code="PROCESSOR_NOT_CONFIGURED",
+            details={"provider": "cinetpay"},
+        )
     return CinetpayPaymentProcessor(
         api_key=settings.cinetpay_api_key,
         api_password=settings.cinetpay_api_password,
@@ -236,7 +244,11 @@ CinetpayWebhookProcessorDep = Annotated[
 def _pawapay_webhook_processor(callback_url: str | None) -> PawapayPaymentProcessor:
     settings = get_settings()
     if not settings.pawapay_api_token:
-        raise Unauthenticated("Webhook PawaPay non configure.")
+        raise ServiceUnavailable(
+            "Webhook PawaPay non configure.",
+            code="PROCESSOR_NOT_CONFIGURED",
+            details={"provider": "pawapay"},
+        )
     return PawapayPaymentProcessor(
         api_token=settings.pawapay_api_token,
         base_url=settings.pawapay_base_url,

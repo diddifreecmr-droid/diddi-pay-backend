@@ -551,3 +551,32 @@ def test_parse_webhook_rejects_missing_stored_token():
     ).encode()
     with pytest.raises(ProcessorWebhookRejected, match="notify_token"):
         processor(lambda r: httpx.Response(200)).parse_webhook(raw, {})
+
+
+def test_parse_webhook_rejects_transaction_id_mismatch_after_verification():
+    def handler(http_request):
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "status": "SUCCESS",
+                    "transaction_id": "canonical-transaction",
+                    "amount": "5000",
+                    "currency": "XOF",
+                }
+            },
+        )
+
+    raw = json.dumps(
+        {
+            "notify_token": "ntk",
+            "merchant_transaction_id": "merch-1",
+            "transaction_id": "different-transaction",
+        }
+    ).encode()
+    with pytest.raises(ProcessorWebhookRejected, match="does not match"):
+        processor(handler).parse_webhook(
+            raw,
+            {},
+            expected_notify_token_hash=hashlib.sha256(b"ntk").hexdigest(),
+        )

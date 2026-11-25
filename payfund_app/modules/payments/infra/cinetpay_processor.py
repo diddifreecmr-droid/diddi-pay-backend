@@ -558,6 +558,11 @@ class CinetpayPaymentProcessor:
         # The notification is only a trigger. The canonical status, amount and currency come
         # from CinetPay's verification endpoint before PaymentWebhookUseCases applies state.
         verified = self.verify_payment(reference)
+        canonical_transaction_id = verified.provider_metadata.get("transaction_id")
+        if canonical_transaction_id and canonical_transaction_id != transaction_id:
+            raise ProcessorWebhookRejected(
+                "CinetPay webhook transaction_id does not match provider verification"
+            )
         provider_status = verified.provider_status or "unknown"
         sanitized_payload = {
             "merchant_transaction_id": reference,
