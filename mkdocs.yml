@@ -16,6 +16,7 @@ nav:
       - Support et remboursements: guides/support-refunds.md
   - Intégrations:
       - DiddiSupport: integrations/diddisupport.md
+      - DiddiShop: integrations/diddishop.md
   - Configuration:
       - Variables d'environnement: configuration/environment-variables.md
       - Portail documentaire: configuration/DOCUMENTATION_PORTAL.md
