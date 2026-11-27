@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from payfund_app.core.config import get_settings
 from payfund_app.core.observability.context import bind_request_id, reset_request_id
 from payfund_app.core.observability.redaction import REDACTED, redact
+from payfund_app.shared_kernel import logging as logging_module
 from payfund_app.main import app
 from payfund_app.shared_kernel.logging import (
     build_log_payload,
@@ -121,6 +122,42 @@ def test_error_body_carries_the_same_request_id_as_the_response() -> None:
     assert response.status_code == 404
     assert response.headers["x-request-id"] == "req-error-contract"
     assert response.json()["error"]["request_id"] == "req-error-contract"
+
+
+def test_validation_rejection_is_logged_with_safe_field_details(monkeypatch) -> None:
+    events = []
+    monkeypatch.setattr(
+        logging_module,
+        "emit",
+        lambda level, message, **fields: events.append((level, message, fields)),
+    )
+
+    response = TestClient(app).post(
+        "/payfund/v1/payment-intents",
+        headers={
+            "X-Client-ID": "diddigo",
+            "X-Service-Key": "test-service-key",
+            "Idempotency-Key": "validation-log-test",
+        },
+        json={"business_reference": "ride:42", "amount": 0},
+    )
+
+    assert response.status_code == 422
+    assert events == [
+        (
+            "warn",
+            "http.request_validation_failed",
+            {
+                "method": "POST",
+                "route": "/payfund/v1/payment-intents",
+                "status_code": 422,
+                "error_code": "VALIDATION_ERROR",
+                "validation_errors": [
+                    {"field": "amount", "reason": "Input should be greater than 0"}
+                ],
+            },
+        )
+    ]
 
 
 def test_metrics_are_protected_and_hidden_from_openapi(monkeypatch) -> None:

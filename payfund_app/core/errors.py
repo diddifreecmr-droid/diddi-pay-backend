@@ -13,6 +13,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from payfund_app.core.observability.context import get_request_id
 
 
+def _emit_error_log(level: str, message: str, **fields: Any) -> None:
+    # Import lazily: the logging stack imports the error classes for metrics/auth
+    # instrumentation, so importing it at module load time would create a cycle.
+    from payfund_app.shared_kernel.logging import emit
+
+    emit(level, message, **fields)
+
+
 class AppError(Exception):
     """Erreur métier portant son propre code HTTP et son code applicatif."""
 
@@ -113,7 +121,17 @@ class ServiceUnavailable(AppError):
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
-    async def _app_error(_: Request, exc: AppError) -> JSONResponse:
+    async def _app_error(request: Request, exc: AppError) -> JSONResponse:
+        _emit_error_log(
+            "warn" if exc.status_code < 500 else "error",
+            "http.application_error",
+            method=request.method,
+            route=request.url.path,
+            status_code=exc.status_code,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_details=exc.details,
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content=error_body(exc.code, exc.message, exc.details),
@@ -121,23 +139,42 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(
-        _: Request, exc: RequestValidationError
+        request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        details = [
+            {"field": ".".join(str(p) for p in e["loc"][1:]), "reason": e["msg"]}
+            for e in exc.errors()
+        ]
+        _emit_error_log(
+            "warn",
+            "http.request_validation_failed",
+            method=request.method,
+            route=request.url.path,
+            status_code=422,
+            error_code="VALIDATION_ERROR",
+            validation_errors=details,
+        )
         return JSONResponse(
             status_code=422,
             content=error_body(
                 "VALIDATION_ERROR",
                 "Validation de champs échouée.",
-                [
-                    {"field": ".".join(str(p) for p in e["loc"][1:]), "reason": e["msg"]}
-                    for e in exc.errors()
-                ],
+                details,
             ),
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         codes = {400: "BAD_REQUEST", 404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
+        _emit_error_log(
+            "warn" if exc.status_code < 500 else "error",
+            "http.framework_error",
+            method=request.method,
+            route=request.url.path,
+            status_code=exc.status_code,
+            error_code=codes.get(exc.status_code, "HTTP_ERROR"),
+            error_message=str(exc.detail),
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content=error_body(
