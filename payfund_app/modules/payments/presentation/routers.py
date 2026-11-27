@@ -239,7 +239,9 @@ def get_payment_intent(
         409: {
             "description": (
                 "PAYMENT_INTENT_NOT_VERIFIED: statut, montant, devise ou "
-                "business_reference incompatible."
+                "business_reference incompatible. Details.reason vaut "
+                "status_not_succeeded, currency_mismatch, amount_mismatch ou "
+                "business_reference_mismatch."
             )
         },
     },
