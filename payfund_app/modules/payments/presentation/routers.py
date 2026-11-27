@@ -223,6 +223,26 @@ def get_payment_intent(
     "/{intent_id}/verify",
     response_model=VerifyPaymentIntentResponse,
     summary="Verify a PaymentIntent owned by an allowed module",
+    responses={
+        401: {"description": "UNAUTHENTICATED: token S2S absent ou invalide."},
+        403: {
+            "description": (
+                "SERVICE_CLIENT_FORBIDDEN, SERVICE_SCOPE_REQUIRED ou "
+                "PAYMENT_INTENT_VERIFY_NOT_CONFIGURED."
+            )
+        },
+        404: {
+            "description": (
+                "PAYMENT_INTENT_NOT_FOUND: intent inconnu ou owner non autorise."
+            )
+        },
+        409: {
+            "description": (
+                "PAYMENT_INTENT_NOT_VERIFIED: statut, montant, devise ou "
+                "business_reference incompatible."
+            )
+        },
+    },
 )
 def verify_payment_intent(
     intent_id: uuid.UUID,
