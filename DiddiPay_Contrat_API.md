@@ -134,6 +134,10 @@ Corps :
 }
 ```
 
+Contraintes : `amount` est un entier strictement positif en XOF, `currency` est exactement
+`XOF`, `business_reference` contient entre 1 et 128 caracteres, et les champs supplementaires
+sont refuses.
+
 Champs :
 
 | Champ | Requis | Regle |
@@ -331,12 +335,18 @@ DiddiPay retourne `200` uniquement si l'intent appartient a un owner autorise, e
 }
 ```
 
-Un intent inconnu ou appartenant a un owner non autorise retourne `404 PAYMENT_INTENT_NOT_FOUND`
-afin de ne pas divulguer son existence. Un statut, montant ou reference incompatible retourne
-`409 PAYMENT_INTENT_NOT_VERIFIED`. Aucun secret callback DiddiShop/DiddiSend n'est partage pour
-cette verification : l'autorisation repose sur le JWT S2S, son identite DiddiSend, le scope et
-l'allowlist DiddiPay. La route est en lecture seule et peut être appelée plusieurs fois avec les
-mêmes valeurs sans modifier le PaymentIntent.
+Erreurs documentees : `401 UNAUTHENTICATED` pour un token invalide ou une identite incorrecte ;
+`403 SERVICE_CLIENT_FORBIDDEN`, `SERVICE_SCOPE_REQUIRED` ou
+`PAYMENT_INTENT_VERIFY_NOT_CONFIGURED` pour un appelant non autorise ;
+`404 PAYMENT_INTENT_NOT_FOUND` pour un intent inconnu ou un owner non autorise, sans divulguer
+son existence ; `409 PAYMENT_INTENT_NOT_VERIFIED` si `details.reason` vaut
+`status_not_succeeded`, `currency_mismatch`, `amount_mismatch` ou
+`business_reference_mismatch` ; `422` pour une erreur de validation HTTP.
+
+Aucun secret callback DiddiShop/DiddiSend n'est partage pour cette verification : l'autorisation
+repose sur le JWT S2S, son identite DiddiSend, le scope et l'allowlist DiddiPay. La route est en
+lecture seule et peut etre appelee plusieurs fois avec les memes valeurs sans modifier le
+PaymentIntent.
 
 ### `GET /payment-intents?limit=50`
 

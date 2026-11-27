@@ -4515,6 +4515,82 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VerifyPaymentIntentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "Expected amount in XOF",
+            "exclusiveMinimum": 0.0,
+            "title": "Amount",
+            "type": "integer"
+          },
+          "business_reference": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Business Reference",
+            "type": "string"
+          },
+          "currency": {
+            "const": "XOF",
+            "default": "XOF",
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "business_reference"
+        ],
+        "title": "VerifyPaymentIntentRequest",
+        "type": "object"
+      },
+      "VerifyPaymentIntentResponse": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "business_reference": {
+            "title": "Business Reference",
+            "type": "string"
+          },
+          "currency": {
+            "const": "XOF",
+            "title": "Currency",
+            "type": "string"
+          },
+          "owner_client_id": {
+            "title": "Owner Client Id",
+            "type": "string"
+          },
+          "payment_intent_id": {
+            "format": "uuid",
+            "title": "Payment Intent Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "succeeded",
+            "title": "Status",
+            "type": "string"
+          },
+          "verified": {
+            "const": true,
+            "default": true,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "payment_intent_id",
+          "owner_client_id",
+          "business_reference",
+          "amount",
+          "currency",
+          "status"
+        ],
+        "title": "VerifyPaymentIntentResponse",
+        "type": "object"
+      },
       "VerifyQrRequest": {
         "properties": {
           "payload": {
@@ -7362,6 +7438,119 @@
           }
         },
         "summary": "Create Refund",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/payfund/v1/payment-intents/{intent_id}/verify": {
+      "post": {
+        "operationId": "verify_payment_intent_payfund_v1_payment_intents__intent_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Client-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Service-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Service-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyPaymentIntentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyPaymentIntentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: token S2S absent ou invalide."
+          },
+          "403": {
+            "description": "SERVICE_CLIENT_FORBIDDEN, SERVICE_SCOPE_REQUIRED ou PAYMENT_INTENT_VERIFY_NOT_CONFIGURED."
+          },
+          "404": {
+            "description": "PAYMENT_INTENT_NOT_FOUND: intent inconnu ou owner non autorise."
+          },
+          "409": {
+            "description": "PAYMENT_INTENT_NOT_VERIFIED: statut, montant, devise ou business_reference incompatible. Details.reason vaut status_not_succeeded, currency_mismatch, amount_mismatch ou business_reference_mismatch."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify a PaymentIntent owned by an allowed module",
         "tags": [
           "payments"
         ]

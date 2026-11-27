@@ -75,3 +75,10 @@ def test_payment_intent_verification_contract_is_exposed():
         "schema"
     ]
     assert response_schema
+
+    assert {"401", "403", "404", "409", "422"}.issubset(operation["responses"])
+    request_schema = schema["components"]["schemas"]["VerifyPaymentIntentRequest"]
+    assert request_schema["properties"]["currency"]["const"] == "XOF"
+    response_schema = schema["components"]["schemas"]["VerifyPaymentIntentResponse"]
+    assert response_schema["properties"]["status"]["const"] == "succeeded"
+    assert response_schema["properties"]["currency"]["const"] == "XOF"

@@ -40,6 +40,10 @@ Corps :
 }
 ```
 
+Contraintes du corps : `amount` est un entier strictement positif en XOF, `currency` vaut
+uniquement `XOF`, et `business_reference` contient entre 1 et 128 caracteres. Les champs
+supplementaires sont refuses.
+
 DiddiPay retourne `200` et `verified=true` uniquement si :
 
 - le PaymentIntent existe et appartient a DiddiShop ou DiddiFood, les deux owners autorises pour
@@ -63,12 +67,15 @@ Réponse de succès exacte :
 }
 ```
 
-Sinon :
+Erreurs possibles :
 
-- `404 PAYMENT_INTENT_NOT_FOUND` si l'intent n'existe pas ou n'appartient pas a un owner
-  autorise ;
-- `409 PAYMENT_INTENT_NOT_VERIFIED` si le paiement existe mais n'est pas final ou ne correspond
-  pas aux valeurs attendues.
+| HTTP | Code | Signification |
+| --- | --- | --- |
+| `401` | `UNAUTHENTICATED` | Token absent, invalide, mauvais `sub` ou mauvais `X-Client-ID`. |
+| `403` | `SERVICE_CLIENT_FORBIDDEN` / `SERVICE_SCOPE_REQUIRED` / `PAYMENT_INTENT_VERIFY_NOT_CONFIGURED` | DiddiSend n'est pas autorise ou n'est pas configure. |
+| `404` | `PAYMENT_INTENT_NOT_FOUND` | Intent inconnu ou owner non autorise, sans divulguer son existence. |
+| `409` | `PAYMENT_INTENT_NOT_VERIFIED` | Le paiement existe mais ne peut pas etre valide. `details.reason` vaut `status_not_succeeded`, `currency_mismatch`, `amount_mismatch` ou `business_reference_mismatch`. |
+| `422` | validation FastAPI | UUID, montant, devise, reference ou champs supplementaires invalides. |
 
 DiddiSend peut rejouer cette verification avec le meme `payment_intent_id` et les memes valeurs,
 sans creer un nouveau paiement. La verification est en lecture seule : elle ne modifie ni le
