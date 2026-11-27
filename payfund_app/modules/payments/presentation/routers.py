@@ -222,6 +222,7 @@ def get_payment_intent(
 @router.post(
     "/{intent_id}/verify",
     response_model=VerifyPaymentIntentResponse,
+    response_model_exclude_none=True,
     summary="Verify a PaymentIntent owned by an allowed module",
     responses={
         401: {"description": "UNAUTHENTICATED: token S2S absent ou invalide."},
@@ -238,10 +239,10 @@ def get_payment_intent(
         },
         409: {
             "description": (
-                "PAYMENT_INTENT_NOT_VERIFIED: statut, montant, devise ou "
+                "PAYMENT_INTENT_NOT_VERIFIED: statut, couverture, devise ou "
                 "business_reference incompatible. Details.reason vaut "
-                "status_not_succeeded, currency_mismatch, amount_mismatch ou "
-                "business_reference_mismatch."
+                "status_not_succeeded, currency_mismatch, amount_mismatch, "
+                "payment_amount_insufficient ou business_reference_mismatch."
             )
         },
     },
@@ -262,13 +263,25 @@ def verify_payment_intent(
     try:
         # Verification is read-only and must remain available even when no PSP
         # adapter is configured in the DiddiPay process.
-        view = _use_cases(session, ProcessorRegistry()).verify(
-            intent_id,
-            allowed_owner_client_ids=allowed_owners,
-            expected_amount=payload.amount,
-            expected_currency=payload.currency,
-            expected_business_reference=payload.business_reference,
-        )
+        use_cases = _use_cases(session, ProcessorRegistry())
+        if payload.verification_mode == "exact":
+            assert payload.amount is not None
+            view = use_cases.verify(
+                intent_id,
+                allowed_owner_client_ids=allowed_owners,
+                expected_amount=payload.amount,
+                expected_currency=payload.currency,
+                expected_business_reference=payload.business_reference,
+            )
+        else:
+            assert payload.required_amount is not None
+            view = use_cases.verify_coverage(
+                intent_id,
+                allowed_owner_client_ids=allowed_owners,
+                required_amount=payload.required_amount,
+                expected_currency=payload.currency,
+                expected_business_reference=payload.business_reference,
+            )
     except Exception as exc:
         _translate_error(exc)
         raise
@@ -279,6 +292,8 @@ def verify_payment_intent(
         verifier_client_id=client.client_id,
         owner_client_id=view.intent.client_id,
         amount=view.intent.money.amount,
+        verification_mode=payload.verification_mode,
+        required_amount=payload.required_amount,
         currency=view.intent.money.currency,
         business_reference=view.intent.business_reference,
     )
@@ -286,7 +301,14 @@ def verify_payment_intent(
         payment_intent_id=view.intent.id,
         owner_client_id=view.intent.client_id,
         business_reference=view.intent.business_reference,
-        amount=view.intent.money.amount,
+        verification_mode=payload.verification_mode,
+        amount=(view.intent.money.amount if payload.verification_mode == "exact" else None),
+        payment_amount=(
+            view.intent.money.amount if payload.verification_mode == "coverage" else None
+        ),
+        required_amount=(
+            payload.required_amount if payload.verification_mode == "coverage" else None
+        ),
         currency=view.intent.money.currency,
         status="succeeded",
     )

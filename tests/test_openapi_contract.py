@@ -79,6 +79,14 @@ def test_payment_intent_verification_contract_is_exposed():
     assert {"401", "403", "404", "409", "422"}.issubset(operation["responses"])
     request_schema = schema["components"]["schemas"]["VerifyPaymentIntentRequest"]
     assert request_schema["properties"]["currency"]["const"] == "XOF"
+    assert request_schema["properties"]["verification_mode"]["enum"] == [
+        "exact",
+        "coverage",
+    ]
+    assert "amount" in request_schema["properties"]
+    assert "required_amount" in request_schema["properties"]
     response_schema = schema["components"]["schemas"]["VerifyPaymentIntentResponse"]
     assert response_schema["properties"]["status"]["const"] == "succeeded"
     assert response_schema["properties"]["currency"]["const"] == "XOF"
+    assert "payment_amount" in response_schema["properties"]
+    assert "required_amount" in response_schema["properties"]

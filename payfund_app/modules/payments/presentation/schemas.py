@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CreatePaymentIntentRequest(BaseModel):
@@ -115,9 +115,40 @@ class PaymentIntentListResponse(BaseModel):
 class VerifyPaymentIntentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount: int = Field(gt=0, description="Expected amount in XOF")
+    verification_mode: Literal["exact", "coverage"] = Field(
+        default="exact",
+        description=(
+            "exact preserves the original equality check; coverage accepts a "
+            "succeeded payment whose payment amount is at least required_amount."
+        ),
+    )
+    amount: int | None = Field(
+        default=None,
+        gt=0,
+        description="Expected exact amount in XOF when verification_mode=exact",
+    )
+    required_amount: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Minimum amount to cover in XOF when verification_mode=coverage"
+        ),
+    )
     currency: Literal["XOF"] = "XOF"
     business_reference: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_amount_for_mode(self) -> VerifyPaymentIntentRequest:
+        if self.verification_mode == "exact":
+            if self.amount is None or self.required_amount is not None:
+                raise ValueError(
+                    "exact verification requires amount and forbids required_amount"
+                )
+        elif self.required_amount is None or self.amount is not None:
+            raise ValueError(
+                "coverage verification requires required_amount and forbids amount"
+            )
+        return self
 
 
 class VerifyPaymentIntentResponse(BaseModel):
@@ -125,7 +156,10 @@ class VerifyPaymentIntentResponse(BaseModel):
     payment_intent_id: uuid.UUID
     owner_client_id: str
     business_reference: str
-    amount: int
+    verification_mode: Literal["exact", "coverage"]
+    amount: int | None = None
+    payment_amount: int | None = None
+    required_amount: int | None = None
     currency: Literal["XOF"]
     status: Literal["succeeded"]
 
