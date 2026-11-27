@@ -61,11 +61,11 @@ DiddiPay provisionne a DiddiSend un JWT S2S avec le scope :
 diddipay:payment-intents:verify
 ```
 
-La configuration DiddiPay borne explicitement DiddiSend aux intents DiddiShop :
+La configuration DiddiPay borne explicitement DiddiSend aux intents DiddiShop et DiddiFood :
 
 ```env
 PAYMENT_INTENT_VERIFY_SCOPE=diddipay:payment-intents:verify
-PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay"]}
+PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay","diddifood-staging"]}
 ```
 
 La verification exige dans le corps le montant, `XOF` et la `business_reference`. Le resultat

@@ -297,8 +297,11 @@ applique ensuite une allowlist serveur `PAYMENT_INTENT_VERIFY_OWNER_CLIENTS` qui
 client verifier aux clients proprietaires autorises. Par exemple :
 
 ```env
-PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay"]}
+PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay","diddifood-staging"]}
 ```
+
+En staging, DiddiSend peut donc vérifier uniquement les intents créés par DiddiShop ou DiddiFood.
+Cette liste est une décision d'autorisation DiddiPay, pas une autorisation générale de lecture.
 
 Corps :
 

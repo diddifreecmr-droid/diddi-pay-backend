@@ -1,6 +1,6 @@
 # Integration DiddiSend / DiddiPay
 
-## Verification d'un paiement DiddiShop
+## Verification d'un paiement DiddiShop ou DiddiFood
 
 DiddiSend ne lit pas directement les PaymentIntents DiddiShop avec la route proprietaire :
 
@@ -11,7 +11,7 @@ GET /payment-intents/{intent_id}
 Cette route est volontairement limitee au `client_id` qui a cree l'intent et retourne `404` pour
 un autre proprietaire.
 
-Pour valider un trajet ou une livraison payee par DiddiShop, DiddiSend utilise :
+Pour valider un trajet ou une livraison payee par DiddiShop ou DiddiFood, DiddiSend utilise :
 
 ```http
 POST /payfund/v1/payment-intents/{payment_intent_id}/verify
@@ -38,7 +38,8 @@ Corps :
 
 DiddiPay retourne `200` et `verified=true` uniquement si :
 
-- le PaymentIntent existe et appartient a un owner autorise pour DiddiSend ;
+- le PaymentIntent existe et appartient a DiddiShop ou DiddiFood, les deux owners autorises pour
+  DiddiSend en staging ;
 - son statut est `succeeded` ;
 - sa devise est `XOF` ;
 - son montant correspond exactement ;
@@ -52,4 +53,5 @@ Sinon :
   pas aux valeurs attendues.
 
 DiddiSend peut rejouer cette verification avec le meme `payment_intent_id` et les memes valeurs,
-sans creer un nouveau paiement. Aucun secret webhook DiddiShop n'est necessaire pour cet appel.
+sans creer un nouveau paiement. Aucun secret webhook DiddiShop ou DiddiFood n'est necessaire pour
+cet appel.
