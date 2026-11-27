@@ -180,6 +180,7 @@ def create_payment_intent(
         processor=resolved_attempt.processor if resolved_attempt else None,
         provider_status=resolved_attempt.provider_status if resolved_attempt else None,
         failure_code=resolved_attempt.failure_code if resolved_attempt else None,
+        failure_message=resolved_attempt.failure_message if resolved_attempt else None,
     )
     if view.created:
         attempt = resolved_attempt
