@@ -62,3 +62,16 @@ def test_wallet_is_explicitly_legacy_and_deprecated_in_openapi():
     tag = next(tag for tag in schema["tags"] if tag["name"] == "wallet-legacy")
     assert "compatibilite" in tag["description"]
     assert "PaymentIntent" in tag["description"]
+
+
+def test_payment_intent_verification_contract_is_exposed():
+    schema = app.openapi()
+    operation = schema["paths"][
+        "/payfund/v1/payment-intents/{intent_id}/verify"
+    ]["post"]
+
+    assert operation["requestBody"]["content"]["application/json"]["schema"]
+    response_schema = operation["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    assert response_schema

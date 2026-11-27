@@ -15,6 +15,8 @@ commitées dans le dépôt.
 | `PAYMENT_CALLBACK_TARGETS` | Cibles et secrets callbacks | `{}` | JSON staging | JSON production |
 | `PAYMENT_REDIS_STREAM` | Stream Redis événements | `diddipay.payment.events.v1` | idem | idem |
 | `PAYMENT_SERVICE_KEYS` | Clés S2S par module | vide | secrets staging | secrets production |
+| `PAYMENT_INTENT_VERIFY_SCOPE` | Scope S2S de vérification ciblée | `diddipay:payment-intents:verify` | idem | idem |
+| `PAYMENT_INTENT_VERIFY_OWNER_CLIENTS` | Allowlist JSON `verifier -> propriétaires` | `{}` | `{"diddisend-staging":["diddishop-staging-diddipay"]}` | mapping approuvé |
 | `PAYMENT_PROCESSOR_MODE` | Processeur du nouvel orchestrateur PaymentIntent/Payout (`sandbox`, `paystack`, `pawapay`, `cinetpay` ou `jeko`) | `sandbox` | selon la recette | mode approuvé |
 | `PAYMENT_GATEWAY_MODE` | Processeur du wallet legacy (`stub`, `paystack` ou `pawapay`) | `stub` | selon la recette | mode approuvé |
 | `PAYSTACK_SECRET_KEY` / `PAYSTACK_WEBHOOK_SECRET` | Credentials Paystack | vide | secrets test | secrets live |

@@ -33,7 +33,9 @@ class PaymentClient:
     scopes: frozenset[str] = frozenset()
 
 
-def _payment_client_dependency(scope_setting: str) -> Callable[..., PaymentClient]:
+def _payment_client_dependency(
+    scope_setting: str, *, allow_legacy_key: bool = True
+) -> Callable[..., PaymentClient]:
     def dependency(
         authorization: Annotated[str | None, Header(alias="Authorization")] = None,
         client_id: Annotated[str | None, Header(alias="X-Client-ID")] = None,
@@ -59,7 +61,8 @@ def _payment_client_dependency(scope_setting: str) -> Callable[..., PaymentClien
 
         expected = settings.payment_service_key_map.get(client_id or "")
         if (
-            settings.payment_service_key_fallback_enabled
+            allow_legacy_key
+            and settings.payment_service_key_fallback_enabled
             and client_id
             and service_key
             and expected
@@ -73,6 +76,9 @@ def _payment_client_dependency(scope_setting: str) -> Callable[..., PaymentClien
 
 get_payment_intent_reader = _payment_client_dependency("payment_intent_read_scope")
 get_payment_intent_writer = _payment_client_dependency("payment_intent_write_scope")
+get_payment_intent_verifier = _payment_client_dependency(
+    "payment_intent_verify_scope", allow_legacy_key=False
+)
 get_payment_refunder = _payment_client_dependency("payment_refund_scope")
 get_payment_payout_reader = _payment_client_dependency("payment_payout_read_scope")
 get_payment_payout_writer = _payment_client_dependency("payment_payout_write_scope")
@@ -192,6 +198,9 @@ def reset_processor_registry() -> None:
 SessionDep = Annotated[Session, Depends(get_session)]
 PaymentIntentReaderDep = Annotated[PaymentClient, Depends(get_payment_intent_reader)]
 PaymentIntentWriterDep = Annotated[PaymentClient, Depends(get_payment_intent_writer)]
+PaymentIntentVerifierDep = Annotated[
+    PaymentClient, Depends(get_payment_intent_verifier)
+]
 PaymentRefunderDep = Annotated[PaymentClient, Depends(get_payment_refunder)]
 PaymentPayoutReaderDep = Annotated[PaymentClient, Depends(get_payment_payout_reader)]
 PaymentPayoutWriterDep = Annotated[PaymentClient, Depends(get_payment_payout_writer)]

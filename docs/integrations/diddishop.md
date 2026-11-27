@@ -41,5 +41,33 @@ X-Client-ID: diddishop-staging-diddipay
 X-Service-Key: <secret-dedie>
 ```
 
-Le credential doit être différent de ceux de DiddiGo, DiddiSend et DiddiFood. La rotation se
-fait en coordination entre les deux équipes.
+Le credential doit etre different de ceux de DiddiGo, DiddiSend et DiddiFood. La rotation se
+fait en coordination entre les deux equipes.
+
+## Verification par un autre module
+
+DiddiShop reste le proprietaire du PaymentIntent. DiddiSend ne doit pas utiliser le `GET`
+proprietaire pour lire l'intent, car il recevrait volontairement `404`. Pour valider une
+commande DiddiShop sans obtenir un acces global, DiddiPay expose une route de verification
+dediee :
+
+```text
+POST /payment-intents/{intent_id}/verify
+```
+
+DiddiPay provisionne a DiddiSend un JWT S2S avec le scope :
+
+```text
+diddipay:payment-intents:verify
+```
+
+La configuration DiddiPay borne explicitement DiddiSend aux intents DiddiShop :
+
+```env
+PAYMENT_INTENT_VERIFY_SCOPE=diddipay:payment-intents:verify
+PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay"]}
+```
+
+La verification exige dans le corps le montant, `XOF` et la `business_reference`. Le resultat
+est positif uniquement pour un intent `succeeded` correspondant exactement a ces trois valeurs.
+Il n'y a aucun secret partage entre DiddiShop et DiddiSend pour ce parcours.

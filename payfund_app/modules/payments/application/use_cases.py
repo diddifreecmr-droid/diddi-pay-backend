@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,6 +11,7 @@ from payfund_app.modules.payments.application.errors import (
     IdempotencyConflict,
     PaymentNotFound,
     PaymentOperationConflict,
+    PaymentVerificationFailed,
     PersistenceConflict,
     ProcessorCallUncertain,
     ProcessorRequestRejected,
@@ -155,6 +157,33 @@ class PaymentUseCases:
         intent = self.intents.get(intent_id)
         if intent is None or intent.client_id != client_id:
             raise PaymentNotFound()
+        return PaymentView(intent, tuple(self.attempts.list_for_intent(intent.id)))
+
+    def verify(
+        self,
+        intent_id: uuid.UUID,
+        *,
+        allowed_owner_client_ids: Collection[str],
+        expected_amount: int,
+        expected_currency: str,
+        expected_business_reference: str,
+    ) -> PaymentView:
+        """Verify one owned PaymentIntent without granting collection access.
+
+        The owner allowlist is supplied by the S2S boundary. An intent outside that
+        allowlist is deliberately indistinguishable from an unknown intent.
+        """
+        intent = self.intents.get(intent_id)
+        if intent is None or intent.client_id not in set(allowed_owner_client_ids):
+            raise PaymentNotFound()
+        if intent.status != PaymentIntentStatus.SUCCEEDED:
+            raise PaymentVerificationFailed("status_not_succeeded")
+        if intent.money.currency != expected_currency.upper():
+            raise PaymentVerificationFailed("currency_mismatch")
+        if intent.money.amount != expected_amount:
+            raise PaymentVerificationFailed("amount_mismatch")
+        if intent.business_reference != expected_business_reference:
+            raise PaymentVerificationFailed("business_reference_mismatch")
         return PaymentView(intent, tuple(self.attempts.list_for_intent(intent.id)))
 
     def list(self, client_id: str, *, limit: int = 50) -> list[PaymentView]:

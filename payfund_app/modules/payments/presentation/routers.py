@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query
 
 from payfund_app.core.config import get_settings
-from payfund_app.core.errors import Conflict, NotFound, UnprocessableEntity
+from payfund_app.core.errors import Conflict, Forbidden, NotFound, UnprocessableEntity
 from payfund_app.core.observability.business_metrics import (
     observe_payment_intent_created,
 )
@@ -17,8 +17,10 @@ from payfund_app.modules.payments.application.errors import (
     IdempotencyConflict,
     PaymentNotFound,
     PaymentOperationConflict,
+    PaymentVerificationFailed,
 )
 from payfund_app.modules.payments.application.processor_router import (
+    ProcessorRegistry,
     ProcessorRoutingError,
 )
 from payfund_app.modules.payments.application.refunds import (
@@ -42,12 +44,15 @@ from payfund_app.modules.payments.presentation.checkout_return import (
 )
 from payfund_app.modules.payments.presentation.deps import (
     PaymentIntentReaderDep,
+    PaymentIntentVerifierDep,
     PaymentIntentWriterDep,
     PaymentRefunderDep,
     ProcessorRegistryDep,
     SessionDep,
 )
-from payfund_app.modules.payments.presentation.idempotency import require_idempotency_key
+from payfund_app.modules.payments.presentation.idempotency import (
+    require_idempotency_key,
+)
 from payfund_app.modules.payments.presentation.schemas import (
     CreatePaymentIntentRequest,
     CreateRefundRequest,
@@ -57,6 +62,8 @@ from payfund_app.modules.payments.presentation.schemas import (
     PaymentIntentListResponse,
     PaymentIntentResponse,
     RefundResponse,
+    VerifyPaymentIntentRequest,
+    VerifyPaymentIntentResponse,
 )
 from payfund_app.shared_kernel.logging import emit
 
@@ -134,6 +141,12 @@ def _translate_error(exc: Exception) -> None:
         ) from exc
     if isinstance(exc, PaymentOperationConflict):
         raise Conflict(str(exc), code="PAYMENT_OPERATION_CONFLICT") from exc
+    if isinstance(exc, PaymentVerificationFailed):
+        raise Conflict(
+            "PaymentIntent non verifie.",
+            code="PAYMENT_INTENT_NOT_VERIFIED",
+            details={"reason": exc.reason},
+        ) from exc
     if isinstance(exc, ProcessorRoutingError):
         raise UnprocessableEntity(str(exc), code="PAYMENT_METHOD_UNAVAILABLE") from exc
     raise exc
@@ -205,6 +218,57 @@ def get_payment_intent(
     except Exception as exc:
         _translate_error(exc)
         raise
+
+
+@router.post(
+    "/{intent_id}/verify",
+    response_model=VerifyPaymentIntentResponse,
+    summary="Verify a PaymentIntent owned by an allowed module",
+)
+def verify_payment_intent(
+    intent_id: uuid.UUID,
+    payload: VerifyPaymentIntentRequest,
+    client: PaymentIntentVerifierDep,
+    session: SessionDep,
+) -> VerifyPaymentIntentResponse:
+    settings = get_settings()
+    allowed_owners = settings.payment_intent_verify_owner_set(client.client_id)
+    if not allowed_owners:
+        raise Forbidden(
+            "La verification inter-service n'est pas configuree pour ce client.",
+            code="PAYMENT_INTENT_VERIFY_NOT_CONFIGURED",
+        )
+    try:
+        # Verification is read-only and must remain available even when no PSP
+        # adapter is configured in the DiddiPay process.
+        view = _use_cases(session, ProcessorRegistry()).verify(
+            intent_id,
+            allowed_owner_client_ids=allowed_owners,
+            expected_amount=payload.amount,
+            expected_currency=payload.currency,
+            expected_business_reference=payload.business_reference,
+        )
+    except Exception as exc:
+        _translate_error(exc)
+        raise
+    emit(
+        "info",
+        "payment.intent.verified",
+        payment_intent_id=str(intent_id),
+        verifier_client_id=client.client_id,
+        owner_client_id=view.intent.client_id,
+        amount=view.intent.money.amount,
+        currency=view.intent.money.currency,
+        business_reference=view.intent.business_reference,
+    )
+    return VerifyPaymentIntentResponse(
+        payment_intent_id=view.intent.id,
+        owner_client_id=view.intent.client_id,
+        business_reference=view.intent.business_reference,
+        amount=view.intent.money.amount,
+        currency=view.intent.money.currency,
+        status="succeeded",
+    )
 
 
 @router.get("", response_model=PaymentIntentListResponse)

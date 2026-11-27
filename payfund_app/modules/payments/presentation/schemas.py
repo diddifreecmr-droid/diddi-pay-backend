@@ -112,6 +112,24 @@ class PaymentIntentListResponse(BaseModel):
     data: list[PaymentIntentResponse]
 
 
+class VerifyPaymentIntentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: int = Field(gt=0, description="Expected amount in XOF")
+    currency: Literal["XOF"] = "XOF"
+    business_reference: str = Field(min_length=1, max_length=128)
+
+
+class VerifyPaymentIntentResponse(BaseModel):
+    verified: Literal[True] = True
+    payment_intent_id: uuid.UUID
+    owner_client_id: str
+    business_reference: str
+    amount: int
+    currency: Literal["XOF"]
+    status: Literal["succeeded"]
+
+
 class PaymentWebhookResponse(BaseModel):
     status: Literal["processed", "duplicate", "ignored", "failed"]
     event_key: str

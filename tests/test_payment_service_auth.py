@@ -14,6 +14,7 @@ def _settings(**overrides):
         "payment_service_key_fallback_enabled": True,
         "payment_intent_read_scope": "diddipay:payment-intents:read",
         "payment_intent_write_scope": "diddipay:payment-intents:write",
+        "payment_intent_verify_scope": "diddipay:payment-intents:verify",
         "payment_refund_scope": "diddipay:payment-intents:refund",
         "payment_payout_read_scope": "diddipay:payouts:read",
         "payment_payout_write_scope": "diddipay:payouts:write",
@@ -77,3 +78,26 @@ def test_legacy_key_remains_available_during_staging_migration(monkeypatch):
 
     assert client.client_id == "diddigo-staging"
     assert client.authentication_method == "legacy_key"
+
+
+def test_payment_intent_verifier_requires_dedicated_scope_and_jwt(monkeypatch):
+    monkeypatch.setattr(deps, "get_settings", lambda: _settings())
+    captured = {}
+
+    def verify(token, **kwargs):
+        captured.update(token=token, **kwargs)
+        return SimpleNamespace(
+            client_id="diddigo-staging",
+            scopes=frozenset({"diddipay:payment-intents:verify"}),
+        )
+
+    monkeypatch.setattr(deps, "decode_service_token", verify)
+    client = deps.get_payment_intent_verifier(
+        "Bearer signed-token", "diddigo-staging", "legacy-secret"
+    )
+
+    assert client.authentication_method == "service_token"
+    assert captured["required_scopes"] == {"diddipay:payment-intents:verify"}
+
+    with pytest.raises(Unauthenticated):
+        deps.get_payment_intent_verifier(None, "diddigo-staging", "legacy-secret")
