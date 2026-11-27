@@ -26,6 +26,10 @@ Le token doit viser `aud=diddipay` et porter uniquement le scope necessaire :
 diddipay:payment-intents:verify
 ```
 
+Son identite doit etre celle de DiddiSend : `sub=service:diddisend`. Le header `X-Client-ID`
+doit correspondre au `client_id` porte par le meme token. Un token Pilotage, meme signe et avec
+le meme scope, n'est pas accepte sur cette route.
+
 Corps :
 
 ```json
@@ -45,6 +49,20 @@ DiddiPay retourne `200` et `verified=true` uniquement si :
 - son montant correspond exactement ;
 - sa `business_reference` correspond exactement.
 
+Réponse de succès exacte :
+
+```json
+{
+  "verified": true,
+  "payment_intent_id": "uuid",
+  "owner_client_id": "diddishop-staging-diddipay",
+  "business_reference": "diddish:order:order-123",
+  "amount": 12000,
+  "currency": "XOF",
+  "status": "succeeded"
+}
+```
+
 Sinon :
 
 - `404 PAYMENT_INTENT_NOT_FOUND` si l'intent n'existe pas ou n'appartient pas a un owner
@@ -53,5 +71,6 @@ Sinon :
   pas aux valeurs attendues.
 
 DiddiSend peut rejouer cette verification avec le meme `payment_intent_id` et les memes valeurs,
-sans creer un nouveau paiement. Aucun secret webhook DiddiShop ou DiddiFood n'est necessaire pour
+sans creer un nouveau paiement. La verification est en lecture seule : elle ne modifie ni le
+PaymentIntent ni son statut. Aucun secret webhook DiddiShop ou DiddiFood n'est necessaire pour
 cet appel.
