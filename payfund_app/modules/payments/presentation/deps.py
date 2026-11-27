@@ -34,7 +34,10 @@ class PaymentClient:
 
 
 def _payment_client_dependency(
-    scope_setting: str, *, allow_legacy_key: bool = True
+    scope_setting: str,
+    *,
+    allow_legacy_key: bool = True,
+    expected_subject: str | None = None,
 ) -> Callable[..., PaymentClient]:
     def dependency(
         authorization: Annotated[str | None, Header(alias="Authorization")] = None,
@@ -53,6 +56,8 @@ def _payment_client_dependency(
                 required_scopes={getattr(settings, scope_setting)},
                 allowed_client_ids=settings.payment_service_client_id_set,
             )
+            if expected_subject is not None and principal.subject != expected_subject:
+                raise Unauthenticated("Identite de service invalide pour cette route.")
             return PaymentClient(
                 client_id=principal.client_id,
                 authentication_method="service_token",
@@ -77,7 +82,9 @@ def _payment_client_dependency(
 get_payment_intent_reader = _payment_client_dependency("payment_intent_read_scope")
 get_payment_intent_writer = _payment_client_dependency("payment_intent_write_scope")
 get_payment_intent_verifier = _payment_client_dependency(
-    "payment_intent_verify_scope", allow_legacy_key=False
+    "payment_intent_verify_scope",
+    allow_legacy_key=False,
+    expected_subject="service:diddisend",
 )
 get_payment_refunder = _payment_client_dependency("payment_refund_scope")
 get_payment_payout_reader = _payment_client_dependency("payment_payout_read_scope")

@@ -292,13 +292,19 @@ Authorization: Bearer <service-token-diddifreeid>
 X-Client-ID: diddisend-staging
 ```
 
-Le token doit porter `aud=diddipay` et le scope `diddipay:payment-intents:verify`. DiddiPay
+Le token doit porter `aud=diddipay`, `sub=service:diddisend` et le scope
+`diddipay:payment-intents:verify`. DiddiPay
 applique ensuite une allowlist serveur `PAYMENT_INTENT_VERIFY_OWNER_CLIENTS` qui associe le
 client verifier aux clients proprietaires autorises. Par exemple :
 
 ```env
-PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay"]}
+PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay","diddifood-staging"]}
 ```
+
+En staging, DiddiSend peut donc vérifier uniquement les intents créés par DiddiShop ou DiddiFood.
+Cette liste est une décision d'autorisation DiddiPay, pas une autorisation générale de lecture.
+Un token avec `sub=service:pilotage` n'est pas accepté sur cette route, même s'il porte le même
+scope. Le `client_id` du token doit aussi être identique à `X-Client-ID`.
 
 Corps :
 
@@ -328,7 +334,9 @@ DiddiPay retourne `200` uniquement si l'intent appartient a un owner autorise, e
 Un intent inconnu ou appartenant a un owner non autorise retourne `404 PAYMENT_INTENT_NOT_FOUND`
 afin de ne pas divulguer son existence. Un statut, montant ou reference incompatible retourne
 `409 PAYMENT_INTENT_NOT_VERIFIED`. Aucun secret callback DiddiShop/DiddiSend n'est partage pour
-cette verification : l'autorisation repose sur le JWT S2S, le scope et l'allowlist DiddiPay.
+cette verification : l'autorisation repose sur le JWT S2S, son identite DiddiSend, le scope et
+l'allowlist DiddiPay. La route est en lecture seule et peut être appelée plusieurs fois avec les
+mêmes valeurs sans modifier le PaymentIntent.
 
 ### `GET /payment-intents?limit=50`
 

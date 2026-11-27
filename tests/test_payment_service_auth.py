@@ -88,6 +88,7 @@ def test_payment_intent_verifier_requires_dedicated_scope_and_jwt(monkeypatch):
         captured.update(token=token, **kwargs)
         return SimpleNamespace(
             client_id="diddigo-staging",
+            subject="service:diddisend",
             scopes=frozenset({"diddipay:payment-intents:verify"}),
         )
 
@@ -101,3 +102,21 @@ def test_payment_intent_verifier_requires_dedicated_scope_and_jwt(monkeypatch):
 
     with pytest.raises(Unauthenticated):
         deps.get_payment_intent_verifier(None, "diddigo-staging", "legacy-secret")
+
+
+def test_payment_intent_verifier_rejects_another_service_subject(monkeypatch):
+    monkeypatch.setattr(deps, "get_settings", lambda: _settings())
+
+    def verify(token, **kwargs):
+        return SimpleNamespace(
+            client_id="diddigo-staging",
+            subject="service:pilotage",
+            scopes=frozenset({"diddipay:payment-intents:verify"}),
+        )
+
+    monkeypatch.setattr(deps, "decode_service_token", verify)
+
+    with pytest.raises(Unauthenticated):
+        deps.get_payment_intent_verifier(
+            "Bearer signed-token", "diddigo-staging", "legacy-secret"
+        )

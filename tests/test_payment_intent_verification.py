@@ -48,12 +48,13 @@ def _intent(*, owner="diddishop-staging-diddipay", status=PaymentIntentStatus.SU
     )
 
 
-def test_verification_accepts_only_matching_succeeded_owned_intent():
-    intent = _intent()
+@pytest.mark.parametrize("owner", ["diddishop-staging-diddipay", "diddifood-staging"])
+def test_verification_accepts_matching_succeeded_shop_or_food_intent(owner):
+    intent = _intent(owner=owner)
 
     view = _use_cases(intent).verify(
         intent.id,
-        allowed_owner_client_ids={"diddishop-staging-diddipay"},
+        allowed_owner_client_ids={"diddishop-staging-diddipay", "diddifood-staging"},
         expected_amount=12000,
         expected_currency="XOF",
         expected_business_reference="diddish:order:order-123",
