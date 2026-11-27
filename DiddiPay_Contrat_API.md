@@ -261,6 +261,7 @@ Toutes les requetes ci-dessous sont exposees dans Swagger, corps et headers comp
 | `POST` | `/payment-intents` | backend module | creer et initialiser un paiement |
 | `GET` | `/payment-intents` | backend module | lister les paiements du module |
 | `GET` | `/payment-intents/{intent_id}` | backend module | lire un paiement et ses tentatives |
+| `POST` | `/payment-intents/{intent_id}/verify` | backend module autorise | verifier un paiement d'un autre module, avec bornage d'owner |
 | `POST` | `/payment-intents/{intent_id}/cancel` | backend module | annuler une intention encore locale |
 | `POST` | `/payment-intents/{intent_id}/refunds` | backend module | demander un remboursement idempotent |
 | `GET` | `/payment-intents/{intent_id}/financial-summary` | backend module | lire capture, frais, settlement et reste attendu |
@@ -277,6 +278,57 @@ le contrat legacy et ne font pas partie du nouveau coeur PaymentIntent.
 
 Retourne le `PaymentIntent` et ses tentatives. Le `X-Client-ID` appelant doit en etre proprietaire.
 Un identifiant inconnu ou appartenant a un autre module retourne `404 PAYMENT_INTENT_NOT_FOUND`.
+
+### `POST /payment-intents/{intent_id}/verify`
+
+Cette route est reservee a la verification inter-service. Elle ne donne pas a DiddiSend un acces
+general aux paiements DiddiShop et elle n'accepte pas l'ancien header `X-Service-Key` : seul un
+JWT S2S DiddiFreeID est accepte.
+
+Headers :
+
+```http
+Authorization: Bearer <service-token-diddifreeid>
+X-Client-ID: diddisend-staging
+```
+
+Le token doit porter `aud=diddipay` et le scope `diddipay:payment-intents:verify`. DiddiPay
+applique ensuite une allowlist serveur `PAYMENT_INTENT_VERIFY_OWNER_CLIENTS` qui associe le
+client verifier aux clients proprietaires autorises. Par exemple :
+
+```env
+PAYMENT_INTENT_VERIFY_OWNER_CLIENTS={"diddisend-staging":["diddishop-staging-diddipay"]}
+```
+
+Corps :
+
+```json
+{
+  "amount": 12000,
+  "currency": "XOF",
+  "business_reference": "diddish:order:order-123"
+}
+```
+
+DiddiPay retourne `200` uniquement si l'intent appartient a un owner autorise, est exactement
+`succeeded`, est en `XOF`, et correspond au montant et a la `business_reference` fournis :
+
+```json
+{
+  "verified": true,
+  "payment_intent_id": "uuid",
+  "owner_client_id": "diddishop-staging-diddipay",
+  "business_reference": "diddish:order:order-123",
+  "amount": 12000,
+  "currency": "XOF",
+  "status": "succeeded"
+}
+```
+
+Un intent inconnu ou appartenant a un owner non autorise retourne `404 PAYMENT_INTENT_NOT_FOUND`
+afin de ne pas divulguer son existence. Un statut, montant ou reference incompatible retourne
+`409 PAYMENT_INTENT_NOT_VERIFIED`. Aucun secret callback DiddiShop/DiddiSend n'est partage pour
+cette verification : l'autorisation repose sur le JWT S2S, le scope et l'allowlist DiddiPay.
 
 ### `GET /payment-intents?limit=50`
 

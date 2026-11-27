@@ -9,6 +9,12 @@ class PaymentNotFound(PaymentApplicationError):
     pass
 
 
+class PaymentVerificationFailed(PaymentApplicationError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
 class IdempotencyConflict(PaymentApplicationError):
     pass
 

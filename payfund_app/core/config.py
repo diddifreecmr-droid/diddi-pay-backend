@@ -148,6 +148,10 @@ class Settings(BaseSettings):
     payment_service_client_ids: str = ""
     payment_intent_read_scope: str = "diddipay:payment-intents:read"
     payment_intent_write_scope: str = "diddipay:payment-intents:write"
+    payment_intent_verify_scope: str = "diddipay:payment-intents:verify"
+    # Maps the verifier service client to the owner client IDs it may verify.
+    # Empty means fail closed: no cross-module verification is allowed.
+    payment_intent_verify_owner_clients: dict[str, list[str]] = Field(default_factory=dict)
     payment_refund_scope: str = "diddipay:payment-intents:refund"
     payment_payout_read_scope: str = "diddipay:payouts:read"
     payment_payout_write_scope: str = "diddipay:payouts:write"
@@ -184,6 +188,13 @@ class Settings(BaseSettings):
             if client_id.strip()
         }
         return configured or set(self.payment_service_key_map)
+
+    def payment_intent_verify_owner_set(self, verifier_client_id: str) -> frozenset[str]:
+        return frozenset(
+            owner.strip()
+            for owner in self.payment_intent_verify_owner_clients.get(verifier_client_id, [])
+            if owner.strip()
+        )
 
     @property
     def backoffice_client_id_set(self) -> set[str]:
