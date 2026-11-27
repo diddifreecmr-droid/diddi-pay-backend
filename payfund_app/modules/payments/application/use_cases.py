@@ -186,6 +186,34 @@ class PaymentUseCases:
             raise PaymentVerificationFailed("business_reference_mismatch")
         return PaymentView(intent, tuple(self.attempts.list_for_intent(intent.id)))
 
+    def verify_coverage(
+        self,
+        intent_id: uuid.UUID,
+        *,
+        allowed_owner_client_ids: Collection[str],
+        required_amount: int,
+        expected_currency: str,
+        expected_business_reference: str,
+    ) -> PaymentView:
+        """Verify that a succeeded PaymentIntent covers a required amount.
+
+        This is intentionally read-only. It does not create a payment, capture
+        funds, or mutate the PaymentIntent. The strict ``verify`` method above
+        remains available for consumers that require exact amount equality.
+        """
+        intent = self.intents.get(intent_id)
+        if intent is None or intent.client_id not in set(allowed_owner_client_ids):
+            raise PaymentNotFound()
+        if intent.status != PaymentIntentStatus.SUCCEEDED:
+            raise PaymentVerificationFailed("status_not_succeeded")
+        if intent.money.currency != expected_currency.upper():
+            raise PaymentVerificationFailed("currency_mismatch")
+        if intent.money.amount < required_amount:
+            raise PaymentVerificationFailed("payment_amount_insufficient")
+        if intent.business_reference != expected_business_reference:
+            raise PaymentVerificationFailed("business_reference_mismatch")
+        return PaymentView(intent, tuple(self.attempts.list_for_intent(intent.id)))
+
     def list(self, client_id: str, *, limit: int = 50) -> list[PaymentView]:
         return [
             PaymentView(intent, tuple(self.attempts.list_for_intent(intent.id)))

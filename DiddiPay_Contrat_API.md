@@ -265,7 +265,7 @@ Toutes les requetes ci-dessous sont exposees dans Swagger, corps et headers comp
 | `POST` | `/payment-intents` | backend module | creer et initialiser un paiement |
 | `GET` | `/payment-intents` | backend module | lister les paiements du module |
 | `GET` | `/payment-intents/{intent_id}` | backend module | lire un paiement et ses tentatives |
-| `POST` | `/payment-intents/{intent_id}/verify` | backend module autorise | verifier un paiement d'un autre module, avec bornage d'owner |
+| `POST` | `/payment-intents/{intent_id}/verify` | backend module autorise | verifier un paiement d'un autre module, en mode exact ou couverture, avec bornage d'owner |
 | `POST` | `/payment-intents/{intent_id}/cancel` | backend module | annuler une intention encore locale |
 | `POST` | `/payment-intents/{intent_id}/refunds` | backend module | demander un remboursement idempotent |
 | `GET` | `/payment-intents/{intent_id}/financial-summary` | backend module | lire capture, frais, settlement et reste attendu |
@@ -314,14 +314,17 @@ Corps :
 
 ```json
 {
+  "verification_mode": "exact",
   "amount": 12000,
   "currency": "XOF",
   "business_reference": "diddish:order:order-123"
 }
 ```
 
-DiddiPay retourne `200` uniquement si l'intent appartient a un owner autorise, est exactement
-`succeeded`, est en `XOF`, et correspond au montant et a la `business_reference` fournis :
+DiddiPay conserve le mode `exact` par defaut afin de ne pas changer le contrat des consommateurs
+existants. Dans ce mode, `amount` est obligatoire et `required_amount` est interdit. DiddiPay
+retourne `200` uniquement si l'intent appartient a un owner autorise, est exactement `succeeded`,
+est en `XOF`, et correspond au montant et a la `business_reference` fournis :
 
 ```json
 {
@@ -329,19 +332,54 @@ DiddiPay retourne `200` uniquement si l'intent appartient a un owner autorise, e
   "payment_intent_id": "uuid",
   "owner_client_id": "diddishop-staging-diddipay",
   "business_reference": "diddish:order:order-123",
+  "verification_mode": "exact",
   "amount": 12000,
   "currency": "XOF",
   "status": "succeeded"
 }
 ```
 
+Pour une livraison prepayee dont le paiement peut couvrir plusieurs obligations, DiddiSend utilise
+la meme route avec un mode explicite `coverage` :
+
+```json
+{
+  "verification_mode": "coverage",
+  "required_amount": 4140,
+  "currency": "XOF",
+  "business_reference": "diddifood:order:order-123"
+}
+```
+
+Dans ce mode, `amount` est interdit. `required_amount` est le montant minimal a couvrir et
+DiddiPay accepte si le montant reel du PaymentIntent est superieur ou egal a ce montant. La
+reponse distingue toujours le montant reel paye du montant couvert :
+
+```json
+{
+  "verified": true,
+  "payment_intent_id": "uuid",
+  "owner_client_id": "diddifood-staging",
+  "business_reference": "diddifood:order:order-123",
+  "verification_mode": "coverage",
+  "payment_amount": 5640,
+  "required_amount": 4140,
+  "currency": "XOF",
+  "status": "succeeded"
+}
+```
+
+Le mode `coverage` verifie le meme owner autorise, le statut, la devise et la
+`business_reference`. Il est en lecture seule, repetable, et ne cree aucun nouveau paiement.
+
 Erreurs documentees : `401 UNAUTHENTICATED` pour un token invalide ou une identite incorrecte ;
 `403 SERVICE_CLIENT_FORBIDDEN`, `SERVICE_SCOPE_REQUIRED` ou
 `PAYMENT_INTENT_VERIFY_NOT_CONFIGURED` pour un appelant non autorise ;
 `404 PAYMENT_INTENT_NOT_FOUND` pour un intent inconnu ou un owner non autorise, sans divulguer
 son existence ; `409 PAYMENT_INTENT_NOT_VERIFIED` si `details.reason` vaut
-`status_not_succeeded`, `currency_mismatch`, `amount_mismatch` ou
-`business_reference_mismatch` ; `422` pour une erreur de validation HTTP.
+`status_not_succeeded`, `currency_mismatch`, `amount_mismatch`,
+`payment_amount_insufficient` ou `business_reference_mismatch` ; `422` pour une erreur de
+validation HTTP, notamment si les champs ne correspondent pas au mode choisi.
 
 Aucun secret callback DiddiShop/DiddiSend n'est partage pour cette verification : l'autorisation
 repose sur le JWT S2S, son identite DiddiSend, le scope et l'allowlist DiddiPay. La route est en

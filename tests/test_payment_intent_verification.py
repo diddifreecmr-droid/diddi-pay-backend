@@ -12,6 +12,7 @@ from payfund_app.modules.payments.domain.entities import (
     PaymentIntent,
     PaymentIntentStatus,
 )
+from payfund_app.modules.payments.presentation.schemas import VerifyPaymentIntentRequest
 
 
 class _IntentRepository:
@@ -36,12 +37,17 @@ def _use_cases(intent):
     )
 
 
-def _intent(*, owner="diddishop-staging-diddipay", status=PaymentIntentStatus.SUCCEEDED):
+def _intent(
+    *,
+    owner="diddishop-staging-diddipay",
+    status=PaymentIntentStatus.SUCCEEDED,
+    amount=12000,
+):
     return PaymentIntent(
         id=uuid.uuid4(),
         client_id=owner,
         business_reference="diddish:order:order-123",
-        money=Money(12000, "XOF"),
+        money=Money(amount, "XOF"),
         idempotency_key="idem-123",
         request_fingerprint="fingerprint",
         status=status,
@@ -74,6 +80,68 @@ def test_verification_hides_intents_owned_by_other_modules():
             expected_amount=12000,
             expected_currency="XOF",
             expected_business_reference="diddish:order:order-123",
+        )
+
+
+def test_coverage_verification_accepts_a_payment_above_required_amount():
+    intent = _intent(amount=5640)
+
+    view = _use_cases(intent).verify_coverage(
+        intent.id,
+        allowed_owner_client_ids={"diddishop-staging-diddipay", "diddifood-staging"},
+        required_amount=4140,
+        expected_currency="XOF",
+        expected_business_reference="diddish:order:order-123",
+    )
+
+    assert view.intent.money.amount == 5640
+    assert view.intent.status is PaymentIntentStatus.SUCCEEDED
+
+
+def test_coverage_verification_rejects_an_insufficient_payment():
+    intent = _intent(amount=4000)
+
+    with pytest.raises(PaymentVerificationFailed) as error:
+        _use_cases(intent).verify_coverage(
+            intent.id,
+            allowed_owner_client_ids={"diddishop-staging-diddipay"},
+            required_amount=4140,
+            expected_currency="XOF",
+            expected_business_reference="diddish:order:order-123",
+        )
+
+    assert error.value.reason == "payment_amount_insufficient"
+
+
+def test_verification_request_keeps_exact_mode_as_the_default():
+    request = VerifyPaymentIntentRequest(
+        amount=5640,
+        currency="XOF",
+        business_reference="diddifood:order:order-123",
+    )
+
+    assert request.verification_mode == "exact"
+    assert request.amount == 5640
+    assert request.required_amount is None
+
+
+def test_verification_request_requires_the_matching_amount_field_for_each_mode():
+    coverage = VerifyPaymentIntentRequest(
+        verification_mode="coverage",
+        required_amount=4140,
+        currency="XOF",
+        business_reference="diddifood:order:order-123",
+    )
+
+    assert coverage.required_amount == 4140
+
+    with pytest.raises(ValueError):
+        VerifyPaymentIntentRequest(
+            verification_mode="coverage",
+            amount=5640,
+            required_amount=4140,
+            currency="XOF",
+            business_reference="diddifood:order:order-123",
         )
 
 
