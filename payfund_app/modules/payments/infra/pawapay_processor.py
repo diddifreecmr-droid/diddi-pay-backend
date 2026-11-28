@@ -137,9 +137,14 @@ class PawapayPaymentProcessor:
         callback_url: str | None = None,
         callback_signature_required: bool = False,
         public_keys_url: str | None = None,
+        default_country: str = "CIV",
     ) -> None:
         if not api_token:
             raise ValueError("PAWAPAY_API_TOKEN is required to register the pawapay processor")
+        default_country = (default_country or "").strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", default_country):
+            raise ValueError("PAWAPAY_DEFAULT_COUNTRY must be an ISO 3166-1 alpha-3 code, e.g. CIV")
+        self._default_country = default_country
         self._api_token = api_token
         self._base_url = base_url.rstrip("/")
         self._client = client
@@ -207,20 +212,30 @@ class PawapayPaymentProcessor:
         return operator
 
     def initialize_payment(self, request: InitializePaymentRequest) -> ProviderResult:
-        if not request.customer_phone:
-            raise ProcessorRequestRejected("customer_phone is required by pawapay deposits")
         if not request.callback_url:
             raise ProcessorRequestRejected(
                 "callback_url is required by pawapay's Payment Page (used as returnUrl)"
             )
 
-        # Sanity-check the intended network before sending the customer anywhere -- but note
-        # the Payment Page itself has no field to pin the exact operator (verified against the
-        # real API: only country-level restriction exists), so the customer could still
-        # complete with a different operator in the same country than the one checked here.
-        # verify_payment's eventual read of the real deposit is the source of truth either way.
-        operator = self._resolve_operator(network=request.network, phone=request.customer_phone)
-        country = operator.rsplit("_", 1)[-1]
+        if request.customer_phone:
+            # Sanity-check the intended network before sending the customer anywhere -- but
+            # note the Payment Page has no field to pin the exact operator (verified against
+            # the real API: only country-level restriction exists), so the customer could still
+            # complete with a different operator in the same country than the one checked here.
+            # verify_payment's eventual read of the real deposit is the source of truth.
+            operator = self._resolve_operator(
+                network=request.network, phone=request.customer_phone
+            )
+            country = operator.rsplit("_", 1)[-1]
+        else:
+            if request.network and request.network not in _PROVIDER_FAMILIES:
+                raise ProcessorRequestRejected(
+                    f"pawapay does not support network {request.network!r}"
+                )
+            # Ticket 108: no phone -> the customer types the wallet number on the page.
+            # PawaPay documents phoneNumber as optional; `country` is still sent because the
+            # amount is fixed and PawaPay cannot fix the amount without a country.
+            country = self._default_country
         # Deterministic from attempt_id (unlike the wallet's fresh uuid4 per call) so a retried
         # HTTP call resubmits the same session instead of minting a new one.
         deposit_id = str(request.attempt_id)
@@ -228,10 +243,11 @@ class PawapayPaymentProcessor:
             "depositId": deposit_id,
             "returnUrl": request.callback_url,
             "amountDetails": {"amount": str(request.money.amount), "currency": request.money.currency},
-            "phoneNumber": _digits_only(request.customer_phone),
             "country": country,
             "reason": (request.business_reference or "DiddiPay payment")[:50],
         }
+        if request.customer_phone:
+            payload["phoneNumber"] = _digits_only(request.customer_phone)
         try:
             response = self._request("initialize", "POST", "/v2/paymentpage", json=payload)
         except (httpx.TimeoutException, httpx.TransportError) as exc:

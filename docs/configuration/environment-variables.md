@@ -25,6 +25,7 @@ commitées dans le dépôt.
 | `PAWAPAY_DEPOSIT_CALLBACK_URL` | Callback PawaPay des dépôts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
 | `PAWAPAY_REFUND_CALLBACK_URL` | Callback PawaPay des remboursements | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
 | `PAWAPAY_PAYOUT_CALLBACK_URL` | Callback PawaPay des payouts | vide | URL HTTPS DiddiPay | URL HTTPS DiddiPay |
+| `PAWAPAY_DEFAULT_COUNTRY` | Pays (ISO 3166-1 alpha-3) de la Payment Page quand l'intent n'a pas de `customer_phone` : le client saisit le numero | `CIV` | `CIV` | `CIV` |
 | `CINETPAY_API_KEY` / `CINETPAY_API_PASSWORD` | Credentials CinetPay PaymentIntent/Payout | vide | secrets sandbox | secrets production |
 | `CINETPAY_BASE_URL` / `CINETPAY_COUNTRY` | Endpoint et pays CinetPay | auto / `CI` | selon le compte | selon le compte |
 | `CINETPAY_WEBHOOK_URL` | URL HTTPS publique recevant les notifications de paiement CinetPay | vide | `/payfund/v1/payments/webhooks/cinetpay` | URL HTTPS de production |

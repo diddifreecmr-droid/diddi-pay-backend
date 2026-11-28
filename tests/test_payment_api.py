@@ -78,7 +78,9 @@ def test_create_payment_intent_exposes_provider_failure_details(client):
         response = client.post(
             BASE,
             headers={**HEADERS, "Idempotency-Key": "provider-failure-details"},
-            json=payload(),
+            # The default PAYMENT_PROCESSOR_MODE (sandbox) is not in this registry; name the
+            # fake explicitly, as a module sending `processor` would.
+            json=payload(processor="test-failing-provider"),
         )
     finally:
         app.dependency_overrides.pop(get_processor_registry, None)

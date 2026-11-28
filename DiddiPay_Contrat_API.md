@@ -178,6 +178,12 @@ creation (toujours `201`) mais fait echouer la tentative immediatement : intent 
 pawapay's Payment Page`. Paystack reste insensible a cette contrainte (son propre retour par defaut
 s'applique si aucun des deux n'est fourni).
 
+Avec PawaPay, `customer_phone` est facultatif (ticket 108) : s'il est fourni, la Payment Page
+s'ouvre avec ce numero pre-rempli (non modifiable) et le pays deduit de l'indicatif ; s'il est
+absent, la page s'ouvre pour le pays `PAWAPAY_DEFAULT_COUNTRY` (`CIV` par defaut) et le client
+saisit lui-meme le numero du portefeuille a debiter. Un `network` non pris en charge par PawaPay
+(par exemple `wave`) reste refuse (`PROCESSOR_REQUEST_REJECTED`).
+
 Reponse `201 Created` :
 
 ```json

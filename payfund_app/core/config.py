@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     pawapay_refund_callback_url: str = ""
     pawapay_callback_signature_required: bool = False
     pawapay_public_keys_url: str = ""
+    # Payment Page country when the caller sends no customer_phone (ticket 108): the
+    # customer then types the wallet number on PawaPay's page. ISO 3166-1 alpha-3.
+    pawapay_default_country: str = "CIV"
 
     # CinetPay API v1 mobile money (api.cinetpay.net sandbox / api.cinetpay.co prod).
     # Auth = api_key (sk_test_/sk_live_) + api_password -> JWT. Les DEUX sont requis ;
