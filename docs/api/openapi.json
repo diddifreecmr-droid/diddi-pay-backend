@@ -650,7 +650,8 @@
                 "enum": [
                   "orange",
                   "wave",
-                  "mtn"
+                  "mtn",
+                  "moov"
                 ],
                 "type": "string"
               },
