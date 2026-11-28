@@ -209,6 +209,7 @@ def _to_domain(row) -> Refund:
         status=RefundStatus(row.status),
         provider_reference=row.provider_reference,
         provider_status=row.provider_status,
+        recover_from_payee=bool(row.recover_from_payee),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

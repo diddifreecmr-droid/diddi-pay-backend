@@ -817,6 +817,12 @@
               }
             ],
             "title": "Reason"
+          },
+          "recover_from_payee": {
+            "default": false,
+            "description": "Default false: the refund is not taken back from the payee (e.g. the driver). Set true only on an admin decision; the owning module receives it in the diddipay.refund.*.v1 event and debits the payee itself.",
+            "title": "Recover From Payee",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3792,6 +3798,11 @@
             ],
             "title": "Provider Status"
           },
+          "recover_from_payee": {
+            "default": false,
+            "title": "Recover From Payee",
+            "type": "boolean"
+          },
           "status": {
             "enum": [
               "pending",
@@ -4141,6 +4152,11 @@
             "minLength": 2,
             "title": "Reason Code",
             "type": "string"
+          },
+          "recover_from_payee": {
+            "default": false,
+            "title": "Recover From Payee",
+            "type": "boolean"
           },
           "support_case_id": {
             "format": "uuid",

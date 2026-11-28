@@ -329,6 +329,7 @@ class RefundRepository:
                 reason=refund.reason,
                 provider_reference=refund.provider_reference,
                 provider_status=refund.provider_status,
+                recover_from_payee=refund.recover_from_payee,
                 created_at=refund.created_at,
                 updated_at=refund.updated_at,
             )
