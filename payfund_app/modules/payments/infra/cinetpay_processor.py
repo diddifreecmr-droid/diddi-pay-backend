@@ -56,6 +56,7 @@ from payfund_app.modules.payments.application.ports import (
     ProviderResult,
     RefundRequest,
     RefundResult,
+    WebhookKind,
 )
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
@@ -152,6 +153,8 @@ class CinetpayPaymentProcessor:
         # processor is controlled by PAYMENT_PROCESSOR_MODE or the request override; payout
         # network restrictions are enforced inside create_payout instead.
         networks=frozenset(),
+        # Payment notifications only. Payout results are read by polling (verify_payout).
+        webhooks=frozenset({WebhookKind.PAYMENT}),
     )
 
     def __init__(
@@ -532,15 +535,23 @@ class CinetpayPaymentProcessor:
             )
         return reference
 
+    # AttemptBoundWebhookPort: the generic webhook use case looks up the attempt by this
+    # reference and passes its stored provider_metadata back to parse_webhook.
+    webhook_attempt_reference = extract_webhook_reference
+
     def parse_webhook(
         self,
         raw_body: bytes,
         headers: Mapping[str, str],
         *,
         expected_notify_token_hash: str | None = None,
+        attempt_metadata: Mapping[str, Any] | None = None,
     ) -> ProviderEvent:
         del headers  # CinetPay v1 authenticates the callback with notify_token in the body.
         body = self._parse_webhook_body(raw_body)
+        if not expected_notify_token_hash and attempt_metadata:
+            stored = attempt_metadata.get("notify_token_sha256")
+            expected_notify_token_hash = str(stored) if stored else None
         if not expected_notify_token_hash:
             raise ProcessorWebhookRejected(
                 "CinetPay webhook cannot be validated: notify_token is not stored"

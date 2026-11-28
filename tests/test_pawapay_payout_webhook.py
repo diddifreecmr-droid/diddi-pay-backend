@@ -15,8 +15,8 @@ from payfund_app.modules.payments.infra.models import (
 )
 from payfund_app.modules.payments.infra.pawapay_processor import PawapayPaymentProcessor
 from payfund_app.modules.payments.presentation.deps import (
-    get_pawapay_webhook_processor,
     get_processor_registry,
+    get_webhook_processor_resolver,
 )
 
 BASE = "/payfund/v1/webhooks/pawapay/payouts"
@@ -86,7 +86,9 @@ def test_pawapay_payout_webhook_updates_ledger_and_is_idempotent(client, session
     session.add(_payout_row(payout_id))
     session.commit()
     app = client.app
-    app.dependency_overrides[get_pawapay_webhook_processor] = lambda: _processor(payout_id)
+    app.dependency_overrides[get_webhook_processor_resolver] = (
+        lambda: lambda name, kind: _processor(payout_id)
+    )
     app.dependency_overrides[get_processor_registry] = ProcessorRegistry
 
     first = client.post(BASE, json=_callback(payout_id))
@@ -109,7 +111,9 @@ def test_pawapay_payout_webhook_rejects_amount_mismatch_without_posting(client, 
     session.add(_payout_row(payout_id))
     session.commit()
     app = client.app
-    app.dependency_overrides[get_pawapay_webhook_processor] = lambda: _processor(payout_id)
+    app.dependency_overrides[get_webhook_processor_resolver] = (
+        lambda: lambda name, kind: _processor(payout_id)
+    )
     app.dependency_overrides[get_processor_registry] = ProcessorRegistry
 
     response = client.post(BASE, json=_callback(payout_id, amount="5001"))

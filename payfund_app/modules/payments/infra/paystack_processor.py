@@ -25,6 +25,7 @@ from payfund_app.modules.payments.application.ports import (
     ProviderResult,
     RefundRequest,
     RefundResult,
+    WebhookKind,
 )
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
@@ -40,10 +41,13 @@ class PaystackPaymentProcessor:
     name = "paystack"
     capabilities = ProcessorCapabilities(
         currencies=frozenset({"XOF"}),
-        directions=frozenset({PaymentDirection.COLLECTION}),
+        # REFUND: refund_payment calls POST /refund (it always did; the flag was missing).
+        directions=frozenset({PaymentDirection.COLLECTION, PaymentDirection.REFUND}),
         channels=frozenset({"mobile_money", "card"}),
         # Hosted checkout lets the payer choose the available Mobile Money network.
         networks=frozenset(),
+        # charge.* events only. Paystack refund.* events are not consumed yet (ticket 023).
+        webhooks=frozenset({WebhookKind.PAYMENT}),
     )
 
     def __init__(

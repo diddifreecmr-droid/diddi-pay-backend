@@ -23,10 +23,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentIntentRepository,
     RefundRepository,
 )
-from payfund_app.modules.payments.presentation.deps import (
-    get_pawapay_deposit_webhook_processor,
-    get_pawapay_refund_webhook_processor,
-)
+from payfund_app.modules.payments.presentation.deps import get_webhook_processor_resolver
 
 DEPOSIT_URL = "/payfund/v1/webhooks/pawapay/deposits"
 REFUND_URL = "/payfund/v1/webhooks/pawapay/refunds"
@@ -69,7 +66,7 @@ def test_pawapay_deposit_callback_succeeds_payment_intent_once(client, session):
         status=PaymentIntentStatus.REQUIRES_ACTION,
         attempt_status=AttemptStatus.REQUIRES_ACTION,
     )
-    app.dependency_overrides[get_pawapay_deposit_webhook_processor] = _processor
+    app.dependency_overrides[get_webhook_processor_resolver] = lambda: lambda name, kind: _processor()
     body = {
         "depositId": attempt.provider_reference,
         "status": "COMPLETED",
@@ -111,7 +108,7 @@ def test_pawapay_refund_callback_updates_refund_and_ledger_once(client, session)
     )
     RefundRepository(session).add(refund, client_id="diddigo", processor="pawapay")
     session.commit()
-    app.dependency_overrides[get_pawapay_refund_webhook_processor] = _processor
+    app.dependency_overrides[get_webhook_processor_resolver] = lambda: lambda name, kind: _processor()
     body = {
         "refundId": refund.provider_reference,
         "status": "COMPLETED",

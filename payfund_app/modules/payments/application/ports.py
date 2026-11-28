@@ -28,12 +28,30 @@ class PaymentDirection(StrEnum):
     PAYOUT = "payout"
 
 
+class WebhookKind(StrEnum):
+    """Kinds of provider callbacks an adapter can validate and normalize."""
+
+    PAYMENT = "payment"
+    REFUND = "refund"
+    PAYOUT = "payout"
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessorCapabilities:
+    """What an adapter really implements. The application checks these flags before it
+    calls an operation, so an adapter never needs a NotImplementedError stub to be safe."""
+
     currencies: frozenset[str]
     directions: frozenset[PaymentDirection]
     channels: frozenset[str] = frozenset()
     networks: frozenset[str] = frozenset()
+    webhooks: frozenset[WebhookKind] = frozenset()
+
+    def can(self, direction: PaymentDirection) -> bool:
+        return direction in self.directions
+
+    def receives(self, kind: WebhookKind) -> bool:
+        return kind in self.webhooks
 
     def supports(
         self,
@@ -171,21 +189,80 @@ class PayoutResult:
     failure_message: str | None = None
 
 
-class PaymentProcessorPort(Protocol):
+# -- Processor ports -------------------------------------------------------------------
+# One small port per role. An adapter implements only the roles its capabilities declare:
+#   PaymentDirection.COLLECTION -> CollectionPort
+#   PaymentDirection.REFUND     -> RefundPort
+#   PaymentDirection.PAYOUT     -> PayoutPort
+#   WebhookKind.PAYMENT/REFUND/PAYOUT -> the matching *WebhookPort
+# Callers check the capability first (ProcessorRegistry.get_capable / get_receiver).
+
+
+class ProcessorPort(Protocol):
+    """Identity shared by every adapter; enough for the registry to route."""
+
     name: str
     capabilities: ProcessorCapabilities
 
+
+class CollectionPort(ProcessorPort, Protocol):
     def initialize_payment(self, request: InitializePaymentRequest) -> ProviderResult: ...
 
     def verify_payment(self, provider_reference: str) -> ProviderResult: ...
 
-    def parse_webhook(self, raw_body: bytes, headers: Mapping[str, str]) -> ProviderEvent: ...
 
+class RefundPort(ProcessorPort, Protocol):
     def refund_payment(self, request: RefundRequest) -> RefundResult: ...
 
+
+class PayoutPort(ProcessorPort, Protocol):
     def create_payout(self, request: PayoutRequest) -> PayoutResult: ...
 
     def verify_payout(self, provider_reference: str) -> PayoutResult: ...
+
+
+class PaymentWebhookPort(ProcessorPort, Protocol):
+    def parse_webhook(self, raw_body: bytes, headers: Mapping[str, str]) -> ProviderEvent: ...
+
+
+class AttemptBoundWebhookPort(PaymentWebhookPort, Protocol):
+    """Optional: a payment callback that can only be validated with data stored on the
+    attempt (CinetPay's per-payment notify_token hash). PaymentWebhookUseCases.process
+    finds the attempt by `webhook_attempt_reference` and passes its provider_metadata."""
+
+    def webhook_attempt_reference(self, raw_body: bytes) -> str: ...
+
+    def parse_webhook(  # type: ignore[override]
+        self,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+        *,
+        attempt_metadata: Mapping[str, Any] | None = None,
+    ) -> ProviderEvent: ...
+
+
+class RefundWebhookPort(ProcessorPort, Protocol):
+    def parse_refund_webhook(
+        self,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+        *,
+        callback_url: str | None = None,
+    ) -> RefundProviderEvent: ...
+
+
+class PayoutWebhookPort(ProcessorPort, Protocol):
+    def parse_payout_webhook(
+        self,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+        *,
+        callback_url: str | None = None,
+    ) -> PayoutProviderEvent: ...
+
+
+# Kept for existing imports: the identity every registered adapter has.
+PaymentProcessorPort = ProcessorPort
 
 
 class PayoutRepositoryPort(Protocol):

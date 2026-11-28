@@ -12,8 +12,11 @@ from payfund_app.modules.payments.application.ports import (
     ProviderEventRepositoryPort,
     RefundProviderEvent,
     RefundRepositoryPort,
+    RefundWebhookPort,
     UnitOfWorkPort,
+    WebhookKind,
 )
+from payfund_app.modules.payments.application.processor_router import require_webhook
 from payfund_app.modules.payments.application.refunds import _enqueue_refund_event
 from payfund_app.modules.payments.domain import Money, Refund, RefundStatus
 from payfund_app.modules.payments.domain.errors import InvalidStateTransition
@@ -49,12 +52,13 @@ class RefundWebhookUseCases:
 
     def process(
         self,
-        processor,
+        processor: RefundWebhookPort,
         raw_body: bytes,
         headers: Mapping[str, str],
         *,
         callback_url: str | None = None,
     ) -> RefundWebhookOutcome:
+        require_webhook(processor, WebhookKind.REFUND)
         event: RefundProviderEvent = processor.parse_refund_webhook(
             raw_body, headers, callback_url=callback_url
         )
