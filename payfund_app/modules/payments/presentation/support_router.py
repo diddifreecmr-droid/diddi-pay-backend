@@ -11,15 +11,6 @@ from payfund_app.core.config import get_settings
 from payfund_app.core.errors import BadRequest, Conflict, NotFound, Unauthenticated
 from payfund_app.core.observability.context import get_request_id
 from payfund_app.core.security import ServicePrincipal, decode_service_token
-from payfund_app.modules.payments.application.support_context import (
-    SupportPaymentContextQueries,
-)
-from payfund_app.modules.payments.infra.support_context import (
-    SqlSupportPaymentContextRepository,
-)
-from payfund_app.modules.payments.infra.support_refunds import (
-    SupportRefundActionRepository,
-)
 from payfund_app.modules.payments.application.accounting import PaymentAccountingService
 from payfund_app.modules.payments.application.errors import (
     IdempotencyConflict,
@@ -28,7 +19,13 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
 )
 from payfund_app.modules.payments.application.fingerprints import request_fingerprint
-from payfund_app.modules.payments.application.refunds import CreateRefundCommand, RefundUseCases
+from payfund_app.modules.payments.application.refunds import (
+    CreateRefundCommand,
+    RefundUseCases,
+)
+from payfund_app.modules.payments.application.support_context import (
+    SupportPaymentContextQueries,
+)
 from payfund_app.modules.payments.infra.repositories import (
     FinancialLedgerRepository,
     PaymentAttemptRepository,
@@ -36,9 +33,17 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentOutboxRepository,
     RefundRepository,
 )
+from payfund_app.modules.payments.infra.support_context import (
+    SqlSupportPaymentContextRepository,
+)
+from payfund_app.modules.payments.infra.support_refunds import (
+    SupportRefundActionRepository,
+)
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
-from payfund_app.modules.payments.presentation.deps import ProcessorRegistryDep
-from payfund_app.modules.payments.presentation.deps import SessionDep
+from payfund_app.modules.payments.presentation.deps import (
+    ProcessorRegistryDep,
+    SessionDep,
+)
 
 router = APIRouter(prefix="/internal/support", tags=["internal-support"])
 
@@ -236,6 +241,7 @@ def request_support_refund(
             processors,
             SqlAlchemyUnitOfWork(session),
             PaymentAccountingService(FinancialLedgerRepository(session)),
+            PaymentOutboxRepository(session),
         ).create(
             CreateRefundCommand(
                 # RefundUseCases enforces ownership using the original payment client.

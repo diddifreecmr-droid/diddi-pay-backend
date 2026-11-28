@@ -36,6 +36,7 @@ from payfund_app.modules.payments.infra.repositories import (
     FinancialLedgerRepository,
     PaymentAttemptRepository,
     PaymentIntentRepository,
+    PaymentOutboxRepository,
     RefundRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
@@ -360,6 +361,7 @@ def create_refund(
             processors,
             SqlAlchemyUnitOfWork(session),
             PaymentAccountingService(FinancialLedgerRepository(session)),
+            PaymentOutboxRepository(session),
         ).create(
             CreateRefundCommand(
                 client_id=client.client_id,

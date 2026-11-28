@@ -24,6 +24,20 @@ Idempotency-Key: <cle identique a celle du corps JSON>
 Le BFF DiddiAdmin construit ces en-tetes apres avoir authentifie l'operateur. Ils ne doivent jamais
 etre acceptes directement depuis un navigateur par DiddiPay.
 
+## Remboursements
+
+DiddiAdmin n'approuve pas automatiquement un remboursement via les commandes Backoffice
+v1 : les commandes Backoffice exposees ici sont la lecture operationnelle, la remise en
+file d'un callback et l'enregistrement d'un settlement. Une demande de remboursement
+deleguee passe par le contrat Support, avec une identite de service autorisee, un
+operateur, une delegation, une commande et une cle d'idempotence.
+
+Si DiddiAdmin porte cette action, son client de service doit etre provisionne dans la
+surface Support et son BFF doit conserver l'audit operateur. DiddiPay reste l'autorite
+pour l'eligibilite, le montant, l'etat final et l'ecriture comptable. Le module
+proprietaire recoit ensuite l'evenement standard `diddipay.refund.*.v1`; DiddiAdmin ne
+doit pas fabriquer lui-meme un succes de remboursement.
+
 ## File des paiements
 
 ```http

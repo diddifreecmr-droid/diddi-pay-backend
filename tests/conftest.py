@@ -39,6 +39,9 @@ TEST_DATABASE_URL = os.environ.get(
 )
 # Doit être posé avant tout import de `payfund_app.core.database` (engine créé à l'import).
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+# DATABASE_URL is assigned after the first settings import above; clear the
+# cache again so Alembic and the application fixtures use the same test database.
+get_settings.cache_clear()
 
 from payfund_app.core.database import get_session  # noqa: E402
 from payfund_app.core.security import CurrentUser, StepUpProof  # noqa: E402

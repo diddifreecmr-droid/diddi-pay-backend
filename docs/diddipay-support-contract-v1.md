@@ -30,6 +30,18 @@ Refund results are persisted to the payment outbox as
 `diddipay.refund.unknown.v1`. The action can be polled with
 `GET /payfund/v1/internal/support/refund-requests/{action_id}`.
 
+These are provider-neutral refund events and are routed to the `client_id` that owns the
+original PaymentIntent. The owning module (`diddigo`, `diddishop`, `diddifood`,
+`diddisend`, or a future module) consumes the same event whether the refund was requested
+directly or through Support. The event payload contains the DiddiPay-confirmed refund
+amount, currency, payment intent business reference, normalized status, processor and
+provider references, but no personal data. Consumers emit their own facts such as
+`order.refunded` only after `diddipay.refund.succeeded.v1`.
+
+The Support client also receives the existing support action event when configured as a
+callback target. That event is an operator/audit projection and does not replace the
+owner-module refund event.
+
 Configure DiddiPay's `PAYMENT_CALLBACK_TARGETS` for the Support client. The
 callback receives the signed standard event envelope at the Support event
 consumer endpoint. DiddiSupport must deduplicate by `id` and return a 2xx only

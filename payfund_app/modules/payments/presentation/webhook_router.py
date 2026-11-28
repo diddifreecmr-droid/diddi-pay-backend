@@ -327,6 +327,7 @@ async def pawapay_refund_webhook(
         ProviderEventRepository(session),
         SqlAlchemyUnitOfWork(session),
         PaymentAccountingService(FinancialLedgerRepository(session)),
+        PaymentOutboxRepository(session),
     )
     try:
         result = use_cases.process(
