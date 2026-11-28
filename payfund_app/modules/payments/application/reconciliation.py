@@ -11,7 +11,10 @@ from payfund_app.modules.payments.application.errors import ProcessorCallUncerta
 from payfund_app.modules.payments.application.processor_router import (
     ProcessorRoutingError,
 )
-from payfund_app.modules.payments.application.success import record_payment_success
+from payfund_app.modules.payments.application.success import (
+    record_payment_outcome,
+    record_payment_success,
+)
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
 
@@ -79,6 +82,7 @@ class PaymentReconciliationUseCases:
                 self.intents, self.attempts, self.events, self.uow
             )
             was_succeeded = intent.status == PaymentIntentStatus.SUCCEEDED
+            previous_status = intent.status
             updater._apply_status(intent, attempt, result.status)
             attempt.provider_status = result.provider_status
             self.attempts.save(attempt)
@@ -90,6 +94,10 @@ class PaymentReconciliationUseCases:
                     outbox=self.outbox, accounting=self.accounting,
                     fee=result.fee or 0,
                 )
+            record_payment_outcome(
+                intent, attempt, previous_status=previous_status,
+                event_key=f"reconciliation:{attempt.id}", outbox=self.outbox,
+            )
             self._log(
                 attempt,
                 "processed",
