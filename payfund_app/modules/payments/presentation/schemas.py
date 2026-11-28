@@ -24,7 +24,9 @@ class CreatePaymentIntentRequest(BaseModel):
     payer_user_id: uuid.UUID | None = None
     payee_user_id: uuid.UUID | None = None
     channel: Literal["mobile_money", "card"] | None = None
-    network: Literal["orange", "wave", "mtn"] | None = None
+    # Whether a network is actually available is decided by the selected processor's
+    # capabilities (422 PAYMENT_METHOD_UNAVAILABLE otherwise). "moov": ticket 051.
+    network: Literal["orange", "wave", "mtn", "moov"] | None = None
     customer_email: str | None = Field(default=None, max_length=254)
     customer_phone: str | None = Field(default=None, max_length=32)
     return_target: str | None = Field(
