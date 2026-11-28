@@ -57,6 +57,7 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
     ProcessorRequestRejected,
 )
+from payfund_app.shared_kernel.money_rounding import round_money_from_subunits
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
@@ -378,10 +379,8 @@ class JekoPaymentProcessor:
         amount = int(value)
         if str(currency or "").upper() != "XOF":
             return amount
-        quotient, remainder = divmod(amount, cls._XOF_SUBUNIT_FACTOR)
-        if remainder:
-            raise ValueError("jeko returned a fractional XOF amount")
-        return quotient
+        # Ticket 144: whole francs, nearest, .5 up; callers still compare with the expected amount.
+        return round_money_from_subunits(amount, cls._XOF_SUBUNIT_FACTOR)
 
     @staticmethod
     def _normalize_status(status: str) -> AttemptStatus:

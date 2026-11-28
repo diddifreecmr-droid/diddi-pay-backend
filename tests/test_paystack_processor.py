@@ -159,7 +159,7 @@ def test_verify_normalizes_paystack_status(provider_status, expected):
     assert result.status == expected
     assert result.amount == 5_000
     assert result.currency == "XOF"
-    assert result.fee == 116
+    assert result.fee == 115  # 11501 subunits -> 115.01 -> nearest franc (ticket 144)
 
 
 def test_http_rejection_is_a_definitive_failed_attempt():
@@ -196,7 +196,7 @@ def test_webhook_signature_and_payload_are_normalized_and_sanitized():
 
     assert event.status == AttemptStatus.SUCCEEDED
     assert event.amount == 5_000
-    assert event.fee == 116
+    assert event.fee == 115  # nearest franc, .5 up (ticket 144)
     assert "customer" not in event.sanitized_payload
     assert "authorization" not in event.sanitized_payload
 
@@ -207,7 +207,7 @@ def test_webhook_rejects_invalid_signature():
         adapter.parse_webhook(b"{}", {"x-paystack-signature": "invalid"})
 
 
-def test_verify_rejects_fractional_xof_provider_amount():
+def test_verify_rounds_fractional_xof_provider_amount():
     def handler(_):
         return httpx.Response(
             200,
@@ -224,5 +224,6 @@ def test_verify_rejects_fractional_xof_provider_amount():
 
     result = processor(handler).verify_payment("dpi_reference")
 
-    assert result.status == AttemptStatus.UNKNOWN
-    assert result.failure_code == "PAYSTACK_RESPONSE_INVALID"
+    # Ticket 144: 500_001 subunits = 5000.01 XOF -> 5000; the amount check happens later.
+    assert result.status == AttemptStatus.SUCCEEDED
+    assert result.amount == 5000

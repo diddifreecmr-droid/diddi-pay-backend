@@ -51,6 +51,7 @@ from payfund_app.modules.wallet.presentation.deps import (
     SessionDep,
 )
 from payfund_app.modules.wallet.presentation.schemas import Page, Pagination
+from payfund_app.shared_kernel.money_rounding import round_money
 
 router = APIRouter(prefix="/fund", tags=["fund"])
 
@@ -112,8 +113,8 @@ def get_campaign(
     return CampaignDetail(
         id=campaign.id,
         title=campaign.title,
-        goal_amount=int(campaign.goal_amount),
-        raised_amount=int(campaign.raised_amount),
+        goal_amount=round_money(campaign.goal_amount),
+        raised_amount=round_money(campaign.raised_amount),
         currency=campaign.currency,
         status=campaign.status,
         owner_user_id=campaign.owner_user_id,
@@ -254,8 +255,8 @@ def _installment(echeance) -> InstallmentItem:
     return InstallmentItem(
         installment_no=echeance.installment_no,
         due_date=echeance.due_date,
-        amount_due=int(echeance.amount_due),
-        amount_paid=int(echeance.amount_paid),
+        amount_due=round_money(echeance.amount_due),
+        amount_paid=round_money(echeance.amount_paid),
         status=echeance.status,
     )
 
@@ -311,10 +312,10 @@ def list_loans(
                 id=loan.id,
                 campaign_id=loan.campaign_id,
                 status=loan.status,
-                principal_amount=int(loan.principal_amount),
+                principal_amount=round_money(loan.principal_amount),
                 currency=loan.currency,
                 duration_months=loan.duration_months,
-                total_repayable=int(loan.total_repayable),
+                total_repayable=round_money(loan.total_repayable),
                 disbursed_at=loan.disbursed_at,
                 created_at=loan.created_at,
             )
@@ -336,11 +337,11 @@ def get_loan(loan_id: uuid.UUID, user: CurrentUserDep, session: SessionDep) -> L
         id=loan.id,
         campaign_id=loan.campaign_id,
         status=loan.status,
-        principal_amount=int(loan.principal_amount),
+        principal_amount=round_money(loan.principal_amount),
         currency=loan.currency,
         duration_months=loan.duration_months,
         interest_rate_applied=loan.interest_rate_applied,
-        total_repayable=int(loan.total_repayable),
+        total_repayable=round_money(loan.total_repayable),
         disbursed_at=loan.disbursed_at,
         next_installment=(
             NextInstallment(

@@ -48,7 +48,6 @@ import hmac
 import re
 import threading
 import time
-from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -60,6 +59,7 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorRequestRejected,
     ProcessorWebhookRejected,
 )
+from payfund_app.shared_kernel.money_rounding import round_money
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
@@ -906,10 +906,9 @@ class PawapayPaymentProcessor:
         if value is None:
             return None
         # PawaPay returns a decimal string ("100.00") even though XOF has no subunit.
-        amount = Decimal(str(value))
-        if amount != amount.to_integral_value():
-            raise ValueError("pawapay returned a fractional XOF deposit amount")
-        return int(amount)
+        # Ticket 144: whole francs, nearest, .5 up; callers still compare with the expected
+        # amount, so only sub-franc noise is absorbed.
+        return round_money(value)
 
     @staticmethod
     def _normalize_payout_status(status: str) -> PayoutStatus:

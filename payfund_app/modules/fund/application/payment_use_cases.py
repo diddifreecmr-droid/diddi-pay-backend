@@ -25,6 +25,7 @@ from payfund_app.modules.fund.infra.repositories import (
     FundPaymentOrderRepository,
     InvestmentRepository,
 )
+from payfund_app.shared_kernel.money_rounding import round_money
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +80,7 @@ class FundPaymentUseCases:
             raise CampaignNotActive(details={"status": campaign.status})
         if campaign.owner_user_id == investor_user_id:
             raise CannotInvestInOwnCampaign()
-        remaining = int(campaign.goal_amount - campaign.raised_amount)
+        remaining = round_money(campaign.goal_amount - campaign.raised_amount)
         if remaining <= 0 or amount > remaining:
             raise CampaignGoalAlreadyReached(details={"remaining_amount": max(0, remaining)})
 
@@ -168,7 +169,7 @@ class FundPaymentUseCases:
                 amount=order.amount,
                 payment_intent_id=order.payment_intent_id,
             )
-            campaign.raised_amount += Decimal(order.amount)
+            campaign.raised_amount += Decimal(round_money(order.amount))
             order.status = "succeeded"
             order.completed_at = datetime.now(timezone.utc)
         self.session.commit()

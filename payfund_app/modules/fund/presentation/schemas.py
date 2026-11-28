@@ -8,11 +8,12 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from payfund_app.shared_kernel.money_rounding import MoneyAmount
 
 
 class CreateCampaignRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    goal_amount: int = Field(gt=0)
+    goal_amount: MoneyAmount = Field(gt=0)
     currency: str = Field(default="XOF", min_length=3, max_length=3)
 
 
@@ -51,7 +52,7 @@ class CampaignDetail(CampaignItem):
 
 
 class InvestRequest(BaseModel):
-    amount: int = Field(gt=0)
+    amount: MoneyAmount = Field(gt=0)
     pin: str = Field(min_length=4, max_length=12)
 
 
@@ -63,7 +64,7 @@ class InvestResponse(BaseModel):
 
 
 class ExternalInvestmentRequest(BaseModel):
-    amount: int = Field(gt=0)
+    amount: MoneyAmount = Field(gt=0)
     channel: Literal["mobile_money", "card"] | None = None
     network: Literal["orange", "wave", "mtn"] | None = None
     customer_email: str | None = Field(default=None, max_length=254)
@@ -103,7 +104,7 @@ class DiddiPayEventResponse(BaseModel):
 
 
 class SimulateLoanRequest(BaseModel):
-    amount: int = Field(gt=0)
+    amount: MoneyAmount = Field(gt=0)
     duration_months: int = Field(gt=0, le=60)
 
 
@@ -170,7 +171,7 @@ class ScheduleResponse(BaseModel):
 
 
 class RepayRequest(BaseModel):
-    amount: int = Field(gt=0)
+    amount: MoneyAmount = Field(gt=0)
     pin: str = Field(min_length=4, max_length=12)
 
 

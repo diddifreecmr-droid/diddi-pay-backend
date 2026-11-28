@@ -557,7 +557,7 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "description": "Positive amount; for XOF, 5000 means 5,000 XOF",
+            "description": "Positive amount; for XOF, 5000 means 5,000 XOF. A decimal is rounded to the nearest franc, .5 up",
             "exclusiveMinimum": 0.0,
             "title": "Amount",
             "type": "integer"
@@ -725,7 +725,7 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "description": "Positive integer amount in XOF",
+            "description": "Positive integer amount in XOF. A decimal is rounded to the nearest franc, .5 up",
             "exclusiveMinimum": 0.0,
             "title": "Amount",
             "type": "integer"
@@ -801,7 +801,7 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "description": "Amount to refund; for XOF, 5000 means 5,000 XOF",
+            "description": "Amount to refund; for XOF, 5000 means 5,000 XOF. A decimal is rounded to the nearest franc, .5 up",
             "exclusiveMinimum": 0.0,
             "title": "Amount",
             "type": "integer"
@@ -4536,7 +4536,7 @@
           "amount": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
+                "gt": 0,
                 "type": "integer"
               },
               {
@@ -4561,7 +4561,7 @@
           "required_amount": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
+                "gt": 0,
                 "type": "integer"
               },
               {

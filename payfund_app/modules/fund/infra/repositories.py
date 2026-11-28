@@ -20,6 +20,13 @@ from payfund_app.modules.fund.infra.models import (
     LoanStatusHistory,
     RepaymentSchedule,
 )
+from payfund_app.shared_kernel.money_rounding import round_money
+
+
+def _whole(value) -> Decimal:
+    """Ticket 144: a money column only ever receives whole francs (nearest, .5 up),
+    whatever the caller passes. The Numeric(14,2) columns themselves are unchanged."""
+    return Decimal(round_money(value))
 
 
 class CampaignRepository:
@@ -50,7 +57,7 @@ class CampaignRepository:
         campaign = Campaign(
             owner_user_id=owner_user_id,
             title=title,
-            goal_amount=Decimal(goal_amount),
+            goal_amount=_whole(goal_amount),
             currency=currency,
             status=status,
             wallet_account_id=wallet_account_id,
@@ -92,7 +99,7 @@ class InvestmentRepository:
         investment = Investment(
             campaign_id=campaign_id,
             investor_user_id=investor_user_id,
-            amount=Decimal(amount),
+            amount=_whole(amount),
             wallet_transaction_id=wallet_transaction_id,
             payment_intent_id=payment_intent_id,
         )
@@ -192,10 +199,10 @@ class LoanRepository:
         loan = Loan(
             campaign_id=campaign_id,
             borrower_user_id=borrower_user_id,
-            principal_amount=Decimal(principal_amount),
+            principal_amount=_whole(principal_amount),
             duration_months=duration_months,
             interest_rate_applied=interest_rate_applied,
-            total_repayable=Decimal(total_repayable),
+            total_repayable=_whole(total_repayable),
             currency=currency,
             diddi_score_at_grant=diddi_score_at_grant,
             status=str(LoanStatus.PENDING),
@@ -252,7 +259,7 @@ class LoanRepository:
                     loan_id=loan.id,
                     installment_no=echeance.installment_no,
                     due_date=echeance.due_date,
-                    amount_due=Decimal(echeance.amount_due),
+                    amount_due=_whole(echeance.amount_due),
                 )
             )
         self.session.flush()

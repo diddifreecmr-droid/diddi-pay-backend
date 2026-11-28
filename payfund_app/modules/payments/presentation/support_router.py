@@ -44,6 +44,7 @@ from payfund_app.modules.payments.presentation.deps import (
     ProcessorRegistryDep,
     SessionDep,
 )
+from payfund_app.shared_kernel.money_rounding import MoneyAmount
 
 router = APIRouter(prefix="/internal/support", tags=["internal-support"])
 
@@ -71,7 +72,7 @@ class SupportPaymentContextResponse(BaseModel):
 class SupportRefundRequest(BaseModel):
     payment_intent_id: uuid.UUID
     support_case_id: uuid.UUID
-    amount: int = Field(gt=0)
+    amount: MoneyAmount = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
     reason_code: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=3, max_length=500)
