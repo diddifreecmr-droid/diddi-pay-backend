@@ -5,11 +5,21 @@ from __future__ import annotations
 from payfund_app.modules.payments.application.ports import (
     PaymentDirection,
     PaymentProcessorPort,
+    WebhookKind,
 )
 
 
 class ProcessorRoutingError(LookupError):
     pass
+
+
+class ProcessorCapabilityMissing(ProcessorRoutingError):
+    """The processor is registered but does not declare the requested capability."""
+
+    def __init__(self, processor: str, capability: str) -> None:
+        super().__init__(f"processor {processor!r} does not support {capability}")
+        self.processor = processor
+        self.capability = capability
 
 
 # Processors whose outcomes never reach a real PSP -- fine for local/test, never for an
@@ -35,6 +45,19 @@ class ProcessorRegistry:
             return self._processors[name][1]
         except KeyError as exc:
             raise ProcessorRoutingError(f"processor {name!r} is not registered") from exc
+
+    def get_capable(self, name: str, direction: PaymentDirection) -> PaymentProcessorPort:
+        """Return the named processor only if it declares `direction` (e.g. REFUND)."""
+        processor = self.get(name)
+        if not processor.capabilities.can(direction):
+            raise ProcessorCapabilityMissing(name, f"{direction} operations")
+        return processor
+
+    def get_receiver(self, name: str, kind: WebhookKind) -> PaymentProcessorPort:
+        """Return the named processor only if it validates `kind` callbacks."""
+        processor = self.get(name)
+        require_webhook(processor, kind)
+        return processor
 
     def ordered(self) -> tuple[PaymentProcessorPort, ...]:
         """All registered processors sorted by (priority, name) -- the same order `select()`
@@ -74,3 +97,9 @@ class ProcessorRegistry:
 
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._processors))
+
+
+def require_webhook(processor: PaymentProcessorPort, kind: WebhookKind) -> None:
+    """Guard for webhook use cases that receive a processor built outside the registry."""
+    if not processor.capabilities.receives(kind):
+        raise ProcessorCapabilityMissing(processor.name, f"{kind} callbacks")

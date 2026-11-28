@@ -10,7 +10,8 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorCallUncertain,
 )
 from payfund_app.modules.payments.application.fingerprints import request_fingerprint
-from payfund_app.modules.payments.application.ports import RefundRequest
+from payfund_app.modules.payments.application.ports import PaymentDirection, RefundRequest
+from payfund_app.modules.payments.application.processor_router import ProcessorRoutingError
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
     Money,
@@ -126,6 +127,15 @@ class RefundUseCases:
         if command.amount <= 0 or active_total + command.amount > intent.money.amount:
             raise PaymentOperationConflict("refund exceeds the captured amount")
 
+        # Resolve the processor BEFORE anything is persisted: a processor that is not
+        # registered or cannot refund must be refused cleanly, not leave a pending refund row.
+        try:
+            processor = self.processors.get_capable(attempt.processor, PaymentDirection.REFUND)
+        except ProcessorRoutingError as exc:
+            raise PaymentOperationConflict(
+                f"refunds are not available for processor {attempt.processor!r}"
+            ) from exc
+
         refund = Refund(
             payment_intent_id=intent.id,
             payment_attempt_id=attempt.id,
@@ -137,7 +147,6 @@ class RefundUseCases:
         self.refunds.add(refund, client_id=command.client_id, processor=attempt.processor)
         self.uow.commit()
 
-        processor = self.processors.get(attempt.processor)
         try:
             result = processor.refund_payment(
                 RefundRequest(

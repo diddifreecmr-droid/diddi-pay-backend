@@ -72,6 +72,7 @@ from payfund_app.modules.payments.application.ports import (
     RefundProviderEvent,
     RefundRequest,
     RefundResult,
+    WebhookKind,
 )
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
@@ -124,6 +125,7 @@ class PawapayPaymentProcessor:
         ),
         channels=frozenset({"mobile_money"}),
         networks=frozenset(_PROVIDER_FAMILIES),
+        webhooks=frozenset({WebhookKind.PAYMENT, WebhookKind.REFUND, WebhookKind.PAYOUT}),
     )
 
     def __init__(

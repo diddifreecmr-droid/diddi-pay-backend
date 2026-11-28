@@ -56,6 +56,7 @@ from payfund_app.modules.payments.application.ports import (
     ProviderResult,
     RefundRequest,
     RefundResult,
+    WebhookKind,
 )
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
@@ -152,6 +153,8 @@ class CinetpayPaymentProcessor:
         # processor is controlled by PAYMENT_PROCESSOR_MODE or the request override; payout
         # network restrictions are enforced inside create_payout instead.
         networks=frozenset(),
+        # Payment notifications only. Payout results are read by polling (verify_payout).
+        webhooks=frozenset({WebhookKind.PAYMENT}),
     )
 
     def __init__(

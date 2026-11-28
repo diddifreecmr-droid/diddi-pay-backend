@@ -9,12 +9,15 @@ from dataclasses import dataclass
 from sqlalchemy.exc import IntegrityError
 
 from payfund_app.modules.payments.application.payouts import PayoutUseCases
+from payfund_app.modules.payments.application.processor_router import require_webhook
 from payfund_app.modules.payments.application.ports import (
     PayoutProviderEvent,
     PayoutRepositoryPort,
     PayoutResult,
+    PayoutWebhookPort,
     ProviderEventRepositoryPort,
     UnitOfWorkPort,
+    WebhookKind,
 )
 from payfund_app.modules.payments.domain.errors import InvalidStateTransition
 
@@ -43,12 +46,13 @@ class PayoutWebhookUseCases:
 
     def process(
         self,
-        processor,
+        processor: PayoutWebhookPort,
         raw_body: bytes,
         headers: Mapping[str, str],
         *,
         callback_url: str | None = None,
     ) -> PayoutWebhookOutcome:
+        require_webhook(processor, WebhookKind.PAYOUT)
         event: PayoutProviderEvent = processor.parse_payout_webhook(
             raw_body, headers, callback_url=callback_url
         )

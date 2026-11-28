@@ -9,10 +9,12 @@ from dataclasses import dataclass
 from payfund_app.modules.payments.application.ports import (
     PaymentAttemptRepositoryPort,
     PaymentIntentRepositoryPort,
-    PaymentProcessorPort,
+    PaymentWebhookPort,
     ProviderEventRepositoryPort,
     UnitOfWorkPort,
+    WebhookKind,
 )
+from payfund_app.modules.payments.application.processor_router import require_webhook
 from payfund_app.modules.payments.application.success import record_payment_success
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
 from payfund_app.modules.payments.domain.errors import InvalidStateTransition
@@ -44,10 +46,11 @@ class PaymentWebhookUseCases:
 
     def process(
         self,
-        processor: PaymentProcessorPort,
+        processor: PaymentWebhookPort,
         raw_body: bytes,
         headers: Mapping[str, str],
     ) -> WebhookOutcome:
+        require_webhook(processor, WebhookKind.PAYMENT)
         event = processor.parse_webhook(raw_body, headers)
         return self.process_event(processor, raw_body, event)
 
