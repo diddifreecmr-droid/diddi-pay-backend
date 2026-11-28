@@ -16,7 +16,10 @@ from payfund_app.modules.payments.application.ports import (
 )
 from payfund_app.modules.payments.application.errors import ProcessorWebhookRejected
 from payfund_app.modules.payments.application.processor_router import require_webhook
-from payfund_app.modules.payments.application.success import record_payment_success
+from payfund_app.modules.payments.application.success import (
+    record_payment_outcome,
+    record_payment_success,
+)
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
 from payfund_app.modules.payments.domain.errors import InvalidStateTransition
 
@@ -120,6 +123,7 @@ class PaymentWebhookUseCases:
             return WebhookOutcome("failed", event.event_key, str(intent.id))
 
         was_succeeded = intent.status == PaymentIntentStatus.SUCCEEDED
+        previous_status = intent.status
         try:
             self._apply_status(intent, attempt, event.status)
         except InvalidStateTransition as exc:
@@ -141,6 +145,10 @@ class PaymentWebhookUseCases:
                 intent, attempt, event_key=event.event_key,
                 outbox=self.outbox, accounting=self.accounting, fee=event.fee or 0,
             )
+        record_payment_outcome(
+            intent, attempt, previous_status=previous_status,
+            event_key=event.event_key, outbox=self.outbox,
+        )
         self.uow.commit()
         return WebhookOutcome("processed", event.event_key, str(intent.id))
 
