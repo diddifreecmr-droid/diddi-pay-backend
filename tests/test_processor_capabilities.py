@@ -84,6 +84,13 @@ def test_declared_webhooks_have_real_parsers(adapter):
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS, ids=lambda a: a.name)
+def test_declared_refund_verification_has_real_method(adapter):
+    if adapter.capabilities.refund_verification:
+        assert _is_real(adapter, "verify_refund")
+        assert adapter.capabilities.can(PaymentDirection.REFUND)
+
+
+@pytest.mark.parametrize("adapter", ADAPTERS, ids=lambda a: a.name)
 def test_stubbed_operations_are_not_declared(adapter):
     for direction, methods in DIRECTION_METHODS.items():
         if any(hasattr(adapter, m) and not _is_real(adapter, m) for m in methods):
