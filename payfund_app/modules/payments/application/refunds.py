@@ -55,6 +55,8 @@ def _enqueue_refund_event(
             "provider_reference": refund.provider_reference,
             "processor": processor,
             "reason": refund.reason,
+            # Ticket 121: whether the module must also take the money back from the payee.
+            "recover_from_payee": bool(refund.recover_from_payee),
             "occurred_at": refund.updated_at.isoformat(),
         },
     )
@@ -67,16 +69,20 @@ class CreateRefundCommand:
     amount: int
     idempotency_key: str
     reason: str | None = None
+    recover_from_payee: bool = False
 
     def fingerprint(self) -> str:
-        return request_fingerprint(
-            {
-                "client_id": self.client_id,
-                "payment_intent_id": self.payment_intent_id,
-                "amount": self.amount,
-                "reason": self.reason,
-            }
-        )
+        values = {
+            "client_id": self.client_id,
+            "payment_intent_id": self.payment_intent_id,
+            "amount": self.amount,
+            "reason": self.reason,
+        }
+        # Only when set: refunds created before ticket 121 keep the same fingerprint, so
+        # retrying them with their Idempotency-Key is still a replay, not a conflict.
+        if self.recover_from_payee:
+            values["recover_from_payee"] = True
+        return request_fingerprint(values)
 
 
 class RefundUseCases:
@@ -143,6 +149,7 @@ class RefundUseCases:
             idempotency_key=command.idempotency_key,
             request_fingerprint=fingerprint,
             reason=command.reason,
+            recover_from_payee=command.recover_from_payee,
         )
         self.refunds.add(refund, client_id=command.client_id, processor=attempt.processor)
         self.uow.commit()

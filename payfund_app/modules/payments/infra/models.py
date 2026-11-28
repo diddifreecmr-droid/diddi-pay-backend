@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import (
     CHAR,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -214,6 +215,10 @@ class RefundRecord(Base):
     reason: Mapped[str | None] = mapped_column(String(255))
     provider_reference: Mapped[str | None] = mapped_column(String(160))
     provider_status: Mapped[str | None] = mapped_column(String(80))
+    # Ticket 121: the owning module must also take the money back from the payee.
+    recover_from_payee: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

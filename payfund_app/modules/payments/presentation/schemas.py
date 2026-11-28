@@ -189,6 +189,14 @@ class CreateRefundRequest(BaseModel):
 
     amount: int = Field(gt=0, description="Amount to refund; for XOF, 5000 means 5,000 XOF")
     reason: str | None = Field(default=None, max_length=255)
+    recover_from_payee: bool = Field(
+        default=False,
+        description=(
+            "Default false: the refund is not taken back from the payee (e.g. the driver). "
+            "Set true only on an admin decision; the owning module receives it in the "
+            "diddipay.refund.*.v1 event and debits the payee itself."
+        ),
+    )
 
 
 class RefundResponse(BaseModel):
@@ -198,6 +206,7 @@ class RefundResponse(BaseModel):
     currency: str
     status: Literal["pending", "processing", "succeeded", "failed"]
     provider_status: str | None = None
+    recover_from_payee: bool = False
     created_at: datetime
     updated_at: datetime
 

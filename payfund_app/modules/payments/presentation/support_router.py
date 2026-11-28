@@ -76,6 +76,8 @@ class SupportRefundRequest(BaseModel):
     reason_code: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=3, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=128)
+    # Ticket 121: an admin/support decision to also take the refund back from the payee.
+    recover_from_payee: bool = False
 
 
 class SupportRefundResponse(BaseModel):
@@ -206,7 +208,10 @@ def request_support_refund(
         raise NotFound("PaymentIntent introuvable.", code="PAYMENT_INTENT_NOT_FOUND")
     if payment_intent.money.currency != payload.currency.upper():
         raise Conflict("La devise du remboursement ne correspond pas au paiement.", code="REFUND_CURRENCY_MISMATCH")
-    fingerprint = request_fingerprint(payload.model_dump(exclude={"idempotency_key"}))
+    # recover_from_payee only counts when set (ticket 121), so support actions recorded
+    # before that field existed keep their fingerprint and still replay cleanly.
+    excluded = {"idempotency_key"} if payload.recover_from_payee else {"idempotency_key", "recover_from_payee"}
+    fingerprint = request_fingerprint(payload.model_dump(exclude=excluded))
     actions = SupportRefundActionRepository(session)
     existing = actions.get_by_idempotency(principal.client_id, idempotency_key)
     if existing is not None:
@@ -251,6 +256,7 @@ def request_support_refund(
                 amount=payload.amount,
                 reason=payload.reason,
                 idempotency_key=f"support:{idempotency_key}",
+                recover_from_payee=payload.recover_from_payee,
             )
         )
     except ProcessorCallUncertain as exc:

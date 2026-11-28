@@ -246,6 +246,8 @@ class Refund:
     idempotency_key: str
     request_fingerprint: str
     reason: str | None = None
+    # Ticket 121: default False = the refund is not taken back from the payee (driver).
+    recover_from_payee: bool = False
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     status: RefundStatus = RefundStatus.PENDING
     provider_reference: str | None = None

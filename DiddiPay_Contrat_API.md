@@ -424,9 +424,16 @@ Headers S2S habituels plus `Idempotency-Key`. Corps :
 ```json
 {
   "amount": 2500,
-  "reason": "Service annule"
+  "reason": "Service annule",
+  "recover_from_payee": false
 }
 ```
+
+`recover_from_payee` (facultatif, defaut `false`, ticket 121) : par defaut un remboursement n'est
+**pas** repris sur le beneficiaire (par exemple le chauffeur). `true` seulement sur decision d'un
+admin. DiddiPay ne debite aucun portefeuille : il conserve ce choix et le renvoie dans la reponse et
+dans l'evenement `diddipay.refund.*.v1` (`data.recover_from_payee`) ; c'est le module proprietaire
+qui debite le beneficiaire. Meme `Idempotency-Key` avec un autre choix : `409 IDEMPOTENCY_CONFLICT`.
 
 Le paiement doit appartenir au module appelant et avoir reussi. DiddiPay verrouille l'intention,
 additionne les remboursements `pending`, `processing` et `succeeded`, puis refuse toute demande qui
@@ -443,6 +450,7 @@ Reponse `201` :
   "currency": "XOF",
   "status": "processing",
   "provider_status": "processing",
+  "recover_from_payee": false,
   "created_at": "2026-08-15T14:00:00Z",
   "updated_at": "2026-08-15T14:00:00Z"
 }

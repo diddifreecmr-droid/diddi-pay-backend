@@ -369,6 +369,7 @@ def create_refund(
                 amount=payload.amount,
                 reason=payload.reason,
                 idempotency_key=idempotency_key,
+                recover_from_payee=payload.recover_from_payee,
             )
         )
     except Exception as exc:
@@ -381,6 +382,7 @@ def create_refund(
         currency=refund.money.currency if hasattr(refund, "money") else refund.currency,
         status=str(refund.status),
         provider_status=refund.provider_status,
+        recover_from_payee=bool(getattr(refund, "recover_from_payee", False)),
         created_at=refund.created_at,
         updated_at=refund.updated_at,
     )
