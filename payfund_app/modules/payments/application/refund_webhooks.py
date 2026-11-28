@@ -14,6 +14,7 @@ from payfund_app.modules.payments.application.ports import (
     RefundRepositoryPort,
     UnitOfWorkPort,
 )
+from payfund_app.modules.payments.application.refunds import _enqueue_refund_event
 from payfund_app.modules.payments.domain import Money, Refund, RefundStatus
 from payfund_app.modules.payments.domain.errors import InvalidStateTransition
 
@@ -36,6 +37,7 @@ class RefundWebhookUseCases:
         events: ProviderEventRepositoryPort,
         uow: UnitOfWorkPort,
         accounting=None,
+        outbox=None,
     ) -> None:
         self.refunds = refunds
         self.intents = intents
@@ -43,6 +45,7 @@ class RefundWebhookUseCases:
         self.events = events
         self.uow = uow
         self.accounting = accounting
+        self.outbox = outbox
 
     def process(
         self,
@@ -113,6 +116,7 @@ class RefundWebhookUseCases:
             return RefundWebhookOutcome("failed", event.event_key, refund_id)
 
         refund = _to_domain(refund_row)
+        previous_status = refund.status
         if event.status is None:
             self.events.mark(
                 row,
@@ -131,6 +135,9 @@ class RefundWebhookUseCases:
                     raise InvalidStateTransition(
                         "refund", refund.status, RefundStatus.FAILED
                     )
+                intent = self.intents.get(refund.payment_intent_id, for_update=True)
+                if intent is None:
+                    raise LookupError("refund payment intent is missing")
                 refund.transition_to(RefundStatus.FAILED)
             elif event.status == RefundStatus.SUCCEEDED:
                 if refund.status != RefundStatus.SUCCEEDED:
@@ -157,6 +164,20 @@ class RefundWebhookUseCases:
 
         refund.provider_status = event.provider_status
         self.refunds.save(refund)
+        if (
+            event.status in {RefundStatus.SUCCEEDED, RefundStatus.FAILED}
+            and previous_status != event.status
+        ):
+            intent = self.intents.get(refund.payment_intent_id, for_update=True)
+            if intent is not None:
+                _enqueue_refund_event(
+                    self.outbox,
+                    owner_client_id=refund_row.client_id,
+                    intent=intent,
+                    refund=refund,
+                    status=str(event.status),
+                    processor=processor.name,
+                )
         self.events.mark(row, status="processed", refund_id=refund_row.id)
         self.uow.commit()
         return RefundWebhookOutcome("processed", event.event_key, refund_id)

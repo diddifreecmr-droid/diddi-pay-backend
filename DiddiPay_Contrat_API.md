@@ -446,6 +446,22 @@ Paystack accepte `transaction`, `amount`, `currency` et les notes de rembourseme
 `processing` n'est pas encore un remboursement final. DiddiPay ne passe l'intention a
 `partially_refunded` ou `refunded` qu'apres un resultat `succeeded`.
 
+### Evenements de resultat du remboursement
+
+Chaque remboursement confirme ou termine produit un evenement provider-neutral dans l'outbox
+transactionnelle, route vers le `client_id` qui a cree le `PaymentIntent` :
+
+- `diddipay.refund.succeeded.v1` : remboursement effectivement confirme ;
+- `diddipay.refund.failed.v1` : remboursement termine en echec ;
+- `diddipay.refund.unknown.v1` : appel externe incertain, a reconcilier.
+
+Le payload contient `refund_id`, `payment_intent_id`, `business_reference`, `amount`, `currency`,
+`status`, `provider_status`, `provider_reference`, `processor` et `occurred_at`. Il ne contient
+aucune donnee personnelle. La livraison est au moins une fois : le consommateur deduplique par
+l'identifiant de l'enveloppe et ne considere le remboursement metier comme confirme qu'apres
+`diddipay.refund.succeeded.v1`. Une relivraison est possible, mais une meme demande idempotente
+ne cree pas un second remboursement ni un second evenement de resultat.
+
 ## 7. Statuts normalises
 
 ### PaymentIntent

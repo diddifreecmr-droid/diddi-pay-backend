@@ -1,5 +1,7 @@
 import uuid
 
+from sqlalchemy import select
+
 from payfund_app.modules.payments.domain import (
     AttemptStatus,
     Money,
@@ -7,11 +9,11 @@ from payfund_app.modules.payments.domain import (
     PaymentIntent,
     PaymentIntentStatus,
 )
+from payfund_app.modules.payments.infra.models import PaymentOutboxRecord
 from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
 )
-
 
 BASE = "/payfund/v1/payment-intents"
 SERVICE_HEADERS = {
@@ -62,6 +64,18 @@ def test_sandbox_refund_updates_payment_intent(client, session):
     updated = PaymentIntentRepository(session).get(intent.id)
     assert updated.refunded_amount == 4_000
     assert updated.status == PaymentIntentStatus.PARTIALLY_REFUNDED
+    events = list(
+        session.scalars(
+            select(PaymentOutboxRecord).where(
+                PaymentOutboxRecord.event_type == "diddipay.refund.succeeded.v1"
+            )
+        )
+    )
+    assert len(events) == 1
+    assert events[0].client_id == "diddigo"
+    assert events[0].payload["business_reference"] == intent.business_reference
+    assert events[0].payload["amount"] == 4_000
+    assert events[0].payload["status"] == "succeeded"
 
 
 def test_refund_is_idempotent(client, session):
@@ -72,6 +86,14 @@ def test_refund_is_idempotent(client, session):
 
     assert second.status_code == 201
     assert second.json()["id"] == first.json()["id"]
+    events = list(
+        session.scalars(
+            select(PaymentOutboxRecord).where(
+                PaymentOutboxRecord.event_type == "diddipay.refund.succeeded.v1"
+            )
+        )
+    )
+    assert len(events) == 1
 
 
 def test_cumulative_refunds_cannot_exceed_capture(client, session):

@@ -136,3 +136,15 @@ def test_pawapay_refund_callback_updates_refund_and_ledger_once(client, session)
         select(FinancialJournalRecord).where(FinancialJournalRecord.event_type == "refund")
     )
     assert session.scalar(select(ProviderEventRecord)).refund_id == refund_id
+    events = list(
+        session.scalars(
+            select(PaymentOutboxRecord).where(
+                PaymentOutboxRecord.event_type == "diddipay.refund.succeeded.v1"
+            )
+        )
+    )
+    assert len(events) == 1
+    assert events[0].client_id == "diddigo"
+    assert events[0].payload["business_reference"] == intent.business_reference
+    assert events[0].payload["amount"] == 2_000
+    assert events[0].payload["processor"] == "pawapay"

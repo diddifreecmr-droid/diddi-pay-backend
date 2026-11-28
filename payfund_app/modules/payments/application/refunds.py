@@ -20,6 +20,45 @@ from payfund_app.modules.payments.domain import (
 )
 
 
+def _enqueue_refund_event(
+    outbox,
+    *,
+    owner_client_id: str,
+    intent,
+    refund,
+    status: str,
+    processor: str | None,
+) -> None:
+    """Publish one provider-neutral refund result for the owning module.
+
+    The outbox event is deliberately emitted by the application layer after the
+    refund transition has been applied. Provider adapters only normalize their
+    own responses; modules consume this stable contract.
+    """
+    if outbox is None:
+        return
+    outbox.enqueue(
+        client_id=owner_client_id,
+        event_type=f"diddipay.refund.{status}.v1",
+        aggregate_id=refund.id,
+        payload={
+            "event_version": "1",
+            "refund_id": str(refund.id),
+            "payment_intent_id": str(refund.payment_intent_id),
+            "owner_client_id": owner_client_id,
+            "business_reference": intent.business_reference,
+            "amount": refund.money.amount,
+            "currency": refund.money.currency,
+            "status": status,
+            "provider_status": refund.provider_status,
+            "provider_reference": refund.provider_reference,
+            "processor": processor,
+            "reason": refund.reason,
+            "occurred_at": refund.updated_at.isoformat(),
+        },
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CreateRefundCommand:
     client_id: str
@@ -40,13 +79,23 @@ class CreateRefundCommand:
 
 
 class RefundUseCases:
-    def __init__(self, intents, attempts, refunds, processors, uow, accounting=None) -> None:
+    def __init__(
+        self,
+        intents,
+        attempts,
+        refunds,
+        processors,
+        uow,
+        accounting=None,
+        outbox=None,
+    ) -> None:
         self.intents = intents
         self.attempts = attempts
         self.refunds = refunds
         self.processors = processors
         self.uow = uow
         self.accounting = accounting
+        self.outbox = outbox
 
     def create(self, command: CreateRefundCommand):
         fingerprint = command.fingerprint()
@@ -101,6 +150,14 @@ class RefundUseCases:
         except ProcessorCallUncertain:
             refund.transition_to(RefundStatus.PROCESSING)
             refund.provider_status = "unknown"
+            _enqueue_refund_event(
+                self.outbox,
+                owner_client_id=intent.client_id,
+                intent=intent,
+                refund=refund,
+                status="unknown",
+                processor=attempt.processor,
+            )
         else:
             refund.provider_reference = result.provider_reference
             refund.provider_status = result.provider_status
@@ -110,6 +167,23 @@ class RefundUseCases:
             self.intents.save(intent)
             if self.accounting is not None:
                 self.accounting.record_refund(intent, attempt, refund)
+            _enqueue_refund_event(
+                self.outbox,
+                owner_client_id=intent.client_id,
+                intent=intent,
+                refund=refund,
+                status="succeeded",
+                processor=attempt.processor,
+            )
+        elif refund.status == RefundStatus.FAILED:
+            _enqueue_refund_event(
+                self.outbox,
+                owner_client_id=intent.client_id,
+                intent=intent,
+                refund=refund,
+                status="failed",
+                processor=attempt.processor,
+            )
         self.refunds.save(refund)
         self.uow.commit()
         return refund
