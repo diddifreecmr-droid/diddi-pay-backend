@@ -1,10 +1,23 @@
-"""Signed provider webhook endpoints for the payment orchestrator."""
+"""Provider callback endpoints for the payment orchestrator (ticket 110, step 3).
+
+One generic route serves every processor and callback kind:
+
+    POST /payfund/v1/webhooks/{processor}/{kind}      kind = payments | deposits | refunds | payouts
+
+The processor's plugin and declared capabilities decide whether the route exists (404 if
+not). Signature/notification validation stays inside the adapter, on the raw bytes.
+
+Aliases kept so provider dashboards keep working unchanged:
+    POST /payfund/v1/payments/webhooks/paystack   -> paystack / payments
+    POST /payfund/v1/payments/webhooks/cinetpay   -> cinetpay / payments
+    POST /webhooks/pawapay/{kind}                  (root path, legacy PawaPay dashboard)
+"""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, Request
 
-from payfund_app.core.errors import ServiceUnavailable, Unauthenticated
+from payfund_app.core.errors import NotFound, ServiceUnavailable, Unauthenticated
 from payfund_app.core.observability.business_metrics import observe_webhook
 from payfund_app.modules.payments.application.accounting import (
     PaymentAccountingService,
@@ -18,11 +31,13 @@ from payfund_app.modules.payments.application.payout_webhooks import (
     PayoutWebhookUseCases,
 )
 from payfund_app.modules.payments.application.payouts import PayoutUseCases
+from payfund_app.modules.payments.application.ports import WebhookKind
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
 from payfund_app.modules.payments.application.refund_webhooks import (
     RefundWebhookUseCases,
 )
 from payfund_app.modules.payments.application.webhooks import PaymentWebhookUseCases
+from payfund_app.modules.payments.infra.processor_plugins import plugin_named
 from payfund_app.modules.payments.infra.repositories import (
     FinancialLedgerRepository,
     PaymentAttemptRepository,
@@ -34,12 +49,8 @@ from payfund_app.modules.payments.infra.repositories import (
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import (
-    CinetpayWebhookProcessorDep,
-    PawapayDepositWebhookProcessorDep,
-    PawapayRefundWebhookProcessorDep,
-    PawapayWebhookProcessorDep,
-    PaystackWebhookProcessorDep,
     SessionDep,
+    WebhookProcessorResolverDep,
 )
 from payfund_app.modules.payments.presentation.schemas import (
     PaymentWebhookResponse,
@@ -48,186 +59,33 @@ from payfund_app.modules.payments.presentation.schemas import (
 )
 from payfund_app.shared_kernel.logging import emit
 
-router = APIRouter(prefix="/payments/webhooks", tags=["payment-webhooks"])
-pawapay_router = APIRouter(prefix="/webhooks/pawapay", tags=["payment-webhooks"])
+# URL segment -> callback kind. "deposits" is PawaPay's word for a collection callback.
+KIND_SEGMENTS: dict[str, WebhookKind] = {
+    "payments": WebhookKind.PAYMENT,
+    "deposits": WebhookKind.PAYMENT,
+    "refunds": WebhookKind.REFUND,
+    "payouts": WebhookKind.PAYOUT,
+}
+# Historical operation labels in logs.
+_OPERATION = {WebhookKind.PAYMENT: "deposit", WebhookKind.REFUND: "refund", WebhookKind.PAYOUT: "payout"}
+_PROCESSED_EVENT = {
+    WebhookKind.PAYMENT: "payment.webhook.processed",
+    WebhookKind.REFUND: "refund.webhook.processed",
+    WebhookKind.PAYOUT: "payout.webhook.processed",
+}
 
+WebhookResponse = PaymentWebhookResponse | RefundWebhookResponse | PayoutWebhookResponse
 
-@router.post(
-    "/paystack",
-    response_model=PaymentWebhookResponse,
-    summary="Receive a signed Paystack event",
-    description=(
-        "Provider-only endpoint. DiddiPay verifies X-Paystack-Signature against the exact "
-        "raw request bytes before parsing or applying the event."
+_ROUTE_DOC = {
+    "summary": "Receive a provider callback",
+    "description": (
+        "Provider-only endpoint. `processor` is a configured DiddiPay processor and `kind` one "
+        "of payments (alias deposits), refunds, payouts that it declares. The adapter validates "
+        "the callback on the raw bytes (signature or stored notify token) and, where the "
+        "provider requires it, confirms the status with the provider. The event is stored in "
+        "the provider inbox and applied exactly once. Unknown processor/kind: 404."
     ),
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": {"type": "object", "additionalProperties": True},
-                    "example": {
-                        "event": "charge.success",
-                        "data": {
-                            "reference": "dpi_example",
-                            "amount": 500000,
-                            "currency": "XOF",
-                            "status": "success",
-                        },
-                    },
-                }
-            },
-        }
-    },
-)
-async def paystack_webhook(
-    request: Request,
-    session: SessionDep,
-    processor: PaystackWebhookProcessorDep,
-    x_paystack_signature: Annotated[
-        str | None,
-        Header(
-            alias="X-Paystack-Signature",
-            description="HMAC SHA-512 signature calculated by Paystack over the raw body.",
-        ),
-    ] = None,
-) -> PaymentWebhookResponse:
-    # The processor reads the header mapping so signature verification always uses raw bytes.
-    del x_paystack_signature
-    raw_body = await request.body()
-    use_cases = PaymentWebhookUseCases(
-        PaymentIntentRepository(session),
-        PaymentAttemptRepository(session),
-        ProviderEventRepository(session),
-        SqlAlchemyUnitOfWork(session),
-        PaymentOutboxRepository(session),
-        PaymentAccountingService(FinancialLedgerRepository(session)),
-    )
-    try:
-        result = use_cases.process(processor, raw_body, request.headers)
-    except ProcessorWebhookRejected as exc:
-        observe_webhook(provider="paystack", outcome="rejected")
-        emit(
-            "warning",
-            "payment.webhook.rejected",
-            processor="paystack",
-            reason=str(exc)[:160],
-        )
-        raise Unauthenticated("Signature webhook Paystack invalide.") from exc
-    observe_webhook(provider="paystack", outcome=result.status)
-    emit(
-        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
-        "payment.webhook.processed",
-        processor="paystack",
-        event_key=result.event_key,
-        payment_intent_id=result.payment_intent_id,
-        status=result.status,
-    )
-    return PaymentWebhookResponse(
-        status=result.status,
-        event_key=result.event_key,
-        payment_intent_id=result.payment_intent_id,
-    )
-
-
-@router.post(
-    "/cinetpay",
-    response_model=PaymentWebhookResponse,
-    summary="Receive and verify a CinetPay payment notification",
-    description=(
-        "CinetPay notifications are not trusted as payment proof. DiddiPay validates the "
-        "stored per-payment notify_token, verifies the payment with CinetPay, then applies "
-        "the normal idempotent inbox and accounting flow."
-    ),
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": {"type": "object", "additionalProperties": True},
-                    "example": {
-                        "notify_token": "returned-at-payment-initialization",
-                        "merchant_transaction_id": "00000000-0000-0000-0000-000000000001",
-                        "transaction_id": "ER-T-EXAMPLE",
-                        "status": "SUCCESS",
-                    },
-                }
-            },
-        }
-    },
-)
-async def cinetpay_webhook(
-    request: Request,
-    session: SessionDep,
-    processor: CinetpayWebhookProcessorDep,
-) -> PaymentWebhookResponse:
-    raw_body = await request.body()
-    attempts = PaymentAttemptRepository(session)
-    try:
-        # The reference is used only to find the stored hash. The callback status and amount
-        # remain untrusted until CinetPay's verification endpoint is called by the adapter.
-        reference = processor.extract_webhook_reference(raw_body)
-        attempt = attempts.get_by_provider_reference("cinetpay", reference)
-        expected_hash = attempt.provider_metadata.get("notify_token_sha256") if attempt else None
-        if not expected_hash:
-            raise ProcessorWebhookRejected("unknown CinetPay payment notification")
-
-        event = processor.parse_webhook(
-            raw_body,
-            request.headers,
-            expected_notify_token_hash=str(expected_hash),
-        )
-        use_cases = PaymentWebhookUseCases(
-            PaymentIntentRepository(session),
-            attempts,
-            ProviderEventRepository(session),
-            SqlAlchemyUnitOfWork(session),
-            PaymentOutboxRepository(session),
-            PaymentAccountingService(FinancialLedgerRepository(session)),
-        )
-        result = use_cases.process_event(processor, raw_body, event)
-    except ProcessorWebhookRejected as exc:
-        observe_webhook(provider="cinetpay", outcome="rejected")
-        emit(
-            "warning",
-            "payment.webhook.rejected",
-            processor="cinetpay",
-            reason=str(exc)[:160],
-        )
-        raise Unauthenticated("Notification webhook CinetPay invalide.") from exc
-    except ProcessorCallUncertain as exc:
-        observe_webhook(provider="cinetpay", outcome="verification_unavailable")
-        raise ServiceUnavailable(
-            "La verification CinetPay est temporairement indisponible.",
-            code="PROCESSOR_UNAVAILABLE",
-            details={"provider": "cinetpay", "reference": exc.provider_reference},
-        ) from exc
-    observe_webhook(provider="cinetpay", outcome=result.status)
-    emit(
-        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
-        "payment.webhook.processed",
-        processor="cinetpay",
-        event_key=result.event_key,
-        payment_intent_id=result.payment_intent_id,
-        status=result.status,
-    )
-    return PaymentWebhookResponse(
-        status=result.status,
-        event_key=result.event_key,
-        payment_intent_id=result.payment_intent_id,
-    )
-
-
-@pawapay_router.post(
-    "/deposits",
-    response_model=PaymentWebhookResponse,
-    summary="Receive a PawaPay deposit callback",
-    description=(
-        "Provider-only endpoint for PaymentIntent deposits. The signed callback is stored "
-        "in the provider inbox before the PaymentIntent and financial ledger are updated. "
-        "Missed callbacks remain recoverable through payment reconciliation."
-    ),
-    openapi_extra={
+    "openapi_extra": {
         "requestBody": {
             "required": True,
             "content": {
@@ -236,165 +94,67 @@ async def cinetpay_webhook(
                     "example": {
                         "depositId": "00000000-0000-0000-0000-000000000001",
                         "status": "COMPLETED",
-                        "requestedAmount": "5000",
                         "depositedAmount": "5000",
                         "currency": "XOF",
-                        "country": "CIV",
                     },
                 }
             },
         }
     },
-)
-async def pawapay_deposit_webhook(
-    request: Request,
-    session: SessionDep,
-    processor: PawapayDepositWebhookProcessorDep,
-) -> PaymentWebhookResponse:
-    raw_body = await request.body()
-    use_cases = PaymentWebhookUseCases(
-        PaymentIntentRepository(session),
-        PaymentAttemptRepository(session),
-        ProviderEventRepository(session),
-        SqlAlchemyUnitOfWork(session),
-        PaymentOutboxRepository(session),
-        PaymentAccountingService(FinancialLedgerRepository(session)),
-    )
-    try:
-        result = use_cases.process(processor, raw_body, request.headers)
-    except ProcessorWebhookRejected as exc:
-        observe_webhook(provider="pawapay", outcome="rejected")
-        emit(
-            "warning",
-            "payment.webhook.rejected",
-            processor="pawapay",
-            operation="deposit",
-            reason=str(exc)[:160],
+}
+# The legacy root PawaPay route documents the same body.
+_PAWAPAY_LEGACY_EXTRA = _ROUTE_DOC["openapi_extra"]
+
+webhooks_router = APIRouter(prefix="/webhooks", tags=["payment-webhooks"])
+router = APIRouter(prefix="/payments/webhooks", tags=["payment-webhooks"])
+pawapay_router = APIRouter(prefix="/webhooks/pawapay", tags=["payment-webhooks"])
+
+
+def _resolve_kind(processor_name: str, kind_segment: str) -> WebhookKind:
+    kind = KIND_SEGMENTS.get(kind_segment)
+    plugin = plugin_named(processor_name)
+    if kind is None or plugin is None or not plugin.capabilities.receives(kind):
+        raise NotFound(
+            "Route de callback inconnue.",
+            code="WEBHOOK_ROUTE_NOT_FOUND",
+            details={"processor": processor_name, "kind": kind_segment},
         )
-        raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
-    observe_webhook(provider="pawapay", outcome=result.status)
-    emit(
-        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
-        "payment.webhook.processed",
-        processor="pawapay",
-        event_key=result.event_key,
-        payment_intent_id=result.payment_intent_id,
-        status=result.status,
-    )
-    return PaymentWebhookResponse(
-        status=result.status,
-        event_key=result.event_key,
-        payment_intent_id=result.payment_intent_id,
-    )
+    return kind
 
 
-@pawapay_router.post(
-    "/refunds",
-    response_model=RefundWebhookResponse,
-    summary="Receive a PawaPay refund callback",
-    description=(
-        "Provider-only endpoint for asynchronous PawaPay refunds. The callback is validated, "
-        "deduplicated and applied to the refund state and financial ledger exactly once."
-    ),
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": {"type": "object", "additionalProperties": True},
-                    "example": {
-                        "refundId": "00000000-0000-0000-0000-000000000002",
-                        "status": "COMPLETED",
-                        "amount": "5000",
-                        "currency": "XOF",
-                        "country": "CIV",
-                    },
-                }
-            },
-        }
-    },
-)
-async def pawapay_refund_webhook(
-    request: Request,
-    session: SessionDep,
-    processor: PawapayRefundWebhookProcessorDep,
-) -> RefundWebhookResponse:
-    raw_body = await request.body()
-    use_cases = RefundWebhookUseCases(
-        RefundRepository(session),
-        PaymentIntentRepository(session),
-        PaymentAttemptRepository(session),
-        ProviderEventRepository(session),
-        SqlAlchemyUnitOfWork(session),
-        PaymentAccountingService(FinancialLedgerRepository(session)),
-        PaymentOutboxRepository(session),
-    )
-    try:
-        result = use_cases.process(
-            processor,
-            raw_body,
-            request.headers,
-            callback_url=processor.callback_url,
+def _apply(kind: WebhookKind, processor, raw_body: bytes, headers, session):
+    if kind is WebhookKind.PAYMENT:
+        use_cases = PaymentWebhookUseCases(
+            PaymentIntentRepository(session),
+            PaymentAttemptRepository(session),
+            ProviderEventRepository(session),
+            SqlAlchemyUnitOfWork(session),
+            PaymentOutboxRepository(session),
+            PaymentAccountingService(FinancialLedgerRepository(session)),
         )
-    except ProcessorWebhookRejected as exc:
-        observe_webhook(provider="pawapay", outcome="rejected")
-        emit(
-            "warning",
-            "payment.webhook.rejected",
-            processor="pawapay",
-            operation="refund",
-            reason=str(exc)[:160],
+        result = use_cases.process(processor, raw_body, headers)
+        return result, PaymentWebhookResponse(
+            status=result.status,
+            event_key=result.event_key,
+            payment_intent_id=result.payment_intent_id,
+        ), {"payment_intent_id": result.payment_intent_id}
+
+    callback_url = getattr(processor, "callback_url", None)
+    if kind is WebhookKind.REFUND:
+        use_cases = RefundWebhookUseCases(
+            RefundRepository(session),
+            PaymentIntentRepository(session),
+            PaymentAttemptRepository(session),
+            ProviderEventRepository(session),
+            SqlAlchemyUnitOfWork(session),
+            PaymentAccountingService(FinancialLedgerRepository(session)),
+            PaymentOutboxRepository(session),
         )
-        raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
-    observe_webhook(provider="pawapay", outcome=result.status)
-    emit(
-        "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
-        "refund.webhook.processed",
-        processor="pawapay",
-        event_key=result.event_key,
-        refund_id=result.refund_id,
-        status=result.status,
-    )
-    return RefundWebhookResponse(
-        status=result.status,
-        event_key=result.event_key,
-        refund_id=result.refund_id,
-    )
+        result = use_cases.process(processor, raw_body, headers, callback_url=callback_url)
+        return result, RefundWebhookResponse(
+            status=result.status, event_key=result.event_key, refund_id=result.refund_id
+        ), {"refund_id": result.refund_id}
 
-
-@pawapay_router.post(
-    "/payouts",
-    response_model=PayoutWebhookResponse,
-    summary="Receive a PawaPay payout callback",
-    description=(
-        "Provider-only endpoint. PawaPay callback signatures are verified when enabled; "
-        "the payout status is then confirmed with PawaPay before DiddiPay posts accounting. "
-        "Both the canonical API path and the legacy root path are exposed for migration."
-    ),
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": {"type": "object", "additionalProperties": True},
-                    "example": {
-                        "payoutId": "00000000-0000-0000-0000-000000000001",
-                        "status": "COMPLETED",
-                        "amount": "5000",
-                        "currency": "XOF",
-                        "country": "CIV",
-                    },
-                }
-            },
-        }
-    },
-)
-async def pawapay_payout_webhook(
-    request: Request,
-    session: SessionDep,
-    processor: PawapayWebhookProcessorDep,
-) -> PayoutWebhookResponse:
-    raw_body = await request.body()
     uow = SqlAlchemyUnitOfWork(session)
     payout_use_cases = PayoutUseCases(
         PayoutRepository(session),
@@ -404,45 +164,151 @@ async def pawapay_payout_webhook(
         PayoutAccountingService(FinancialLedgerRepository(session)),
     )
     use_cases = PayoutWebhookUseCases(
-        PayoutRepository(session),
-        ProviderEventRepository(session),
-        uow,
-        payout_use_cases,
+        PayoutRepository(session), ProviderEventRepository(session), uow, payout_use_cases
     )
+    result = use_cases.process(processor, raw_body, headers, callback_url=callback_url)
+    return result, PayoutWebhookResponse(
+        status=result.status, event_key=result.event_key, payout_id=result.payout_id
+    ), {"payout_id": result.payout_id}
+
+
+async def _handle(
+    processor_name: str,
+    kind_segment: str,
+    request: Request,
+    session,
+    resolve_processor,
+) -> WebhookResponse:
+    processor_name = processor_name.strip().lower()
+    kind = _resolve_kind(processor_name, kind_segment)
+    raw_body = await request.body()
+    processor = resolve_processor(processor_name, kind)
     try:
-        result = use_cases.process(
-            processor,
-            raw_body,
-            request.headers,
-            callback_url=processor.callback_url,
-        )
+        result, response, ids = _apply(kind, processor, raw_body, request.headers, session)
     except ProcessorWebhookRejected as exc:
-        observe_webhook(provider="pawapay", outcome="rejected")
+        observe_webhook(provider=processor_name, outcome="rejected")
         emit(
             "warning",
             "payment.webhook.rejected",
-            processor="pawapay",
-            operation="payout",
+            processor=processor_name,
+            operation=_OPERATION[kind],
             reason=str(exc)[:160],
         )
-        raise HTTPException(status_code=401, detail="Signature webhook PawaPay invalide.") from exc
-    except ProcessorCallUncertain as exc:
-        observe_webhook(provider="pawapay", outcome="transient_error")
-        raise HTTPException(
-            status_code=503,
-            detail="PawaPay status verification is temporarily unavailable.",
+        raise Unauthenticated(
+            f"Callback {processor_name} invalide.", code="WEBHOOK_REJECTED"
         ) from exc
-    observe_webhook(provider="pawapay", outcome=result.status)
+    except ProcessorCallUncertain as exc:
+        observe_webhook(provider=processor_name, outcome="verification_unavailable")
+        raise ServiceUnavailable(
+            f"La verification {processor_name} est temporairement indisponible.",
+            code="PROCESSOR_UNAVAILABLE",
+            details={"provider": processor_name, "reference": exc.provider_reference},
+        ) from exc
+    observe_webhook(provider=processor_name, outcome=result.status)
     emit(
         "info" if result.status in {"processed", "duplicate", "ignored"} else "warning",
-        "payout.webhook.processed",
-        processor="pawapay",
+        _PROCESSED_EVENT[kind],
+        processor=processor_name,
         event_key=result.event_key,
-        payout_id=result.payout_id,
         status=result.status,
+        **ids,
     )
-    return PayoutWebhookResponse(
-        status=result.status,
-        event_key=result.event_key,
-        payout_id=result.payout_id,
-    )
+    return response
+
+
+@webhooks_router.post("/{processor_name}/{kind_segment}", response_model=WebhookResponse, **_ROUTE_DOC)
+async def provider_webhook(
+    processor_name: str,
+    kind_segment: str,
+    request: Request,
+    session: SessionDep,
+    resolve_processor: WebhookProcessorResolverDep,
+) -> WebhookResponse:
+    return await _handle(processor_name, kind_segment, request, session, resolve_processor)
+
+
+def _json_body(example: dict) -> dict:
+    return {
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "additionalProperties": True},
+                    "example": example,
+                }
+            },
+        }
+    }
+
+
+@router.post(
+    "/paystack",
+    response_model=PaymentWebhookResponse,
+    summary="Receive a signed Paystack event (alias of /webhooks/paystack/payments)",
+    description=(
+        "Provider-only endpoint, kept for the Paystack dashboard. DiddiPay verifies "
+        "X-Paystack-Signature against the exact raw request bytes before parsing or applying "
+        "the event."
+    ),
+    openapi_extra=_json_body(
+        {
+            "event": "charge.success",
+            "data": {"reference": "dpi_example", "amount": 500000, "currency": "XOF", "status": "success"},
+        }
+    ),
+)
+async def paystack_webhook(
+    request: Request,
+    session: SessionDep,
+    resolve_processor: WebhookProcessorResolverDep,
+    x_paystack_signature: Annotated[
+        str | None,
+        Header(
+            alias="X-Paystack-Signature",
+            description="HMAC SHA-512 signature calculated by Paystack over the raw body.",
+        ),
+    ] = None,
+) -> WebhookResponse:
+    # Documented here; the adapter reads the header mapping so verification uses raw bytes.
+    del x_paystack_signature
+    return await _handle("paystack", "payments", request, session, resolve_processor)
+
+
+@router.post(
+    "/cinetpay",
+    response_model=PaymentWebhookResponse,
+    summary="Receive a CinetPay notification (alias of /webhooks/cinetpay/payments)",
+    description=(
+        "Kept for the CinetPay notify_url. CinetPay notifications are not trusted as payment "
+        "proof: the stored per-payment notify_token is checked and the payment is verified "
+        "with CinetPay before the idempotent inbox and accounting flow applies it."
+    ),
+    openapi_extra=_json_body(
+        {
+            "notify_token": "returned-at-payment-initialization",
+            "merchant_transaction_id": "00000000-0000-0000-0000-000000000001",
+            "transaction_id": "ER-T-EXAMPLE",
+            "status": "SUCCESS",
+        }
+    ),
+)
+async def cinetpay_webhook(
+    request: Request, session: SessionDep, resolve_processor: WebhookProcessorResolverDep
+) -> WebhookResponse:
+    return await _handle("cinetpay", "payments", request, session, resolve_processor)
+
+
+@pawapay_router.post(
+    "/{kind_segment}",
+    response_model=WebhookResponse,
+    summary="Receive a PawaPay callback (legacy root path)",
+    description="Root path still configured in the PawaPay dashboard; same handler as /payfund/v1/webhooks/pawapay/{kind}.",
+    openapi_extra=_PAWAPAY_LEGACY_EXTRA,
+)
+async def pawapay_legacy_webhook(
+    kind_segment: str,
+    request: Request,
+    session: SessionDep,
+    resolve_processor: WebhookProcessorResolverDep,
+) -> WebhookResponse:
+    return await _handle("pawapay", kind_segment, request, session, resolve_processor)

@@ -24,7 +24,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentAttemptRepository,
     PaymentIntentRepository,
 )
-from payfund_app.modules.payments.presentation.deps import get_paystack_webhook_processor
+from payfund_app.modules.payments.presentation.deps import get_webhook_processor_resolver
 
 
 URL = "/payfund/v1/payments/webhooks/paystack"
@@ -76,8 +76,8 @@ def signed_payload(attempt, *, amount=500_000, currency="XOF", fees=10_000):
 
 
 def configure_processor():
-    app.dependency_overrides[get_paystack_webhook_processor] = lambda: PaystackPaymentProcessor(
-        secret_key="sk_test", webhook_secret=SECRET
+    app.dependency_overrides[get_webhook_processor_resolver] = lambda: lambda name, kind: (
+        PaystackPaymentProcessor(secret_key="sk_test", webhook_secret=SECRET)
     )
 
 

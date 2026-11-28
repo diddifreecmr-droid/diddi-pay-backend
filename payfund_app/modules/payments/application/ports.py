@@ -225,6 +225,22 @@ class PaymentWebhookPort(ProcessorPort, Protocol):
     def parse_webhook(self, raw_body: bytes, headers: Mapping[str, str]) -> ProviderEvent: ...
 
 
+class AttemptBoundWebhookPort(PaymentWebhookPort, Protocol):
+    """Optional: a payment callback that can only be validated with data stored on the
+    attempt (CinetPay's per-payment notify_token hash). PaymentWebhookUseCases.process
+    finds the attempt by `webhook_attempt_reference` and passes its provider_metadata."""
+
+    def webhook_attempt_reference(self, raw_body: bytes) -> str: ...
+
+    def parse_webhook(  # type: ignore[override]
+        self,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+        *,
+        attempt_metadata: Mapping[str, Any] | None = None,
+    ) -> ProviderEvent: ...
+
+
 class RefundWebhookPort(ProcessorPort, Protocol):
     def parse_refund_webhook(
         self,

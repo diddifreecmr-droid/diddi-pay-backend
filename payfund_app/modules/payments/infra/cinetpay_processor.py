@@ -535,15 +535,23 @@ class CinetpayPaymentProcessor:
             )
         return reference
 
+    # AttemptBoundWebhookPort: the generic webhook use case looks up the attempt by this
+    # reference and passes its stored provider_metadata back to parse_webhook.
+    webhook_attempt_reference = extract_webhook_reference
+
     def parse_webhook(
         self,
         raw_body: bytes,
         headers: Mapping[str, str],
         *,
         expected_notify_token_hash: str | None = None,
+        attempt_metadata: Mapping[str, Any] | None = None,
     ) -> ProviderEvent:
         del headers  # CinetPay v1 authenticates the callback with notify_token in the body.
         body = self._parse_webhook_body(raw_body)
+        if not expected_notify_token_hash and attempt_metadata:
+            stored = attempt_metadata.get("notify_token_sha256")
+            expected_notify_token_hash = str(stored) if stored else None
         if not expected_notify_token_hash:
             raise ProcessorWebhookRejected(
                 "CinetPay webhook cannot be validated: notify_token is not stored"

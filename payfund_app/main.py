@@ -35,6 +35,7 @@ from payfund_app.modules.payments.presentation.support_router import (
 )
 from payfund_app.modules.payments.presentation.webhook_router import (
     pawapay_router,
+    webhooks_router,
 )
 from payfund_app.modules.payments.presentation.webhook_router import (
     router as payment_webhook_router,
@@ -122,7 +123,8 @@ app.include_router(wallet_router, prefix=API_PREFIX)
 app.include_router(fund_router, prefix=API_PREFIX)
 app.include_router(payment_router, prefix=API_PREFIX)
 app.include_router(payment_webhook_router, prefix=API_PREFIX)
-app.include_router(pawapay_router, prefix=API_PREFIX)
+# Generic provider callbacks: /payfund/v1/webhooks/{processor}/{kind} (ticket 110).
+app.include_router(webhooks_router, prefix=API_PREFIX)
 # PawaPay staging was configured with this root callback before the API prefix was
 # standardized. Keep it during migration; production should use the canonical path above.
 app.include_router(pawapay_router)

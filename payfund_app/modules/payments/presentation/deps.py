@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Header
 from sqlalchemy.orm import Session
@@ -16,13 +16,6 @@ from payfund_app.core.errors import Unauthenticated
 from payfund_app.core.security import ServicePrincipal, decode_service_token
 from payfund_app.modules.payments.application.ports import WebhookKind
 from payfund_app.modules.payments.application.processor_router import ProcessorRegistry
-from payfund_app.modules.payments.infra.cinetpay_processor import (
-    CinetpayPaymentProcessor,
-)
-from payfund_app.modules.payments.infra.pawapay_processor import PawapayPaymentProcessor
-from payfund_app.modules.payments.infra.paystack_processor import (
-    PaystackPaymentProcessor,
-)
 from payfund_app.modules.payments.infra.processor_plugins import (
     build_registry,
     build_webhook_processor,
@@ -143,48 +136,18 @@ def webhook_processor(name: str, kind: WebhookKind):
     return build_webhook_processor(name, kind, get_settings())
 
 
-# Named dependencies kept for the current provider routes and test overrides.
-def get_paystack_webhook_processor() -> PaystackPaymentProcessor:
-    return webhook_processor("paystack", WebhookKind.PAYMENT)
+WebhookProcessorResolver = Callable[[str, WebhookKind], Any]
 
 
-PaystackWebhookProcessorDep = Annotated[
-    PaystackPaymentProcessor, Depends(get_paystack_webhook_processor)
-]
+def get_webhook_processor_resolver() -> WebhookProcessorResolver:
+    """One dependency for every provider callback route (ticket 110, step 3).
+
+    Tests override this to inject a fake adapter: the resolver receives the processor name
+    and callback kind taken from the URL.
+    """
+    return webhook_processor
 
 
-def get_cinetpay_webhook_processor() -> CinetpayPaymentProcessor:
-    return webhook_processor("cinetpay", WebhookKind.PAYMENT)
-
-
-CinetpayWebhookProcessorDep = Annotated[
-    CinetpayPaymentProcessor, Depends(get_cinetpay_webhook_processor)
-]
-
-
-def get_pawapay_webhook_processor() -> PawapayPaymentProcessor:
-    """PawaPay payout callbacks."""
-    return webhook_processor("pawapay", WebhookKind.PAYOUT)
-
-
-PawapayWebhookProcessorDep = Annotated[
-    PawapayPaymentProcessor, Depends(get_pawapay_webhook_processor)
-]
-
-
-def get_pawapay_deposit_webhook_processor() -> PawapayPaymentProcessor:
-    return webhook_processor("pawapay", WebhookKind.PAYMENT)
-
-
-PawapayDepositWebhookProcessorDep = Annotated[
-    PawapayPaymentProcessor, Depends(get_pawapay_deposit_webhook_processor)
-]
-
-
-def get_pawapay_refund_webhook_processor() -> PawapayPaymentProcessor:
-    return webhook_processor("pawapay", WebhookKind.REFUND)
-
-
-PawapayRefundWebhookProcessorDep = Annotated[
-    PawapayPaymentProcessor, Depends(get_pawapay_refund_webhook_processor)
+WebhookProcessorResolverDep = Annotated[
+    WebhookProcessorResolver, Depends(get_webhook_processor_resolver)
 ]

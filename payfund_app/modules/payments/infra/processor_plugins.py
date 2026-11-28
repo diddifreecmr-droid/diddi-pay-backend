@@ -35,6 +35,8 @@ class ProcessorNotConfigured(ServiceUnavailable, ValueError):
 @dataclass(frozen=True, slots=True)
 class ProcessorPlugin:
     name: str
+    # Adapter class: its class-level `capabilities` are readable without credentials.
+    adapter: type
     # (settings attribute, env var name) pairs that must all be non-empty to register.
     required: tuple[tuple[str, str], ...]
     build: Callable[[Settings], Any]
@@ -54,6 +56,10 @@ class ProcessorPlugin:
 
     def is_configured(self, settings: Settings) -> bool:
         return not self.missing(settings)
+
+    @property
+    def capabilities(self):
+        return self.adapter.capabilities
 
     def can_build_webhook(self, settings: Settings) -> bool:
         if self.build_webhook is None:
@@ -134,9 +140,10 @@ def _jeko(settings: Settings) -> JekoPaymentProcessor:
 PLUGINS: tuple[ProcessorPlugin, ...] = (
     # Free, no credentials: always registered so reconciliation can resolve any attempt
     # stamped "sandbox", whatever the current mode (SCRUM-511).
-    ProcessorPlugin(name="sandbox", required=(), build=lambda settings: SandboxPaymentProcessor()),
+    ProcessorPlugin(name="sandbox", adapter=SandboxPaymentProcessor, required=(), build=lambda settings: SandboxPaymentProcessor()),
     ProcessorPlugin(
         name="paystack",
+        adapter=PaystackPaymentProcessor,
         required=(("paystack_secret_key", "PAYSTACK_SECRET_KEY"),),
         build=_paystack,
         build_webhook=_paystack_webhook,
@@ -145,6 +152,7 @@ PLUGINS: tuple[ProcessorPlugin, ...] = (
     # Shares the PawaPay account with the legacy wallet adapter (wallet/infra/pawapay_gateway.py).
     ProcessorPlugin(
         name="pawapay",
+        adapter=PawapayPaymentProcessor,
         required=(("pawapay_api_token", "PAWAPAY_API_TOKEN"),),
         build=_pawapay,
         priority=50,
@@ -153,6 +161,7 @@ PLUGINS: tuple[ProcessorPlugin, ...] = (
     # Needs BOTH api_key and api_password; an api_key alone cannot authenticate.
     ProcessorPlugin(
         name="cinetpay",
+        adapter=CinetpayPaymentProcessor,
         required=(
             ("cinetpay_api_key", "CINETPAY_API_KEY"),
             ("cinetpay_api_password", "CINETPAY_API_PASSWORD"),
@@ -164,6 +173,7 @@ PLUGINS: tuple[ProcessorPlugin, ...] = (
     # Needs api_key + api_key_id + store_id; no call works without a store_id.
     ProcessorPlugin(
         name="jeko",
+        adapter=JekoPaymentProcessor,
         required=(
             ("jeko_api_key", "JEKO_API_KEY"),
             ("jeko_api_key_id", "JEKO_API_KEY_ID"),

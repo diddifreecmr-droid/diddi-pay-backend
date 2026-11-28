@@ -14,6 +14,7 @@ from payfund_app.modules.payments.application.ports import (
     UnitOfWorkPort,
     WebhookKind,
 )
+from payfund_app.modules.payments.application.errors import ProcessorWebhookRejected
 from payfund_app.modules.payments.application.processor_router import require_webhook
 from payfund_app.modules.payments.application.success import record_payment_success
 from payfund_app.modules.payments.domain import AttemptStatus, PaymentIntentStatus
@@ -51,7 +52,20 @@ class PaymentWebhookUseCases:
         headers: Mapping[str, str],
     ) -> WebhookOutcome:
         require_webhook(processor, WebhookKind.PAYMENT)
-        event = processor.parse_webhook(raw_body, headers)
+        attempt_reference = getattr(processor, "webhook_attempt_reference", None)
+        if attempt_reference is None:
+            event = processor.parse_webhook(raw_body, headers)
+        else:
+            # AttemptBoundWebhookPort (CinetPay): the reference only locates stored validation
+            # data; status and amount stay untrusted until the adapter verifies them.
+            attempt = self.attempts.get_by_provider_reference(
+                processor.name, attempt_reference(raw_body)
+            )
+            if attempt is None:
+                raise ProcessorWebhookRejected(f"unknown {processor.name} payment notification")
+            event = processor.parse_webhook(
+                raw_body, headers, attempt_metadata=attempt.provider_metadata
+            )
         return self.process_event(processor, raw_body, event)
 
     def process_event(self, processor, raw_body: bytes, event) -> WebhookOutcome:
