@@ -246,7 +246,7 @@ def test_verify_payment_http_error_is_unknown():
     assert result.failure_code == "JEKO_VERIFICATION_FAILED"
 
 
-def test_verify_payment_fractional_xof_is_invalid_response():
+def test_verify_payment_fractional_xof_is_rounded():
     def handler(http_request):
         return httpx.Response(
             200,
@@ -259,8 +259,9 @@ def test_verify_payment_fractional_xof_is_invalid_response():
 
     result = processor(handler).verify_payment("pr-123")
 
-    assert result.status == AttemptStatus.UNKNOWN
-    assert result.failure_code == "JEKO_RESPONSE_INVALID"
+    # Ticket 144: 101 subunits = 1.01 XOF -> 1 franc; the amount check happens later.
+    assert result.status == AttemptStatus.SUCCEEDED
+    assert result.amount == 1
 
 
 # --- create_payout -------------------------------------------------------------------------

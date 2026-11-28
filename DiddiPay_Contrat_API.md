@@ -20,6 +20,14 @@ vie qui ne peuvent pas etre exprimes uniquement par un schema.
 
 ## 1. Positionnement
 
+> **Regle des montants (ticket 144, 2026-11-28).** Tout montant est un nombre entier de francs.
+> Un montant decimal recu (corps de requete, reponse d'un processeur, valeur stockee avec
+> decimales) est arrondi au franc le plus proche, `.5` vers le haut (`ROUND_HALF_UP`) :
+> `4999.4 -> 4999`, `4999.5 -> 5000`. Les reponses, evenements et ecritures ne contiennent que des
+> entiers. Un montant qui s'arrondit a `0` reste refuse (`422`). Cette regle vaut pour tous les
+> modules DiddiFree.
+
+
 DiddiPay est l'orchestrateur de paiements de la plateforme DiddiFree.
 
 DiddiPay possede :

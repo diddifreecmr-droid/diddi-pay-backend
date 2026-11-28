@@ -46,6 +46,7 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorRequestRejected,
     ProcessorWebhookRejected,
 )
+from payfund_app.shared_kernel.money_rounding import round_money
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
@@ -627,7 +628,8 @@ class CinetpayPaymentProcessor:
         if raw_amount is None:
             return None, (str(currency).upper() if currency else None)
         try:
-            amount = int(float(raw_amount))
+            # Ticket 144: nearest franc, .5 up (was int(float()), which truncated 5000.7 to 5000).
+            amount = round_money(raw_amount)
         except (TypeError, ValueError):
             amount = None
         return amount, (str(currency).upper() if currency else None)

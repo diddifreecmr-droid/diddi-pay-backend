@@ -54,6 +54,7 @@ from payfund_app.modules.fund.infra.repositories import (
 )
 from payfund_app.shared_kernel.contracts.scoring_provider import ScoringPort
 from payfund_app.shared_kernel.contracts.wallet_provider import WalletServicePort
+from payfund_app.shared_kernel.money_rounding import round_money
 
 # Type de transaction wallet portant un investissement. `wallet.transactions.type` accepte
 # `fund_disbursement` et `fund_repayment` (§3.1) mais rien pour l'entrée d'un investisseur dans
@@ -139,8 +140,8 @@ class FundUseCases:
         if campaign.raised_amount >= campaign.goal_amount:
             raise CampaignGoalAlreadyReached(
                 details={
-                    "goal_amount": int(campaign.goal_amount),
-                    "raised_amount": int(campaign.raised_amount),
+                    "goal_amount": round_money(campaign.goal_amount),
+                    "raised_amount": round_money(campaign.raised_amount),
                 }
             )
 
@@ -264,7 +265,7 @@ class LoanUseCases:
         wallet_transaction_id = self.wallet.crediter(
             compte_id=compte_emprunteur,
             contrepartie_compte_id=campaign.wallet_account_id,
-            montant=int(loan.principal_amount),
+            montant=round_money(loan.principal_amount),
             reference=f"fund:loan:disbursement:{loan.id}",
             idempotency_key=f"fund:loan:disbursement:{loan.id}",
             type_transaction="fund_disbursement",
@@ -273,10 +274,10 @@ class LoanUseCases:
 
         depart = aujourd_hui or date.today()
         terms = LoanTerms(
-            principal=int(loan.principal_amount),
+            principal=round_money(loan.principal_amount),
             duration_months=loan.duration_months,
             interest_rate_applied=loan.interest_rate_applied,
-            total_repayable=int(loan.total_repayable),
+            total_repayable=round_money(loan.total_repayable),
             monthly_installment=int(
                 Decimal(loan.total_repayable) / Decimal(loan.duration_months)
             ),
@@ -350,7 +351,7 @@ class LoanUseCases:
         if echeance is None:
             raise InstallmentAlreadyPaid()
 
-        reste_du = int(echeance.amount_due) - int(echeance.amount_paid)
+        reste_du = round_money(echeance.amount_due) - round_money(echeance.amount_paid)
         if amount > reste_du:
             raise RepaymentExceedsInstallment(
                 details={"installment_no": echeance.installment_no, "remaining": reste_du}
@@ -373,7 +374,7 @@ class LoanUseCases:
         loan.wallet_transaction_id = wallet_transaction_id
 
         echeance.amount_paid = echeance.amount_paid + Decimal(amount)
-        if int(echeance.amount_paid) >= int(echeance.amount_due):
+        if round_money(echeance.amount_paid) >= round_money(echeance.amount_due):
             echeance.status = str(InstallmentStatus.PAID)
             echeance.paid_at = datetime.now(timezone.utc)
 

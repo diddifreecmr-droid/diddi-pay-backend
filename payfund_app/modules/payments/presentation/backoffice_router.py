@@ -24,6 +24,7 @@ from payfund_app.modules.payments.infra.backoffice_commands import (
     SqlBackofficePaymentOperations,
 )
 from payfund_app.modules.payments.presentation.deps import SessionDep
+from payfund_app.shared_kernel.money_rounding import MoneyAmount
 
 router = APIRouter(prefix="/internal/backoffice", tags=["internal-backoffice"])
 
@@ -71,7 +72,7 @@ class RetryCallbackBody(BackofficeCommandBody):
 
 
 class RecordSettlementBody(BackofficeCommandBody):
-    amount: int = Field(gt=0)
+    amount: MoneyAmount = Field(gt=0)
     settlement_reference: str = Field(min_length=3, max_length=180)
 
 

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from payfund_app.shared_kernel.money_rounding import MoneyAmount
 
 
 class CreatePaymentIntentRequest(BaseModel):
@@ -19,7 +20,7 @@ class CreatePaymentIntentRequest(BaseModel):
         max_length=32,
         description="Optional processor override; otherwise PAYMENT_PROCESSOR_MODE is used",
     )
-    amount: int = Field(gt=0, description="Positive amount; for XOF, 5000 means 5,000 XOF")
+    amount: MoneyAmount = Field(gt=0, description="Positive amount; for XOF, 5000 means 5,000 XOF. A decimal is rounded to the nearest franc, .5 up")
     currency: Literal["XOF"] = "XOF"
     payer_user_id: uuid.UUID | None = None
     payee_user_id: uuid.UUID | None = None
@@ -124,12 +125,12 @@ class VerifyPaymentIntentRequest(BaseModel):
             "succeeded payment whose payment amount is at least required_amount."
         ),
     )
-    amount: int | None = Field(
+    amount: MoneyAmount | None = Field(
         default=None,
         gt=0,
         description="Expected exact amount in XOF when verification_mode=exact",
     )
-    required_amount: int | None = Field(
+    required_amount: MoneyAmount | None = Field(
         default=None,
         gt=0,
         description=(
@@ -187,7 +188,7 @@ class RefundWebhookResponse(BaseModel):
 class CreateRefundRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount: int = Field(gt=0, description="Amount to refund; for XOF, 5000 means 5,000 XOF")
+    amount: MoneyAmount = Field(gt=0, description="Amount to refund; for XOF, 5000 means 5,000 XOF. A decimal is rounded to the nearest franc, .5 up")
     reason: str | None = Field(default=None, max_length=255)
     recover_from_payee: bool = Field(
         default=False,
@@ -255,7 +256,7 @@ class CreatePayoutRequest(BaseModel):
     # business identity, e.g. a restaurant UUID). None outside local/test, where payouts
     # resolve to a simulated processor and no real destination is needed.
     beneficiary_destination: BeneficiaryDestination | None = None
-    amount: int = Field(gt=0, description="Positive integer amount in XOF")
+    amount: MoneyAmount = Field(gt=0, description="Positive integer amount in XOF. A decimal is rounded to the nearest franc, .5 up")
     currency: Literal["XOF"] = "XOF"
     metadata: dict[str, Any] = Field(default_factory=dict)
 

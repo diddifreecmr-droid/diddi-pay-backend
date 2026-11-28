@@ -17,6 +17,7 @@ from payfund_app.modules.payments.application.errors import (
     ProcessorRequestRejected,
     ProcessorWebhookRejected,
 )
+from payfund_app.shared_kernel.money_rounding import round_money_from_subunits
 from payfund_app.modules.payments.application.ports import (
     InitializePaymentRequest,
     PaymentDirection,
@@ -355,10 +356,9 @@ class PaystackPaymentProcessor:
         amount = int(value)
         if str(currency or "").upper() != "XOF":
             return amount
-        quotient, remainder = divmod(amount, cls._XOF_SUBUNIT_FACTOR)
-        if remainder:
-            raise ValueError("Paystack returned a fractional XOF payment amount")
-        return quotient
+        # Ticket 144: whole francs, nearest, .5 up; the caller still checks the result
+        # against the expected amount, so a real mismatch is not hidden.
+        return round_money_from_subunits(amount, cls._XOF_SUBUNIT_FACTOR)
 
     @classmethod
     def _from_paystack_fee(cls, value: Any, currency: Any) -> int | None:
@@ -367,9 +367,8 @@ class PaystackPaymentProcessor:
         fee = int(value)
         if str(currency or "").upper() != "XOF":
             return fee
-        # The internal XOF ledger stores whole francs; round provider fees upward so
-        # expected net settlement is never overstated.
-        return (fee + cls._XOF_SUBUNIT_FACTOR - 1) // cls._XOF_SUBUNIT_FACTOR
+        # Ticket 144: one money rule everywhere, nearest franc, .5 up (was: always up).
+        return round_money_from_subunits(fee, cls._XOF_SUBUNIT_FACTOR)
 
     @staticmethod
     def _normalize_status(status: str) -> AttemptStatus:
