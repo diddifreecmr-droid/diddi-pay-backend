@@ -70,12 +70,63 @@ def test_unsupported_network_is_rejected_before_any_http_call():
         processor(unreached).initialize_payment(request(network="wave"))
 
 
-def test_missing_phone_is_rejected_before_any_http_call():
-    def unreached(request):
-        raise AssertionError("must not call pawapay without a phone number")
+def test_missing_phone_opens_the_page_for_the_default_country():
+    # Ticket 108: without customer_phone the customer types the number on PawaPay's page.
+    sent = {}
 
-    with pytest.raises(ProcessorRequestRejected, match="customer_phone"):
-        processor(unreached).initialize_payment(request(customer_phone=None))
+    def handler(http_request):
+        sent["body"] = json.loads(http_request.content)
+        return httpx.Response(200, json={"redirectUrl": "https://paywith.pawapay.io/v2?x"})
+
+    result = processor(handler).initialize_payment(request(customer_phone=None))
+
+    assert result.status == AttemptStatus.REQUIRES_ACTION
+    assert sent["body"]["country"] == "CIV"
+    assert "phoneNumber" not in sent["body"]
+
+
+def test_missing_phone_uses_configured_country():
+    sent = {}
+
+    def handler(http_request):
+        sent["body"] = json.loads(http_request.content)
+        return httpx.Response(200, json={"redirectUrl": "https://paywith.pawapay.io/v2?x"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.pawapay.test")
+    adapter = PawapayPaymentProcessor(
+        api_token="sandbox-token-not-real", base_url="https://api.pawapay.test", client=client,
+        default_country="sen",
+    )
+
+    adapter.initialize_payment(request(customer_phone=None))
+
+    assert sent["body"]["country"] == "SEN"
+
+
+def test_missing_phone_still_refuses_an_unsupported_network():
+    def unreached(request):
+        raise AssertionError("must not call pawapay for an unsupported network")
+
+    with pytest.raises(ProcessorRequestRejected, match="wave"):
+        processor(unreached).initialize_payment(request(customer_phone=None, network="wave"))
+
+
+def test_invalid_default_country_is_refused_at_startup():
+    with pytest.raises(ValueError, match="PAWAPAY_DEFAULT_COUNTRY"):
+        PawapayPaymentProcessor(api_token="t", default_country="CI")
+
+
+def test_phone_is_still_sent_prefilled_when_present():
+    sent = {}
+
+    def handler(http_request):
+        sent["body"] = json.loads(http_request.content)
+        return httpx.Response(200, json={"redirectUrl": "https://paywith.pawapay.io/v2?x"})
+
+    processor(handler).initialize_payment(request())
+
+    assert sent["body"]["phoneNumber"] == "2250503456789"
+    assert sent["body"]["country"] == "CIV"
 
 
 def test_unrecognised_dial_code_is_rejected():

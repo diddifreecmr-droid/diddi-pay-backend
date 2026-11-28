@@ -92,6 +92,7 @@ def _pawapay(settings: Settings) -> PawapayPaymentProcessor:
     return PawapayPaymentProcessor(
         api_token=settings.pawapay_api_token,
         base_url=settings.pawapay_base_url,
+        default_country=settings.pawapay_default_country,
     )
 
 
