@@ -23,6 +23,10 @@ def test_maintenance_command_reports_dead_letters(monkeypatch, capsys):
         lambda _: SimpleNamespace(scanned=0, succeeded=0, failed=0, pending=0),
     )
     monkeypatch.setattr(
+        ops, "reconcile_pending_refunds",
+        lambda _: SimpleNamespace(scanned=0, succeeded=0, failed=0, pending=0),
+    )
+    monkeypatch.setattr(
         ops, "payment_event_delivery_status",
         lambda _: {"pending": 0, "delivering": 0, "delivered": 1, "dead_letter": 1},
     )

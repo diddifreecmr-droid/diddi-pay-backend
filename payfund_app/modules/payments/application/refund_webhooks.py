@@ -62,14 +62,24 @@ class RefundWebhookUseCases:
         event: RefundProviderEvent = processor.parse_refund_webhook(
             raw_body, headers, callback_url=callback_url
         )
-        row = self.events.get(processor.name, event.event_key)
+        return self.process_event(processor.name, raw_body, event)
+
+    def process_event(
+        self, processor_name: str, raw_body: bytes, event: RefundProviderEvent
+    ) -> RefundWebhookOutcome:
+        """Apply an already validated refund result through the inbox, exactly once.
+
+        Used by provider callbacks and by refund reconciliation (ticket 023), so both paths
+        share the same amount checks, state transitions, accounting and module event.
+        """
+        row = self.events.get(processor_name, event.event_key)
         if row is not None and row.status in {"processed", "ignored"}:
             return RefundWebhookOutcome("duplicate", event.event_key, _row_refund_id(row))
 
         if row is None:
             try:
                 row = self.events.add(
-                    processor=processor.name,
+                    processor=processor_name,
                     event_key=event.event_key,
                     event_type=event.event_type,
                     payload_hash=hashlib.sha256(raw_body).hexdigest(),
@@ -78,7 +88,7 @@ class RefundWebhookUseCases:
                 self.uow.commit()
             except IntegrityError:
                 self.uow.rollback()
-                row = self.events.get(processor.name, event.event_key)
+                row = self.events.get(processor_name, event.event_key)
                 if row is None:
                     raise
                 if row.status in {"processed", "ignored"}:
@@ -92,7 +102,7 @@ class RefundWebhookUseCases:
             return RefundWebhookOutcome("ignored", event.event_key)
 
         refund_row = self.refunds.get_by_provider_reference(
-            processor.name, event.provider_reference, for_update=True
+            processor_name, event.provider_reference, for_update=True
         )
         if refund_row is None:
             self.events.mark(row, status="ignored", error_message="unknown provider reference")
@@ -180,7 +190,7 @@ class RefundWebhookUseCases:
                     intent=intent,
                     refund=refund,
                     status=str(event.status),
-                    processor=processor.name,
+                    processor=processor_name,
                 )
         self.events.mark(row, status="processed", refund_id=refund_row.id)
         self.uow.commit()

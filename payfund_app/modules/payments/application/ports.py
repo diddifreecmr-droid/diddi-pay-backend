@@ -46,6 +46,9 @@ class ProcessorCapabilities:
     channels: frozenset[str] = frozenset()
     networks: frozenset[str] = frozenset()
     webhooks: frozenset[WebhookKind] = frozenset()
+    # The adapter can read a refund's final state back (RefundVerifyPort). Lets the worker
+    # finish refunds whose provider callback never arrives (ticket 023).
+    refund_verification: bool = False
 
     def can(self, direction: PaymentDirection) -> bool:
         return direction in self.directions
@@ -164,6 +167,9 @@ class RefundResult:
     provider_status: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None
+    # Filled by verify_refund when the provider reports them; checked against the refund row.
+    amount: int | None = None
+    currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +219,12 @@ class CollectionPort(ProcessorPort, Protocol):
 
 class RefundPort(ProcessorPort, Protocol):
     def refund_payment(self, request: RefundRequest) -> RefundResult: ...
+
+
+class RefundVerifyPort(RefundPort, Protocol):
+    """Declared by `capabilities.refund_verification`."""
+
+    def verify_refund(self, provider_reference: str) -> RefundResult: ...
 
 
 class PayoutPort(ProcessorPort, Protocol):

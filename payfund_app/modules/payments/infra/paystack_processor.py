@@ -48,6 +48,8 @@ class PaystackPaymentProcessor:
         networks=frozenset(),
         # charge.* events only. Paystack refund.* events are not consumed yet (ticket 023).
         webhooks=frozenset({WebhookKind.PAYMENT}),
+        # GET /refund/{id} (numeric id returned by POST /refund, stored as provider_reference).
+        refund_verification=True,
     )
 
     def __init__(
@@ -79,7 +81,7 @@ class PaystackPaymentProcessor:
             else "verify"
             if path.startswith("/transaction/verify/")
             else "refund"
-            if path == "/refund"
+            if path == "/refund" or path.startswith("/refund/")
             else "unknown"
         )
         started_at = time.perf_counter()
@@ -286,17 +288,51 @@ class PaystackPaymentProcessor:
             )
         data = body.get("data") or {}
         provider_status = str(data.get("status") or "processing").lower()
-        status = (
-            RefundStatus.SUCCEEDED
-            if provider_status in {"processed", "success", "succeeded"}
-            else RefundStatus.FAILED
-            if provider_status in {"failed", "cancelled"}
-            else RefundStatus.PROCESSING
-        )
         return RefundResult(
             provider_reference=str(data.get("id")) if data.get("id") is not None else None,
-            status=status,
+            status=self._refund_status(provider_status),
             provider_status=provider_status,
+        )
+
+    @staticmethod
+    def _refund_status(provider_status: str) -> RefundStatus:
+        # Paystack's spec documents `status` as a free string. Only clear final words are
+        # final; anything else (pending, processing, needs-attention, ...) keeps waiting.
+        if provider_status in {"processed", "success", "succeeded"}:
+            return RefundStatus.SUCCEEDED
+        if provider_status in {"failed", "cancelled"}:
+            return RefundStatus.FAILED
+        return RefundStatus.PROCESSING
+
+    def verify_refund(self, provider_reference: str) -> RefundResult:
+        """Read a refund back: GET /refund/{id} (ticket 023)."""
+        try:
+            response = self._request("GET", f"/refund/{provider_reference}")
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProcessorCallUncertain(
+                provider_reference, "Paystack refund status is unavailable"
+            ) from exc
+        body = self._json(response)
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        if response.status_code >= 400 or not body.get("status") or not data:
+            # A failed lookup is not a failed refund: keep it pending and retry later.
+            return RefundResult(
+                provider_reference=provider_reference,
+                status=RefundStatus.PROCESSING,
+                provider_status=f"http_{response.status_code}",
+            )
+        provider_status = str(data.get("status") or "processing").lower()
+        currency = str(data["currency"]).upper() if data.get("currency") else None
+        try:
+            amount = self._from_paystack_amount(data.get("amount"), data.get("currency"))
+        except ValueError:
+            amount = None
+        return RefundResult(
+            provider_reference=provider_reference,
+            status=self._refund_status(provider_status),
+            provider_status=provider_status,
+            amount=amount,
+            currency=currency,
         )
 
     @staticmethod

@@ -375,6 +375,27 @@ class RefundRepository:
         self.session.flush()
         return refund
 
+    def pending_for_reconciliation(
+        self, *, older_than: datetime, processors: list[str], limit: int = 100
+    ) -> list[RefundRecord]:
+        """Refunds the provider accepted but never finished (ticket 023)."""
+        if not processors:
+            return []
+        return list(
+            self.session.scalars(
+                select(RefundRecord)
+                .where(
+                    RefundRecord.processor.in_(processors),
+                    RefundRecord.status.in_(["pending", "processing"]),
+                    RefundRecord.provider_reference.is_not(None),
+                    RefundRecord.updated_at <= older_than,
+                )
+                .order_by(RefundRecord.updated_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+
 
 class PaymentOutboxRepository:
     def __init__(self, session: Session) -> None:

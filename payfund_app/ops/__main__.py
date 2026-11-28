@@ -21,6 +21,7 @@ from payfund_app.ops.maintenance import (
     reconcile_pending_payment_intents,
     reconcile_pending_payouts,
     reconcile_pending_paystack_deposits,
+    reconcile_pending_refunds,
     record_payment_settlement,
     relay_outbox_events,
     require_admin,
@@ -161,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
                 with worker_cycle(), SessionLocal() as session:
                     reconciliation = reconcile_pending_payment_intents(session)
                     payout_reconciliation = reconcile_pending_payouts(session)
+                    reconcile_pending_refunds(session)
                     delivery = deliver_payment_events(session)
                     queue = payment_event_delivery_status(session)
                     try:
@@ -206,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "maintain-payment-intents":
             reconciliation = reconcile_pending_payment_intents(session)
             payout_reconciliation = reconcile_pending_payouts(session)
+            reconcile_pending_refunds(session)
             delivery = deliver_payment_events(session)
             queue = payment_event_delivery_status(session)
             print(

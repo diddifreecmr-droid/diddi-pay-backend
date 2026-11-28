@@ -40,6 +40,11 @@ from payfund_app.modules.payments.application.reconciliation import (
     PaymentReconciliationUseCases,
     ReconciliationSummary,
 )
+from payfund_app.modules.payments.application.refund_reconciliation import (
+    RefundReconciliationSummary,
+    RefundReconciliationUseCases,
+)
+from payfund_app.modules.payments.application.refund_webhooks import RefundWebhookUseCases
 from payfund_app.modules.payments.infra.callback_delivery import (
     HttpSignedCallbackSender,
     RedisStreamEventSender,
@@ -52,6 +57,7 @@ from payfund_app.modules.payments.infra.repositories import (
     PaymentOutboxRepository,
     PayoutRepository,
     ProviderEventRepository,
+    RefundRepository,
 )
 from payfund_app.modules.payments.infra.unit_of_work import SqlAlchemyUnitOfWork
 from payfund_app.modules.payments.presentation.deps import get_processor_registry
@@ -335,6 +341,29 @@ def reconcile_pending_payouts(
         PayoutAccountingService(FinancialLedgerRepository(session)),
     ).reconcile(minimum_age_seconds=minimum_age_seconds, limit=limit)
     emit("info", "ops.payouts.reconciled", **asdict(result))
+    return result
+
+
+def reconcile_pending_refunds(
+    session: Session, *, minimum_age_seconds: int = 300, limit: int = 100
+) -> RefundReconciliationSummary:
+    """Read back refunds stuck in processing and finish them (ticket 023)."""
+    uow = SqlAlchemyUnitOfWork(session)
+    result = RefundReconciliationUseCases(
+        RefundRepository(session),
+        get_processor_registry(),
+        RefundWebhookUseCases(
+            RefundRepository(session),
+            PaymentIntentRepository(session),
+            PaymentAttemptRepository(session),
+            ProviderEventRepository(session),
+            uow,
+            PaymentAccountingService(FinancialLedgerRepository(session)),
+            PaymentOutboxRepository(session),
+        ),
+        uow,
+    ).reconcile(minimum_age_seconds=minimum_age_seconds, limit=limit)
+    emit("info", "ops.refunds.reconciled", **asdict(result))
     return result
 
 
