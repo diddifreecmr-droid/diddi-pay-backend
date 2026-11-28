@@ -535,3 +535,40 @@ def test_liste_les_prets_filtree_par_statut(client, auth, session, make_user, fu
 
     assert {item["id"] for item in disbursed} == {str(loan_id)}
     assert pending == []
+
+
+def test_decaissement_enregistre_des_echeances_entieres_arrondies(
+    client, auth, session, make_user, fund_account
+):
+    """Ticket 144: the SAVED schedule uses the rounded installment (nearest franc, .5 up).
+
+    100 002 at 6.5 % = 106 502 over 3 months = 35 500.67 per month. int() used to truncate it
+    and save 35 500 / 35 500 / 35 502; the borrower was shown 35 501 when requesting.
+    """
+    from payfund_app.modules.fund.infra.models import RepaymentSchedule as Echeance
+
+    owner, _ = make_user()
+    investisseur, compte = make_user()
+    fund_account(compte, 300_000)
+    campaign_id = _campagne_financee(client, session, auth, owner, investisseur)
+
+    auth.as_user(owner)
+    demande = client.post(  # what the borrower is shown
+        f"{BASE}/loans/simulate", json={"amount": 100_002, "duration_months": 3}
+    ).json()
+    loan_id = uuid.UUID(
+        client.post(
+            f"{BASE}/loans",
+            json={"campaign_id": str(campaign_id), "amount": 100_002, "duration_months": 3},
+        ).json()["loan_id"]
+    )
+    _decaisser(session, loan_id)
+
+    rows = session.scalars(
+        select(Echeance).where(Echeance.loan_id == loan_id).order_by(Echeance.installment_no)
+    ).all()
+    saved = [row.amount_due for row in rows]
+
+    assert all(value == value.to_integral_value() for value in saved)  # whole francs in the DB
+    assert [int(v) for v in saved[:2]] == [demande["monthly_installment"]] * 2
+    assert sum(saved) == demande["total_repayable"]

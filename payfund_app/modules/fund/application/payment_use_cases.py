@@ -169,7 +169,7 @@ class FundPaymentUseCases:
                 amount=order.amount,
                 payment_intent_id=order.payment_intent_id,
             )
-            campaign.raised_amount += Decimal(order.amount)
+            campaign.raised_amount += Decimal(round_money(order.amount))
             order.status = "succeeded"
             order.completed_at = datetime.now(timezone.utc)
         self.session.commit()

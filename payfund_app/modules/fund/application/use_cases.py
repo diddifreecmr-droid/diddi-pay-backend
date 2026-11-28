@@ -172,7 +172,7 @@ class FundUseCases:
             amount=amount,
             wallet_transaction_id=wallet_transaction_id,
         )
-        campaign.raised_amount = campaign.raised_amount + Decimal(amount)
+        campaign.raised_amount = campaign.raised_amount + Decimal(round_money(amount))
         self.session.flush()
 
         return InvestmentResult(investment, wallet_transaction_id)
@@ -278,7 +278,9 @@ class LoanUseCases:
             duration_months=loan.duration_months,
             interest_rate_applied=loan.interest_rate_applied,
             total_repayable=round_money(loan.total_repayable),
-            monthly_installment=int(
+            # Ticket 144: nearest franc, .5 up -- the same figure the borrower saw when the loan
+            # was requested (int() truncated: 1001 over 3 months saved 333/333/335).
+            monthly_installment=round_money(
                 Decimal(loan.total_repayable) / Decimal(loan.duration_months)
             ),
         )
@@ -373,7 +375,7 @@ class LoanUseCases:
         )
         loan.wallet_transaction_id = wallet_transaction_id
 
-        echeance.amount_paid = echeance.amount_paid + Decimal(amount)
+        echeance.amount_paid = echeance.amount_paid + Decimal(round_money(amount))
         if round_money(echeance.amount_paid) >= round_money(echeance.amount_due):
             echeance.status = str(InstallmentStatus.PAID)
             echeance.paid_at = datetime.now(timezone.utc)
